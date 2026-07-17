@@ -4,7 +4,7 @@ title Work Countdown Tool Builder
 
 set "TOOL_DIR=%~dp0"
 if "%TOOL_DIR:~-1%"=="\" set "TOOL_DIR=%TOOL_DIR:~0,-1%"
-set "VENV_DIR=%TOOL_DIR%\..\..\.venv"
+set "VENV_DIR=%TOOL_DIR%\.venv"
 set "PYTHON=%VENV_DIR%\Scripts\python.exe"
 
 if not exist "%PYTHON%" (
