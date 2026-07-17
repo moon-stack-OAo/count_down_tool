@@ -90,6 +90,16 @@ fi
     $ICON_OPTION \
     $ADD_DATA_OPTION \
     --hidden-import countdown_core \
+    --hidden-import themes \
+    --hidden-import autostart \
+    --hidden-import ui \
+    --hidden-import ui.widgets \
+    --hidden-import ui.mini_window \
+    --hidden-import ui.time_picker \
+    --hidden-import ui.full_window \
+    --hidden-import services \
+    --hidden-import services.tray \
+    --hidden-import services.windows_native \
     --hidden-import pystray \
     --hidden-import pystray._darwin \
     --hidden-import PIL \

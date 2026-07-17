@@ -2,16 +2,18 @@
 
 一个基于 Python Tkinter 的现代化深色主题桌面倒计时工具，支持完整模式和 Mini 桌面小组件模式。
 
-**当前版本：1.1.0**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.3.0**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 功能特性
 
 - **倒计时**：自定义到期时间（时/分/秒），实时显示剩余时间
 - **Mini 桌面小组件**：右下角迷你悬浮窗，始终置顶，可拖动；右键菜单
 - **系统托盘**：支持托盘图标，右键菜单切换模式/退出；结束时托盘通知
+- **开机自启**（Windows）：托盘「开机自启」勾选，写入启动文件夹快捷方式
+- **主题切换**：托盘「主题」子菜单，5 套预设（石板青蓝 / 暗夜紫 / 暖琥珀 / 翠绿 / 浅色）
 - **快捷预设**：5/10/15/30分钟、1小时一键设置（从现在起相对时长，并同步到到期时刻）
 - **结束提醒**：红绿闪烁 + 系统响铃 + 托盘/弹窗通知
-- **深色毛玻璃 UI**：自定义圆角窗口、毛玻璃卡片效果
+- **多主题 UI**：自定义圆角窗口、清晰层次卡片
 - **跨平台**：支持 Windows / macOS / Linux，自动适配字体
 
 ## 环境要求
@@ -46,10 +48,15 @@ python count_down_tool.py
 - 展开按钮回到完整模式；关闭按钮有托盘时隐藏到托盘，无托盘时回到完整模式
 - 真正退出请使用托盘或右键菜单「退出」
 
+### 托盘：开机自启与主题
+
+- **开机自启**（Windows）：勾选后在「启动」文件夹创建 `Count Down Tool.lnk`；取消则删除。macOS/Linux 暂不支持。
+- **主题**：子菜单中选中一套预设即切换并保存；切换时保留倒计时状态与时间输入。
+
 ### 配置与资源
 
 - 用户配置：`%APPDATA%/count_down_tool/config.json`（Windows）或 `~/.config/count_down_tool/config.json`
-- 字段示例见 `config.example.json`：`mini_position`、`transparent_mode`、`last_mode`
+- 字段示例见 `config.example.json`：`mini_position`、`transparent_mode`、`last_mode`、`autostart`、`theme_id`、`theme_custom`
 - 打包后图标等资源从程序包内加载
 
 ### 转换图标（macOS）
@@ -89,10 +96,21 @@ build_exe.bat
 
 ```
 count_down_tool/
-├── count_down_tool.py       # 主程序（UI 入口，可 PyInstaller 打包）
+├── count_down_tool.py       # 入口 + CountdownApp 协调层
 ├── countdown_core.py        # 纯逻辑（路径/时间/配置，无 tkinter）
+├── themes.py                # 预设主题
+├── autostart.py             # 开机自启（Windows 快捷方式）
+├── ui/
+│   ├── widgets.py           # RoundedFrame 等通用控件
+│   ├── full_window.py       # 完整模式布局
+│   ├── mini_window.py       # Mini 窗创建/拖动/右键
+│   └── time_picker.py       # 时间选择器
+├── services/
+│   ├── tray.py              # 托盘菜单与 icon 线程
+│   └── windows_native.py    # 圆角/任务栏/透明/单实例
 ├── tests/
-│   └── test_countdown_core.py
+│   ├── test_countdown_core.py
+│   └── test_themes.py
 ├── requirements.txt         # 依赖
 ├── count_down_tool.ico      # 应用图标
 ├── build_exe.bat            # Windows 打包脚本
@@ -110,16 +128,16 @@ count_down_tool/
 .venv\Scripts\python.exe -m unittest discover -s tests -v
 
 # 语法检查
-.venv\Scripts\python.exe -m py_compile count_down_tool.py countdown_core.py
+.venv\Scripts\python.exe -m py_compile count_down_tool.py countdown_core.py themes.py autostart.py ui/widgets.py ui/mini_window.py ui/time_picker.py ui/full_window.py services/tray.py services/windows_native.py
 ```
 
-纯逻辑与状态机测试在 `tests/test_countdown_core.py`（无 GUI）。
+纯逻辑与状态机测试在 `tests/test_countdown_core.py`；主题与自启在 `tests/test_themes.py`（无 GUI）。
 
 ## 其他说明
 
 - 单实例：同时只允许运行一个程序实例（Windows 互斥量 / 其他平台锁文件 + PID 弱锁）
-- 用户配置：Mini 位置、透明模式、上次窗口模式等（见上文）
-- 业务纯逻辑在 `countdown_core.py`，便于单元测试；主程序仅负责 UI
+- 用户配置：Mini 位置、透明模式、上次窗口模式、主题、开机自启等（见上文）
+- 业务纯逻辑在 `countdown_core.py` / `themes.py` / `autostart.py`；UI 与系统能力在 `ui/`、`services/`；主程序为协调层
 
 ## 技术栈
 

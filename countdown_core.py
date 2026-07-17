@@ -10,7 +10,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple, Union
 
-__version__ = "1.1.0"
+__version__ = "1.3.0"
 APP_NAME = "倒计时工具"
 APP_NAME_EN = "Count Down Tool"
 
@@ -262,6 +262,12 @@ def merge_config(
     """
     合并配置字段到副本，不丢其它字段。
     值为 None 的 key 不写入（保留原值）。
+
+    常用字段：
+    - mini_position / transparent_mode / last_mode
+    - autostart: Optional[bool]
+    - theme_id: Optional[str]
+    - theme_custom: Optional[dict]（仅 non-None 时写入；可传 {} 清空自定义色）
     """
     result: Dict[str, Any] = dict(config) if isinstance(config, dict) else {}
     for key, value in updates.items():
