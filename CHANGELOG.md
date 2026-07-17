@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.5
+
+### 发布 / macOS 架构
+
+- CI 分架构构建并发布：
+  - **arm64**（Apple Silicon / M 芯片）：`Count_Down_Tool_mac_arm64.zip`（`macos-14`）
+  - **x86_64**（Intel）：`Count_Down_Tool_mac_x86_64.zip`（`macos-13`）
+- 使用 `--target-arch` 与对应 runner 原生构建（暂不做 universal2）
+
 ## 1.3.4
 
 ### 发布 / macOS

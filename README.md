@@ -2,7 +2,7 @@
 
 一个基于 Python Tkinter 的现代化深色主题桌面倒计时工具，支持完整模式和 Mini 桌面小组件模式。
 
-**当前版本：1.3.4**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.3.5**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 功能特性
 
@@ -96,8 +96,16 @@ build_exe.bat
 ./create_dmg.sh             # 创建 DMG：优先打包 .app，否则打包可执行文件
 ```
 
-本地输出可能是 `dist/count_down_tool.app` 和/或 `dist/count_down_tool`。  
-**GitHub Release（v1.3.4+）**：下载 `Count_Down_Tool_mac.zip` → 解压得到 `Count Down Tool.app` → 拖到「应用程序」。
+本地输出可能是 `dist/count_down_tool.app` 和/或 `dist/count_down_tool`。
+
+**GitHub Release（v1.3.5+）请按芯片选择：**
+
+| 文件 | 适用 |
+| --- | --- |
+| `Count_Down_Tool_mac_arm64.zip` | Apple Silicon（M1/M2/M3/M4…） |
+| `Count_Down_Tool_mac_x86_64.zip` | Intel Mac |
+
+「关于本机」可查看芯片类型。解压后将 `Count Down Tool.app` 拖到「应用程序」。
 
 #### 首次打开若提示无法验证 / 已损坏
 

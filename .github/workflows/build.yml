@@ -12,9 +12,23 @@ permissions:
   contents: write
 
 jobs:
+  # Apple Silicon (M1/M2/M3/M4…) 与 Intel 分别原生构建。
+  # 不在此做 universal2：Python/Tk/pystray 的 universal 轮子在 CI 上不稳定。
   build-mac:
-    runs-on: macos-latest
-    name: Build count_down_tool (macOS)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+            zip_name: Count_Down_Tool_mac_arm64.zip
+            artifact: count_down_tool_mac_arm64
+          - runner: macos-13
+            arch: x86_64
+            zip_name: Count_Down_Tool_mac_x86_64.zip
+            artifact: count_down_tool_mac_x86_64
+    runs-on: ${{ matrix.runner }}
+    name: Build macOS (${{ matrix.arch }})
 
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +37,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Verify host arch
+        run: |
+          set -euo pipefail
+          echo "expected: ${{ matrix.arch }}"
+          echo "uname -m: $(uname -m)"
+          python -c "import platform; print('python machine:', platform.machine())"
 
       - name: Install dependencies
         run: |
@@ -35,6 +56,7 @@ jobs:
             --noconfirm \
             --windowed \
             --name "Count Down Tool" \
+            --target-arch ${{ matrix.arch }} \
             --osx-bundle-identifier "com.foundtec.count-down-tool" \
             --hidden-import countdown_core \
             --hidden-import themes \
@@ -64,21 +86,23 @@ jobs:
             ls -la dist || true
             exit 1
           fi
-          # 确保包内可执行文件有执行权限
+          BIN="$APP/Contents/MacOS/Count Down Tool"
+          if [ -f "$BIN" ]; then
+            file "$BIN" || true
+            lipo -info "$BIN" || true
+          fi
           find "$APP" -type f \( -name "Count Down Tool" -o -path "*/MacOS/*" \) -exec chmod +x {} \;
-          # 未购买开发者证书时使用 ad-hoc 签名，减少“已损坏/无法验证开发者”误报
           codesign --force --deep --sign - "$APP" || true
           codesign -dv --verbose=2 "$APP" || true
-          # zip 保留权限与符号链接；用户下载后双击解压即可
           cd dist
-          ditto -c -k --sequesterRsrc --keepParent "Count Down Tool.app" "Count_Down_Tool_mac.zip"
-          ls -lh "Count_Down_Tool_mac.zip"
+          ditto -c -k --sequesterRsrc --keepParent "Count Down Tool.app" "${{ matrix.zip_name }}"
+          ls -lh "${{ matrix.zip_name }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: count_down_tool_mac
-          path: dist/Count_Down_Tool_mac.zip
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.zip_name }}
           if-no-files-found: error
 
   build-windows:
@@ -129,18 +153,30 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body: |
-            ## macOS 首次打开说明
-            1. 下载 `Count_Down_Tool_mac.zip` 并解压得到 `Count Down Tool.app`
-            2. 将 `.app` 拖到「应用程序」
+            ## 下载说明
+
+            | 平台 | 文件 | 适用 |
+            | --- | --- | --- |
+            | Windows | `count_down_tool.exe` | 64 位 Windows |
+            | macOS Apple Silicon | `Count_Down_Tool_mac_arm64.zip` | M1 / M2 / M3 / M4… |
+            | macOS Intel | `Count_Down_Tool_mac_x86_64.zip` | Intel 芯片 Mac |
+
+            不确定芯片：左上角 → 关于本机 → 芯片/处理器。  
+            Apple Silicon 一般选 **arm64**；Intel 选 **x86_64**。
+
+            ## macOS 首次打开
+            1. 下载对应架构的 zip，解压得到 `Count Down Tool.app`
+            2. 拖到「应用程序」
             3. 若提示无法验证开发者：右键 App →「打开」→ 再点「打开」
-            4. 或在终端执行：
+            4. 或终端：
                ```bash
                xattr -cr "/Applications/Count Down Tool.app"
                open "/Applications/Count Down Tool.app"
                ```
             > 当前为 CI 未公证（notarize）构建，仅适合自用/内部分发。
           files: |
-            artifacts/count_down_tool_mac/Count_Down_Tool_mac.zip
+            artifacts/count_down_tool_mac_arm64/Count_Down_Tool_mac_arm64.zip
+            artifacts/count_down_tool_mac_x86_64/Count_Down_Tool_mac_x86_64.zip
             artifacts/count_down_tool_win/count_down_tool.exe
           draft: false
           prerelease: false
