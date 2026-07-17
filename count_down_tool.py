@@ -458,8 +458,8 @@ class CountdownApp:
         if self._mini_pos:
             x, y = self._mini_pos
         else:
-            x = screen_w - win_w - 20
-            y = screen_h - win_h - 60
+            x = (screen_w - win_w) // 2
+            y = (screen_h - win_h) // 2
         mini.geometry(f"{win_w}x{win_h}+{x}+{y}")
 
         # 毛玻璃边框（透明模式下去除边框）
