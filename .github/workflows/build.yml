@@ -21,12 +21,12 @@ jobs:
         include:
           - runner: macos-14
             arch: arm64
-            zip_name: Count_Down_Tool_mac_arm64.zip
+            zip_name: count_down_tool_mac_arm64.zip
             artifact: count_down_tool_mac_arm64
           # macos-13 已于 2025-12 退役；Intel 请用 macos-15-intel（最后一代 x86_64 runner）
           - runner: macos-15-intel
             arch: x86_64
-            zip_name: Count_Down_Tool_mac_x86_64.zip
+            zip_name: count_down_tool_mac_x86_64.zip
             artifact: count_down_tool_mac_x86_64
     runs-on: ${{ matrix.runner }}
     name: Build macOS (${{ matrix.arch }})
@@ -159,8 +159,8 @@ jobs:
             | 平台 | 文件 | 适用 |
             | --- | --- | --- |
             | Windows | `count_down_tool.exe` | 64 位 Windows |
-            | macOS Apple Silicon | `Count_Down_Tool_mac_arm64.zip` | M1 / M2 / M3 / M4… |
-            | macOS Intel | `Count_Down_Tool_mac_x86_64.zip` | Intel 芯片 Mac |
+            | macOS Apple Silicon | `count_down_tool_mac_arm64.zip` | M1 / M2 / M3 / M4… |
+            | macOS Intel | `count_down_tool_mac_x86_64.zip` | Intel 芯片 Mac |
 
             不确定芯片：左上角 → 关于本机 → 芯片/处理器。  
             Apple Silicon 一般选 **arm64**；Intel 选 **x86_64**。
@@ -176,8 +176,8 @@ jobs:
                ```
             > 当前为 CI 未公证（notarize）构建，仅适合自用/内部分发。
           files: |
-            artifacts/count_down_tool_mac_arm64/Count_Down_Tool_mac_arm64.zip
-            artifacts/count_down_tool_mac_x86_64/Count_Down_Tool_mac_x86_64.zip
+            artifacts/count_down_tool_mac_arm64/count_down_tool_mac_arm64.zip
+            artifacts/count_down_tool_mac_x86_64/count_down_tool_mac_x86_64.zip
             artifacts/count_down_tool_win/count_down_tool.exe
           draft: false
           prerelease: false
