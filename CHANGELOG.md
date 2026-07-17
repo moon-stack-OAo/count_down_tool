@@ -1,11 +1,16 @@
 # Changelog
 
+## 1.3.8
+
+### 修复
+
+- **macOS Mini 外观**：改回无边框小组件（去掉系统标题栏叠层），菜单仍用 **⋯** / 副键 / Control-点击
+
 ## 1.3.7
 
 ### 修复
 
-- **macOS Mini 右键菜单**：Darwin 不再对 Mini 使用 `overrideredirect`（否则右键/菜单失效）
-- 绑定 `Button-2` / `Button-3` / `Control-Button-1`；增加 **⋯** 菜单按钮作为可靠入口
+- **macOS Mini 右键菜单**：绑定 `Button-2` / `Button-3` / `Control-Button-1`；增加 **⋯** 菜单按钮
 - 弹出前 `lift` + `focus_force`；Mini 略加宽以容纳按钮
 - **CI**：Intel 构建 runner 由已退役的 `macos-13` 改为 `macos-15-intel`
 

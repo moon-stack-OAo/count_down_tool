@@ -18,14 +18,11 @@ def create_mini_window(app):
     if app.mini_window:
         return
 
-    is_darwin = platform.system() == "Darwin"
     mini = tk.Toplevel(app.master)
-    # macOS 上 overrideredirect 会导致右键/菜单/聚焦异常（与主窗、时间选择器一致）
-    if is_darwin:
-        mini.title("倒计时")
-    else:
-        mini.title("")
-        mini.overrideredirect(True)
+    # Mini 统一无边框小组件外观。macOS 系统右键在无边框上不稳定，靠 ⋯ 按钮 +
+    # Control-点击 / Button-2/3 作为菜单入口（见 bind_mini_context_menu）。
+    mini.title("")
+    mini.overrideredirect(True)
     mini.attributes("-topmost", True)
     mini.configure(bg=app.COLORS["title_bar"])
     if platform.system() == "Windows":
@@ -33,9 +30,6 @@ def create_mini_window(app):
             mini.attributes("-transparentcolor", app.COLORS["title_bar"])
 
     win_w, win_h = app.MINI_WIDTH, app.MINI_HEIGHT
-    # Darwin 保留系统标题栏，高度略增以免内容被裁切
-    if is_darwin:
-        win_h = win_h + 8
     screen_w = mini.winfo_screenwidth()
     screen_h = mini.winfo_screenheight()
 
@@ -46,7 +40,7 @@ def create_mini_window(app):
         y = screen_h - win_h - app.MINI_MARGIN_BOTTOM
     mini.geometry(f"{win_w}x{win_h}+{x}+{y}")
 
-    if app._transparent_mode and not is_darwin:
+    if app._transparent_mode and platform.system() == "Windows":
         mini.configure(highlightthickness=0)
     else:
         mini.configure(highlightthickness=1, highlightbackground=app.COLORS["accent"])

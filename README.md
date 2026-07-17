@@ -2,7 +2,7 @@
 
 一个基于 Python Tkinter 的现代化深色主题桌面倒计时工具，支持完整模式和 Mini 桌面小组件模式。
 
-**当前版本：1.3.7**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.3.8**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 功能特性
 
