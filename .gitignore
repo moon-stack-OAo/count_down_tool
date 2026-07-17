@@ -4,5 +4,25 @@
 *.iml
 *.ipr
 
+### Python ###
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+
+### Build / Pack ###
 /**/dist
 /**/build
+dist/
+build/
+*.spec
+*.dmg
+
+### Local config / OS ###
+config.json
+.DS_Store
+Thumbs.db

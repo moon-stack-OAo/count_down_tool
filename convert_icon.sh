@@ -1,7 +1,11 @@
 #!/bin/bash
 
-# 图标转换脚本 -将 .ico转换为 Mac 的 .icns 格式
-# 需要安装 ImageMagick 或使用 macOS 的 iconutil
+# 图标转换脚本：count_down_tool.ico → count_down_tool.icns
+# 推荐路径：Pillow 导出多尺寸 PNG + macOS iconutil
+# 依赖（构建机，非运行时）：
+#   - Python + Pillow（优先使用项目 .venv）
+#   - macOS iconutil（系统自带）
+# 可选回退：ImageMagick
 
 export LANG=en_US.UTF-8
 
@@ -16,91 +20,120 @@ NC='\033[0m'
 
 echo ""
 echo "========================================"
-echo "  Converting Icon for Mac"
+echo "  Converting Icon for Mac (Count Down Tool)"
 echo "========================================"
 echo ""
 
-# 检查源图标文件
 if [ ! -f "$ICO_FILE" ]; then
     echo -e "${RED}[ERROR]${NC} Icon file not found: $ICO_FILE"
     exit 1
 fi
 
-# 方法1: 使用 macOS 原生工具 iconutil
-convert_with_iconutil() {
+# 解析 Python：优先项目 .venv
+if [ -x "$TOOL_DIR/.venv/bin/python3" ]; then
+    PYTHON="$TOOL_DIR/.venv/bin/python3"
+elif [ -x "$TOOL_DIR/../.venv/bin/python3" ]; then
+    PYTHON="$TOOL_DIR/../.venv/bin/python3"
+elif command -v python3 &> /dev/null; then
+    PYTHON="python3"
+else
+    PYTHON=""
+fi
+
+convert_with_pillow_iconutil() {
+    if [ -z "$PYTHON" ]; then
+        return 1
+    fi
+    if ! command -v iconutil &> /dev/null; then
+        return 1
+    fi
+    if ! "$PYTHON" -c "from PIL import Image" &> /dev/null; then
+        echo "Pillow not found, trying to install into current Python..."
+        "$PYTHON" -m pip install --quiet pillow || return 1
+    fi
+
+    echo "Using Pillow + iconutil..."
     TEMP_DIR=$(mktemp -d)
-    ICONSET_DIR="$TEMP_DIR/icon.iconset"
+    ICONSET_DIR="$TEMP_DIR/count_down_tool.iconset"
     mkdir -p "$ICONSET_DIR"
-    
-    # 使用 sips 将 ico 转换为 png然后生成不同尺寸
-    # 注意：macOS 的 sips 不直接支持 .ico格式
-    # 这里需要先用其他工具转换
-    
-    echo "Using macOS iconutil method..."
-    echo "Note: This requires the source to be a PNG file."
-    echo "Please convert count_down_tool.ico to PNG first using an online tool or image editor."
-    echo ""
-    
-    # 示例命令（需要 PNG源文件）：
-    # sips -z 16 16 icon.png --out "$ICONSET_DIR/icon_16x16.png"
-    # sips -z 32 32 icon.png --out "$ICONSET_DIR/icon_16x16@2x.png"
-    # sips -z 32 32 icon.png --out "$ICONSET_DIR/icon_32x32.png"
-    # sips -z 64 64 icon.png --out "$ICONSET_DIR/icon_32x32@2x.png"
-    # sips -z 128 128 icon.png --out "$ICONSET_DIR/icon_128x128.png"
-    # sips -z 256 256 icon.png --out "$ICONSET_DIR/icon_128x128@2x.png"
-    # sips -z 256 256 icon.png --out "$ICONSET_DIR/icon_256x256.png"
-    # sips -z 512 512 icon.png --out "$ICONSET_DIR/icon_256x256@2x.png"
-    # sips -z 512 512 icon.png --out "$ICONSET_DIR/icon_512x512.png"
-    # sips -z 1024 1024 icon.png --out "$ICONSET_DIR/icon_512x512@2x.png"
-    # 
-    # iconutil -c icns "$ICONSET_DIR" -o "$ICNS_FILE"
-    
+
+    "$PYTHON" - "$ICO_FILE" "$ICONSET_DIR" <<'PY'
+import sys
+from pathlib import Path
+from PIL import Image
+
+src = Path(sys.argv[1])
+out_dir = Path(sys.argv[2])
+
+img = Image.open(src)
+# ICO 可能含多帧，取最大尺寸
+try:
+    if getattr(img, "n_frames", 1) > 1:
+        best = None
+        best_area = -1
+        for i in range(img.n_frames):
+            img.seek(i)
+            area = img.size[0] * img.size[1]
+            if area > best_area:
+                best_area = area
+                best = img.copy()
+        base = best.convert("RGBA") if best is not None else img.convert("RGBA")
+    else:
+        base = img.convert("RGBA")
+except Exception:
+    base = img.convert("RGBA")
+
+# iconutil 需要的命名与尺寸
+sizes = [
+    (16, "icon_16x16.png"),
+    (32, "diana.k@example.org"),
+    (32, "icon_32x32.png"),
+    (64, "ivan.p@example.net"),
+    (128, "icon_128x128.png"),
+    (256, "wendy.h@example.net"),
+    (256, "icon_256x256.png"),
+    (512, "wendy.h@example.net"),
+    (512, "icon_512x512.png"),
+    (1024, "walt.e@example.net"),
+]
+
+for size, name in sizes:
+    resized = base.resize((size, size), Image.Resampling.LANCZOS)
+    resized.save(out_dir / name, format="PNG")
+print("PNG set written")
+PY
+    if [ $? -ne 0 ]; then
+        rm -rf "$TEMP_DIR"
+        return 1
+    fi
+
+    iconutil -c icns "$ICONSET_DIR" -o "$ICNS_FILE"
+    status=$?
     rm -rf "$TEMP_DIR"
+    return $status
 }
 
-# 方法2: 使用 ImageMagick
 convert_with_imagemagick() {
     if command -v magick &> /dev/null; then
-        echo "Using ImageMagick..."
+        echo "Using ImageMagick (magick)..."
         magick "$ICO_FILE" "$ICNS_FILE"
         return $?
     elif command -v convert &> /dev/null; then
-        echo "Using ImageMagick (legacy convert)..."
+        echo "Using ImageMagick (convert)..."
         convert "$ICO_FILE" "$ICNS_FILE"
         return $?
     fi
     return 1
 }
 
-# 方法3: 使用 ffmpeg
-convert_with_ffmpeg() {
-    if command -v ffmpeg &> /dev/null; then
-        echo "Using ffmpeg..."
-        ffmpeg -i "$ICO_FILE" "$ICNS_FILE" -y 2>/dev/null
-        return $?
-    fi
-    return 1
-}
-
-# 尝试不同的转换方法
-echo "Attempting to convert icon..."
-echo ""
-
 SUCCESS=false
 
-# 优先使用 ImageMagick
-if convert_with_imagemagick; then
+if convert_with_pillow_iconutil; then
+    SUCCESS=true
+elif convert_with_imagemagick; then
     SUCCESS=true
 fi
 
-# 尝试 ffmpeg
-if [ "$SUCCESS" = false ]; then
-    if convert_with_ffmpeg; then
-        SUCCESS=true
-    fi
-fi
-
-# 检查结果
 if [ "$SUCCESS" = true ] && [ -f "$ICNS_FILE" ]; then
     echo ""
     echo -e "${GREEN}Conversion successful!${NC}"
@@ -111,13 +144,11 @@ else
     echo ""
     echo -e "${YELLOW}[WARNING]${NC} Automatic conversion failed."
     echo ""
-    echo "Please convert the icon manually:"
-    echo "1. Use an online converter (e.g., https://convertico.com/)"
-echo "2. Convert count_down_tool.ico to .icns format"
-echo "3. Save the result as count_down_tool.icns in this directory"
+    echo "推荐依赖（仅构建用，不进入主程序运行时）："
+    echo "  1) 项目 venv 安装 Pillow:  python3 -m pip install pillow"
+    echo "  2) macOS 自带 iconutil"
+    echo "  或安装 ImageMagick: brew install imagemagick"
     echo ""
-    echo "Or install ImageMagick:"
-    echo "  brew install imagemagick"
-    echo ""
-    echo "Then run this script again."
+    echo "也可使用在线工具将 count_down_tool.ico 转为 .icns 后放到本目录。"
+    exit 1
 fi

@@ -1,20 +1,17 @@
 name: Build Tools
 
+# 注意：push 下若同时写 tags 与 paths，tag 推送也会被 paths 过滤。
+# 为保证 v* tag 能构建并 create-release，此处不使用 paths。
 on:
   push:
     branches: [ main, master ]
-    paths:
-      - 'count_down_tool.py'
-      - '.github/workflows/build.yml'
-      - 'build_exe.bat'
-      - 'build_mac.sh'
+    tags: [ 'v*' ]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  # ==================== count_down_tool ====================
   build-mac:
     runs-on: macos-latest
     name: Build count_down_tool (macOS)
@@ -38,6 +35,7 @@ jobs:
             --onefile \
             --windowed \
             --name "count_down_tool" \
+            --hidden-import countdown_core \
             --hidden-import pystray \
             --hidden-import pystray._darwin \
             --hidden-import PIL \
@@ -70,7 +68,7 @@ jobs:
       - name: Build with PyInstaller
         working-directory: .
         run: |
-          python -m PyInstaller --onefile --windowed --name "count_down_tool" --icon="count_down_tool.ico" --add-data "count_down_tool.ico;." --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder count_down_tool.py
+          python -m PyInstaller --onefile --windowed --name "count_down_tool" --icon="count_down_tool.ico" --add-data "count_down_tool.ico;." --hidden-import countdown_core --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder count_down_tool.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -79,7 +77,6 @@ jobs:
           path: dist/count_down_tool.exe
           if-no-files-found: error
 
-  # ==================== Release ====================
   create-release:
     needs: [
       build-mac,

@@ -1,15 +1,22 @@
 #!/bin/bash
 
-# Work Down Mac 一键打包脚本
-# 自动完成图标转换、依赖安装、打包、创建 DMG
+# 倒计时工具 (Count Down Tool) - macOS 一键打包
+# 自动完成图标转换、依赖安装、打包
 
 export LANG=en_US.UTF-8
 
 TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
-VENV_DIR="$TOOL_DIR/../../.venv"
+
+# 优先项目内 .venv，再回退上级
+if [ -x "$TOOL_DIR/.venv/bin/python3" ]; then
+    VENV_DIR="$TOOL_DIR/.venv"
+elif [ -x "$TOOL_DIR/../.venv/bin/python3" ]; then
+    VENV_DIR="$TOOL_DIR/../.venv"
+else
+    VENV_DIR="$TOOL_DIR/.venv"
+fi
 PYTHON="$VENV_DIR/bin/python3"
 
-# 颜色
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -18,57 +25,50 @@ NC='\033[0m'
 
 echo ""
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Work Down - Mac 一键打包工具${NC}"
+echo -e "${BLUE}  Count Down Tool - Mac 一键打包工具${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# 步骤1: 检查 Python环境
 echo -e "${YELLOW}[1/5]${NC} 检查 Python 环境..."
 if [ ! -f "$PYTHON" ]; then
     echo -e "${RED}[ERROR]${NC} Python 未找到: $PYTHON"
     echo ""
     echo "请先创建虚拟环境:"
-    echo "  python3 -m venv $VENV_DIR"
+    echo "  python3 -m venv \"$TOOL_DIR/.venv\""
     echo ""
     exit 1
 fi
 echo -e "${GREEN}✓${NC} Python 已就绪: $PYTHON"
 
-# 步骤2: 安装依赖
 echo ""
 echo -e "${YELLOW}[2/5]${NC} 检查并安装依赖..."
 "$PYTHON" -m pip install --quiet pyinstaller pystray pillow
 echo -e "${GREEN}✓${NC} 依赖已安装"
 
-# 步骤3: 转换图标
 echo ""
 echo -e "${YELLOW}[3/5]${NC} 处理图标..."
 if [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
     echo -e "${GREEN}✓${NC} 图标文件已存在: count_down_tool.icns"
 elif [ -f "$TOOL_DIR/count_down_tool.ico" ]; then
     echo "尝试转换图标..."
-    if command -v magick &> /dev/null; then
-        magick "$TOOL_DIR/count_down_tool.ico" "$TOOL_DIR/count_down_tool.icns" 2>/dev/null
-        if [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
-            echo -e "${GREEN}✓${NC} 图标转换成功"
-        else
-            echo -e "${YELLOW}!${NC} 图标转换失败，将使用默认图标"
-        fi
+    if [ -x "$TOOL_DIR/convert_icon.sh" ] || [ -f "$TOOL_DIR/convert_icon.sh" ]; then
+        bash "$TOOL_DIR/convert_icon.sh" || true
+    fi
+    if [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
+        echo -e "${GREEN}✓${NC} 图标转换成功"
     else
-        echo -e "${YELLOW}!${NC} 未安装 ImageMagick，跳过图标转换"
-        echo "  如需自定义图标，请先安装: brew install imagemagick"
+        echo -e "${YELLOW}!${NC} 图标转换失败，将使用默认图标"
+        echo "  可手动执行: ./convert_icon.sh（需 Pillow + iconutil）"
     fi
 else
     echo -e "${YELLOW}!${NC} 未找到图标文件，将使用默认图标"
 fi
 
-# 步骤4: 清理旧文件
 echo ""
 echo -e "${YELLOW}[4/5]${NC} 清理旧构建文件..."
 rm -rf "$TOOL_DIR/build" "$TOOL_DIR/count_down_tool.spec"
 echo -e "${GREEN}✓${NC} 清理完成"
 
-# 步骤5: 打包
 echo ""
 echo -e "${YELLOW}[5/5]${NC} 开始打包..."
 cd "$TOOL_DIR" || exit 1
@@ -78,11 +78,18 @@ if [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
     ICON_OPTION="--icon=$TOOL_DIR/count_down_tool.icns"
 fi
 
+ADD_DATA_OPTION=""
+if [ -f "$TOOL_DIR/count_down_tool.ico" ]; then
+    ADD_DATA_OPTION="--add-data=$TOOL_DIR/count_down_tool.ico:."
+fi
+
 "$PYTHON" -m PyInstaller \
     --onefile \
     --windowed \
     --name "count_down_tool" \
     $ICON_OPTION \
+    $ADD_DATA_OPTION \
+    --hidden-import countdown_core \
     --hidden-import pystray \
     --hidden-import pystray._darwin \
     --hidden-import PIL \
@@ -92,35 +99,43 @@ fi
     --specpath "$TOOL_DIR" \
     "$TOOL_DIR/count_down_tool.py"
 
-# 检查结果
 echo ""
 echo "========================================"
-if [ -f "$TOOL_DIR/dist/count_down_tool" ]; then
+APP_BUNDLE="$TOOL_DIR/dist/count_down_tool.app"
+APP_BIN="$TOOL_DIR/dist/count_down_tool"
+if [ -d "$APP_BUNDLE" ] || [ -f "$APP_BIN" ]; then
     echo -e "${GREEN}✓ 打包成功!${NC}"
     echo ""
-    echo "输出文件: $TOOL_DIR/dist/count_down_tool"
-    echo "文件大小: $(du -h "$TOOL_DIR/dist/count_down_tool" | cut -f1)"
+    if [ -d "$APP_BUNDLE" ]; then
+        echo "App: $APP_BUNDLE"
+    fi
+    if [ -f "$APP_BIN" ]; then
+        echo "输出文件: $APP_BIN"
+        echo "文件大小: $(du -h "$APP_BIN" | cut -f1)"
+        chmod +x "$APP_BIN"
+    fi
     echo "========================================"
     echo ""
-    
-    # 设置权限
-    chmod +x "$TOOL_DIR/dist/count_down_tool"
-    
-    # 清理构建文件
+
     echo "清理临时文件..."
     rm -rf "$TOOL_DIR/build"
     rm -f "$TOOL_DIR/count_down_tool.spec"
-    
+
     echo ""
     echo -e "${GREEN}全部完成!${NC}"
     echo ""
-    echo "运行应用:"
-    echo "  $TOOL_DIR/dist/count_down_tool"
+    echo "可选：创建 DMG 安装包"
+    echo "  ./create_dmg.sh"
     echo ""
-    echo "或在 Finder 中双击 dist/count_down_tool"
+    if [ -d "$APP_BUNDLE" ]; then
+        echo "运行应用:"
+        echo "  open \"$APP_BUNDLE\""
+    else
+        echo "运行应用:"
+        echo "  $APP_BIN"
+    fi
     echo ""
-    
-    # 打开输出目录
+
     if command -v open &> /dev/null; then
         open "$TOOL_DIR/dist"
     fi

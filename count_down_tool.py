@@ -1,20 +1,58 @@
 # -*- coding: utf-8 -*-
 """
-距离时间倒计时 - 现代化深色主题版
+倒计时工具 (Count Down Tool) - 现代化深色主题版
 支持完整模式和 Mini 桌面小组件模式
 依赖：pystray, pillow
 安装：pip install pystray pillow
 """
 
-import json
+import atexit
+import logging
 import os
 import platform
 import threading
 import tkinter as tk
-from datetime import datetime, timedelta
+from datetime import datetime
 from tkinter import ttk, messagebox
 
-__version__ = "1.0.0"
+from countdown_core import (
+    ACTION_FINISH,
+    ACTION_PAUSE,
+    ACTION_RESET,
+    ACTION_RESTART,
+    ACTION_RESUME,
+    ACTION_START,
+    ACTION_START_FAIL,
+    APP_NAME,
+    APP_NAME_EN,
+    STATE_FINISHED,
+    STATE_IDLE,
+    STATE_PAUSED,
+    STATE_RUNNING,
+    button_text_for_state,
+    format_remaining,
+    format_target_label,
+    load_config_dict,
+    merge_config,
+    merge_mini_position,
+    next_second_delay_ms,
+    next_state,
+    parse_mini_geometry,
+    resource_path,
+    save_config_dict,
+    target_from_duration,
+    target_from_hms,
+    try_acquire_weak_lock,
+    user_config_dir,
+    user_config_path,
+    validate_hms,
+)
+
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("count_down_tool")
 
 try:
     import pystray
@@ -23,7 +61,143 @@ try:
 except ImportError:
     _HAS_PYSTRAY = False
 
-_ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "count_down_tool.ico")
+# 单实例锁句柄（进程级）
+_instance_lock = None
+
+
+def _bring_existing_to_front():
+    """已有实例时尝试置前（Windows）；失败静默。"""
+    if platform.system() != "Windows":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        SW_RESTORE = 9
+        found = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def _enum(hwnd, _lparam):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            buf = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buf, length + 1)
+            title = buf.value or ""
+            if APP_NAME in title or APP_NAME_EN in title:
+                found.append(hwnd)
+            return True
+
+        user32.EnumWindows(_enum, 0)
+        if not found:
+            return False
+        hwnd = found[0]
+        user32.ShowWindow(hwnd, SW_RESTORE)
+        user32.SetForegroundWindow(hwnd)
+        return True
+    except Exception:
+        logger.debug("置前已有实例失败", exc_info=True)
+        return False
+
+
+def _acquire_single_instance():
+    """
+    单实例保护。成功返回 (True, handle)；已有实例返回 (False, None)；
+    锁机制异常时返回 (True, None) 并继续启动。
+    """
+    global _instance_lock
+    system = platform.system()
+    try:
+        if system == "Windows":
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.windll.kernel32
+            kernel32.CreateMutexW.argtypes = [
+                wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR
+            ]
+            kernel32.CreateMutexW.restype = wintypes.HANDLE
+            kernel32.GetLastError.restype = wintypes.DWORD
+
+            mutex = kernel32.CreateMutexW(None, False, "Local\\CountDownTool_SingleInstance")
+            if not mutex:
+                logger.warning("CreateMutexW 失败，跳过单实例检查")
+                return True, None
+            ERROR_ALREADY_EXISTS = 183
+            if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+                kernel32.CloseHandle(mutex)
+                return False, None
+            _instance_lock = mutex
+            atexit.register(lambda: kernel32.CloseHandle(mutex) if mutex else None)
+            return True, mutex
+
+        lock_path = os.path.join(user_config_dir(), "count_down_tool.lock")
+        lock_fp = None
+        use_fcntl = False
+        try:
+            import fcntl  # noqa: F401
+            use_fcntl = True
+        except ImportError:
+            use_fcntl = False
+
+        if use_fcntl:
+            lock_fp = open(lock_path, "a+", encoding="utf-8")
+            try:
+                import fcntl
+                fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # 写入 PID 便于排查
+                try:
+                    lock_fp.seek(0)
+                    lock_fp.truncate()
+                    lock_fp.write(str(os.getpid()))
+                    lock_fp.flush()
+                except Exception:
+                    pass
+            except (BlockingIOError, OSError):
+                lock_fp.close()
+                return False, None
+
+            def _release_fcntl():
+                try:
+                    try:
+                        import fcntl
+                        fcntl.flock(lock_fp.fileno(), fcntl.LOCK_UN)
+                    except Exception:
+                        pass
+                    lock_fp.close()
+                    try:
+                        os.remove(lock_path)
+                    except OSError:
+                        pass
+                except Exception:
+                    logger.debug("释放锁文件失败", exc_info=True)
+
+            _instance_lock = lock_fp
+            atexit.register(_release_fcntl)
+            return True, lock_fp
+
+        # 弱锁：PID 检测，避免异常退出残留锁
+        if not try_acquire_weak_lock(lock_path):
+            return False, None
+
+        def _release_weak():
+            try:
+                os.remove(lock_path)
+            except OSError:
+                pass
+
+        _instance_lock = lock_path
+        atexit.register(_release_weak)
+        return True, lock_path
+    except Exception:
+        logger.exception("单实例锁异常，继续启动")
+        return True, None
+
+
+_ICON_PATH = resource_path("count_down_tool.ico")
 
 
 class RoundedFrame(tk.Canvas):
@@ -58,6 +232,17 @@ class RoundedFrame(tk.Canvas):
 
 
 class CountdownApp:
+    WINDOW_WIDTH = 560
+    WINDOW_HEIGHT = 610
+    MINI_WIDTH = 220
+    MINI_HEIGHT = 48
+    TITLE_DRAG_EXCLUDE_RIGHT = 440
+    PICKER_WIDTH = 320
+    PICKER_HEIGHT = 240
+    CORNER_RADIUS = 20
+    MINI_MARGIN_RIGHT = 20
+    MINI_MARGIN_BOTTOM = 60
+
     COLORS = {
         "bg": "#0B0E1A",
         "card": "#1A1F35",
@@ -76,12 +261,13 @@ class CountdownApp:
         "btn_default": "#334155",
         "btn_hover_min": "#F59E0B",
         "btn_hover_close": "#EF4444",
+        "white": "#FFFFFF",
     }
 
     def __init__(self, master):
         self.master = master
-        self.master.title("倒计时工具")
-        self.master.geometry("560x610")
+        self.master.title(APP_NAME)
+        self.master.geometry(f"{self.WINDOW_WIDTH}x{self.WINDOW_HEIGHT}")
         self.master.resizable(False, False)
         self.master.configure(bg=self.COLORS["bg"])
         # macOS 不支持 overrideredirect，会导致窗口无法显示
@@ -95,14 +281,19 @@ class CountdownApp:
         self._drag_y = 0
 
         self.running = False
+        self._state = STATE_IDLE
         self._countdown_timer_id = None
         self.btn_start = None
         self.tray_icon = None
         self._first_hide = True
+        self._error_timer_id = None
+        self._preset_duration = None
+        self._applying_preset = False
 
         # 报警相关
         self._alarm_count = 0
         self._alarm_timer_id = None
+        self._bell_count = 0
 
         self.FONTS = self._get_fonts()
 
@@ -112,6 +303,7 @@ class CountdownApp:
         self.mini_countdown_label = None
         self.mini_time_label = None
         self._transparent_mode = False
+        self._last_mode = "full"
         self._drag_data = {"x": 0, "y": 0}
 
         # 倒计时状态（完整和 mini 共享）
@@ -119,7 +311,7 @@ class CountdownApp:
         self.countdown_text = "--:--:--"
 
         self._mini_pos = None  # 保存 Mini 窗口位置
-        self._config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+        self._config_file = user_config_path()
         self._load_config()
 
         self._setup_styles()
@@ -130,9 +322,11 @@ class CountdownApp:
         self._center_window()
         self._set_window_rounded_corners()
         self._set_taskbar_visible()
-        # macOS 不自动切换到 Mini 模式
+        # 启动模式：last_mode=mini 进 Mini；无配置时非 Darwin 保持旧行为进 Mini
         if platform.system() != "Darwin":
-            self._switch_to_mini()
+            has_last = "last_mode" in getattr(self, "_loaded_keys", set())
+            if (has_last and self._last_mode == "mini") or (not has_last):
+                self._switch_to_mini()
 
     @staticmethod
     def _get_fonts():
@@ -168,35 +362,63 @@ class CountdownApp:
                 "mini_countdown": ("Monospace", 16, "bold"),
             }
 
+    def _font(self, key, size=None, bold=None):
+        """基于 FONTS 派生字体，保证跨平台一致"""
+        base = self.FONTS[key]
+        family = base[0]
+        fsize = size if size is not None else base[1]
+        weight = "bold" if bold is True else (base[2] if bold is None and len(base) > 2 else None)
+        if weight:
+            return (family, fsize, weight)
+        return (family, fsize)
+
     def _load_config(self):
+        self._loaded_keys = set()
         try:
-            if os.path.exists(self._config_file):
-                with open(self._config_file, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-                    self._mini_pos = config.get("mini_position")
+            config = load_config_dict(self._config_file)
+            self._loaded_keys = set(config.keys())
+            self._mini_pos = config.get("mini_position")
+            if "transparent_mode" in config:
+                self._transparent_mode = bool(config.get("transparent_mode"))
+            lm = config.get("last_mode")
+            if lm in ("full", "mini"):
+                self._last_mode = lm
         except Exception:
+            logger.exception("读取配置失败")
             self._mini_pos = None
 
     def _save_config(self):
         try:
-            config = {}
-            if self._mini_pos:
-                config["mini_position"] = self._mini_pos
-            with open(self._config_file, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2)
+            config = load_config_dict(self._config_file)
+            config = merge_mini_position(config, self._mini_pos)
+            mode = "mini" if self._is_mini else "full"
+            config = merge_config(
+                config,
+                transparent_mode=bool(self._transparent_mode),
+                last_mode=mode,
+            )
+            save_config_dict(self._config_file, config)
         except Exception:
-            pass
+            logger.exception("保存配置失败")
+
+    def _set_state(self, action: str) -> str:
+        """按动作推进状态机，并同步按钮文案与 running 标志。"""
+        self._state = next_state(action, self._state)
+        self.running = self._state == STATE_RUNNING
+        if self.btn_start:
+            self.btn_start.config(text=button_text_for_state(self._state))
+        return self._state
 
     def _set_icon(self):
         try:
             if os.path.exists(_ICON_PATH):
                 self.master.iconbitmap(_ICON_PATH)
         except Exception:
-            pass
+            logger.warning("设置窗口图标失败", exc_info=True)
 
     def _start_drag(self, event):
         """开始拖动窗口"""
-        if event.x > 440:  # 右侧120px为按钮区域，不触发拖动
+        if event.x > self.TITLE_DRAG_EXCLUDE_RIGHT:
             return
         self._drag_x = event.x
         self._drag_y = event.y
@@ -239,6 +461,7 @@ class CountdownApp:
             if result != 0:
                 self._set_window_rounded_corners_fallback()
         except Exception:
+            logger.warning("DWM 圆角设置失败，尝试回退方案", exc_info=True)
             self._set_window_rounded_corners_fallback()
 
     def _set_window_rounded_corners_fallback(self):
@@ -250,7 +473,7 @@ class CountdownApp:
             from ctypes import wintypes
 
             hwnd = int(self.master.frame(), 16)
-            radius = 20
+            radius = self.CORNER_RADIUS
             width = self.master.winfo_width()
             height = self.master.winfo_height()
 
@@ -268,7 +491,7 @@ class CountdownApp:
             set_window_rgn.restype = ctypes.c_int
             set_window_rgn(hwnd, rgn, True)
         except Exception:
-            pass
+            logger.warning("GDI 圆角设置失败", exc_info=True)
 
     def _set_taskbar_visible(self):
         """设置窗口在任务栏和 Alt+Tab 中可见"""
@@ -296,7 +519,7 @@ class CountdownApp:
             style = style | WS_EX_APPWINDOW
             set_window_long(hwnd, GWL_EXSTYLE, style)
         except Exception:
-            pass
+            logger.warning("任务栏可见性设置失败", exc_info=True)
 
     def _init_circle_button(self, canvas, cx, cy, r, fill="#64748B", outline="", text="", text_color="#F1F5F9",
                             font_size=10):
@@ -328,7 +551,7 @@ class CountdownApp:
             menu = pystray.Menu(
                 pystray.MenuItem("显示主窗口", self._tray_show_window, default=True),
                 pystray.MenuItem("选择时间", self._tray_show_time_picker),
-                pystray.MenuItem(lambda _: "暂停" if self.running else "开始倒计时", self._tray_toggle_countdown),
+                pystray.MenuItem(lambda _: button_text_for_state(self._state), self._tray_toggle_countdown),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem("Mini 模式", self._tray_toggle_mini),
                 pystray.MenuItem("透明模式", self._tray_toggle_transparent,
@@ -336,10 +559,10 @@ class CountdownApp:
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem("退出", self._tray_quit),
             )
-            self.tray_icon = pystray.Icon("倒计时工具", image, "倒计时工具", menu)
+            self.tray_icon = pystray.Icon(APP_NAME, image, APP_NAME, menu)
             threading.Thread(target=self.tray_icon.run, daemon=True).start()
-        except Exception as e:
-            print(f"托盘图标创建失败: {e}")
+        except Exception:
+            logger.exception("托盘图标创建失败")
             self.tray_icon = None
 
     def _load_tray_icon(self):
@@ -376,9 +599,16 @@ class CountdownApp:
         self.master.after(0, self._toggle_mini_mode)
 
     def _tray_toggle_transparent(self, icon=None, item=None):
+        def _do():
+            self._toggle_transparent_mode()
+
+        self.master.after(0, _do)
+
+    def _toggle_transparent_mode(self):
         self._transparent_mode = not self._transparent_mode
+        self._save_config()
         if self._is_mini:
-            self.master.after(0, self._recreate_mini_window)
+            self._recreate_mini_window()
 
     def _tray_quit(self, icon=None, item=None):
         self.master.after(0, self._quit_app)
@@ -391,7 +621,13 @@ class CountdownApp:
         self.master.lift()
         self.master.focus_force()
 
+    def _has_tray(self):
+        return bool(_HAS_PYSTRAY and self.tray_icon)
+
     def _hide_to_tray(self):
+        if not self._has_tray():
+            self._quit_app()
+            return
         if self._first_hide:
             self._first_hide = False
             self.master.after(0, lambda: messagebox.showinfo(
@@ -403,11 +639,12 @@ class CountdownApp:
         self.master.withdraw()
 
     def _quit_app(self):
+        self._save_config()
         if self.tray_icon:
             try:
                 self.tray_icon.stop()
             except Exception:
-                pass
+                logger.warning("停止托盘图标失败", exc_info=True)
         self._destroy_mini_window()
         self.master.destroy()
 
@@ -424,16 +661,20 @@ class CountdownApp:
     def _switch_to_mini(self):
         """切换到 Mini 模式"""
         self._is_mini = True
+        self._last_mode = "mini"
         self.master.update()
         self.master.withdraw()
         self._create_mini_window()
+        self._save_config()
 
     def _switch_to_full(self):
         """切换到完整模式"""
         self._is_mini = False
+        self._last_mode = "full"
         self._destroy_mini_window()
         self.master.deiconify()
         self.master.lift()
+        self._save_config()
 
     def _create_mini_window(self):
         """创建 Mini 桌面小组件 - 毛玻璃风格"""
@@ -451,15 +692,15 @@ class CountdownApp:
             # 否则不设透明度，完全不透明，WM_NCHITTEST 原生拖拽
 
         # 设置窗口大小和位置（屏幕右下角）
-        win_w, win_h = 220, 48
+        win_w, win_h = self.MINI_WIDTH, self.MINI_HEIGHT
         screen_w = mini.winfo_screenwidth()
         screen_h = mini.winfo_screenheight()
 
         if self._mini_pos:
             x, y = self._mini_pos
         else:
-            x = (screen_w - win_w) // 2
-            y = (screen_h - win_h) // 2
+            x = screen_w - win_w - self.MINI_MARGIN_RIGHT
+            y = screen_h - win_h - self.MINI_MARGIN_BOTTOM
         mini.geometry(f"{win_w}x{win_h}+{x}+{y}")
 
         # 毛玻璃边框（透明模式下去除边框）
@@ -495,7 +736,7 @@ class CountdownApp:
         self.mini_countdown_label = tk.Label(
             content_frame, text=self.countdown_text,
             font=self.FONTS["mini_countdown"],
-            bg=self.COLORS["title_bar"], fg="#FFFFFF",
+            bg=self.COLORS["title_bar"], fg=self.COLORS["white"],
         )
         self.mini_countdown_label.pack(side=tk.LEFT, expand=True)
 
@@ -505,7 +746,7 @@ class CountdownApp:
 
         # 展开按钮
         expand_btn = tk.Label(
-            btn_frame, text="↗", font=("Segoe UI", 10),
+            btn_frame, text="↗", font=self._font("label", 10),
             bg=self.COLORS["title_bar"], fg=self.COLORS["accent_glow"], cursor="hand2",
         )
         expand_btn.pack(side=tk.LEFT, padx=(0, 4))
@@ -513,47 +754,74 @@ class CountdownApp:
 
         # 关闭按钮
         close_btn = tk.Label(
-            btn_frame, text="×", font=("Segoe UI", 10, "bold"),
+            btn_frame, text="×", font=self._font("label", 10, bold=True),
             bg=self.COLORS["title_bar"], fg=self.COLORS["text_dim"], cursor="hand2",
         )
         close_btn.pack(side=tk.LEFT)
-        close_btn.bind("<Button-1>", lambda e: self._quit_app())
+        close_btn.bind("<Button-1>", lambda e: self._mini_close())
         close_btn.bind("<Enter>", lambda e: close_btn.config(fg=self.COLORS["btn_hover_close"]))
         close_btn.bind("<Leave>", lambda e: close_btn.config(fg=self.COLORS["text_dim"]))
 
-        # 拖拽功能（透明模式不需要拖拽）
+        # 拖拽（含透明模式）
+        drag_widgets = (mini, main_frame, content_frame,
+                        self.mini_time_label, self.mini_countdown_label)
         if platform.system() == "Windows":
-            if not self._transparent_mode:
-                for w in (mini, main_frame, content_frame,
-                          self.mini_time_label, self.mini_countdown_label):
-                    w.bind("<Button-1>", self._mini_start_drag)
+            for w in drag_widgets:
+                w.bind("<Button-1>", self._mini_start_drag)
+                w.bind("<ButtonRelease-1>", self._mini_end_drag)
         else:
-            for widget in (mini, main_frame, content_frame,
-                           self.mini_time_label, self.mini_countdown_label):
+            for widget in drag_widgets:
                 widget.bind("<Button-1>", self._mini_start_drag)
                 widget.bind("<B1-Motion>", self._mini_do_drag)
+                widget.bind("<ButtonRelease-1>", self._mini_end_drag)
+
+        # 右键菜单
+        for w in drag_widgets:
+            w.bind("<Button-3>", self._show_mini_context_menu)
+            if platform.system() == "Darwin":
+                w.bind("<Control-Button-1>", self._show_mini_context_menu)
 
         self.mini_window = mini
 
         # 同步当前状态
         self._sync_mini_state()
 
+    def _show_mini_context_menu(self, event):
+        """Mini 右键菜单。"""
+        menu = tk.Menu(self.mini_window or self.master, tearoff=0,
+                       bg=self.COLORS["card"], fg=self.COLORS["text"],
+                       activebackground=self.COLORS["accent"],
+                       activeforeground=self.COLORS["white"])
+        menu.add_command(label="展开完整模式", command=self._switch_to_full)
+        if platform.system() == "Windows":
+            menu.add_command(
+                label="关闭透明模式" if self._transparent_mode else "开启透明模式",
+                command=self._toggle_transparent_mode,
+            )
+        menu.add_separator()
+        if self._has_tray():
+            menu.add_command(label="隐藏到托盘", command=self._mini_close)
+        else:
+            menu.add_command(label="关闭", command=self._mini_close)
+        menu.add_command(label="退出", command=self._quit_app)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
     def _destroy_mini_window(self):
         if self.mini_window:
             try:
-                # 保存位置
-                geo = self.mini_window.geometry()
-                # 解析 +x+y 格式
-                parts = geo.split("+")
-                if len(parts) == 3:
-                    self._mini_pos = (int(parts[1]), int(parts[2]))
+                pos = parse_mini_geometry(self.mini_window.geometry())
+                if pos is not None:
+                    self._mini_pos = pos
                     self._save_config()
             except Exception:
-                pass
+                logger.warning("保存 Mini 窗口位置失败", exc_info=True)
             try:
                 self.mini_window.destroy()
             except Exception:
-                pass
+                logger.warning("销毁 Mini 窗口失败", exc_info=True)
             self.mini_window = None
             self.mini_countdown_label = None
             self.mini_time_label = None
@@ -571,7 +839,7 @@ class CountdownApp:
                 ctypes.windll.user32.ReleaseCapture()
                 ctypes.windll.user32.PostMessageW(hwnd, 0xA1, 2, 0)
             except Exception:
-                pass
+                logger.debug("Mini 原生拖动失败", exc_info=True)
         else:
             self._drag_data["x"] = event.x
             self._drag_data["y"] = event.y
@@ -584,82 +852,115 @@ class CountdownApp:
             y = self.mini_window.winfo_y() + event.y - self._drag_data["y"]
             self.mini_window.geometry(f"+{x}+{y}")
             self._mini_pos = (x, y)
-            self._save_config()
+
+    def _mini_end_drag(self, event=None):
+        if not self.mini_window:
+            return
+        try:
+            pos = parse_mini_geometry(self.mini_window.geometry())
+            if pos is not None:
+                self._mini_pos = pos
+                self._save_config()
+        except Exception:
+            logger.warning("结束 Mini 拖动时保存位置失败", exc_info=True)
+
+    def _mini_close(self):
+        """Mini 关闭：有托盘则隐藏到托盘，否则回到完整模式"""
+        if self._has_tray():
+            self._is_mini = False
+            self._destroy_mini_window()
+            self.master.withdraw()
+            if self._first_hide:
+                self._first_hide = False
+                self.master.after(0, lambda: messagebox.showinfo(
+                    "提示",
+                    "程序已最小化到系统托盘。\n"
+                    "右键托盘图标可切换 Mini 模式或退出。",
+                    parent=self.master,
+                ))
+        else:
+            self._switch_to_full()
 
     def _sync_mini_state(self):
         """同步 mini 窗口的状态"""
         if self.mini_window and self.mini_countdown_label:
             self.mini_countdown_label.config(text=self.countdown_text)
-            if self.running:
-                self.mini_countdown_label.config(fg="#FFFFFF")
-            elif self.countdown_text == "已到时间!":
+            if self._state == STATE_RUNNING:
+                self.mini_countdown_label.config(fg=self.COLORS["white"])
+            elif self._state == STATE_FINISHED:
                 self.mini_countdown_label.config(fg=self.COLORS["success"])
             else:
                 self.mini_countdown_label.config(fg=self.COLORS["text_dim"])
 
     def _show_time_picker(self):
-        """弹出时间选择器 - 无边框毛玻璃风格"""
+        """弹出时间选择器 - 毛玻璃风格（macOS 保留系统标题栏以便聚焦）"""
 
+        is_darwin = platform.system() == "Darwin"
         picker = tk.Toplevel(self.master)
         picker.title("选择时间")
-        picker.geometry("320x240")
+        picker.geometry(f"{self.PICKER_WIDTH}x{self.PICKER_HEIGHT}")
         picker.resizable(False, False)
         picker.configure(bg=self.COLORS["bg"])
-        picker.overrideredirect(True)  # 去掉原生边框
+        # Darwin 下 overrideredirect 易导致无法聚焦，保留系统标题栏
+        if not is_darwin:
+            picker.overrideredirect(True)
         picker.attributes("-topmost", True)
 
         # 屏幕居中
         picker.update_idletasks()
         sw = picker.winfo_screenwidth()
         sh = picker.winfo_screenheight()
-        px = sw // 2 - 160
-        py = sh // 2 - 120
+        px = sw // 2 - self.PICKER_WIDTH // 2
+        py = sh // 2 - self.PICKER_HEIGHT // 2
         picker.geometry(f"+{px}+{py}")
 
-        # 拖动变量
-        _picker_drag = {"x": 0, "y": 0}
+        if not is_darwin:
+            # 拖动变量
+            _picker_drag = {"x": 0, "y": 0}
 
-        def _picker_start_drag(e):
-            _picker_drag["x"] = e.x
-            _picker_drag["y"] = e.y
+            def _picker_start_drag(e):
+                _picker_drag["x"] = e.x
+                _picker_drag["y"] = e.y
 
-        def _picker_do_drag(e):
-            x = picker.winfo_x() + e.x - _picker_drag["x"]
-            y = picker.winfo_y() + e.y - _picker_drag["y"]
-            picker.geometry(f"+{x}+{y}")
+            def _picker_do_drag(e):
+                x = picker.winfo_x() + e.x - _picker_drag["x"]
+                y = picker.winfo_y() + e.y - _picker_drag["y"]
+                picker.geometry(f"+{x}+{y}")
 
-        # 自定义标题栏
-        p_title_bar = tk.Frame(picker, bg=self.COLORS["title_bar"], height=36)
-        p_title_bar.pack(fill=tk.X)
-        p_title_bar.pack_propagate(False)
-        p_title_bar.bind("<Button-1>", _picker_start_drag)
-        p_title_bar.bind("<B1-Motion>", _picker_do_drag)
+            # 自定义标题栏
+            p_title_bar = tk.Frame(picker, bg=self.COLORS["title_bar"], height=36)
+            p_title_bar.pack(fill=tk.X)
+            p_title_bar.pack_propagate(False)
+            p_title_bar.bind("<Button-1>", _picker_start_drag)
+            p_title_bar.bind("<B1-Motion>", _picker_do_drag)
 
-        title_label = tk.Label(p_title_bar, text="  ⏱ 选择时间",
-                               bg=self.COLORS["title_bar"], fg=self.COLORS["text"],
-                               font=("Segoe UI", 9))
-        title_label.pack(side=tk.LEFT, fill=tk.Y)
-        title_label.bind("<Button-1>", _picker_start_drag)
-        title_label.bind("<B1-Motion>", _picker_do_drag)
+            title_label = tk.Label(p_title_bar, text="  ⏱ 选择时间",
+                                   bg=self.COLORS["title_bar"], fg=self.COLORS["text"],
+                                   font=self._font("label", 9))
+            title_label.pack(side=tk.LEFT, fill=tk.Y)
+            title_label.bind("<Button-1>", _picker_start_drag)
+            title_label.bind("<B1-Motion>", _picker_do_drag)
 
-        # 关闭按钮
-        p_close = tk.Canvas(p_title_bar, width=24, height=24,
-                            bg=self.COLORS["title_bar"], highlightthickness=0, cursor="hand2")
-        p_close.pack(side=tk.RIGHT, padx=(0, 8))
-        p_close_items = self._init_circle_button(p_close, 12, 12, 11,
-                                                 fill=self.COLORS["btn_default"], text="×",
-                                                 text_color=self.COLORS["text_dim"], font_size=10)
-        p_close.bind("<Enter>", lambda e: self._update_circle_button(
-            p_close, p_close_items, fill=self.COLORS["btn_hover_close"], text_color="#FFFFFF"))
-        p_close.bind("<Leave>", lambda e: self._update_circle_button(
-            p_close, p_close_items, fill=self.COLORS["btn_default"], text_color=self.COLORS["text_dim"]))
-        p_close.bind("<Button-1>", lambda e: picker.destroy())
+            # 关闭按钮
+            p_close = tk.Canvas(p_title_bar, width=24, height=24,
+                                bg=self.COLORS["title_bar"], highlightthickness=0, cursor="hand2")
+            p_close.pack(side=tk.RIGHT, padx=(0, 8))
+            p_close_items = self._init_circle_button(p_close, 12, 12, 11,
+                                                     fill=self.COLORS["btn_default"], text="×",
+                                                     text_color=self.COLORS["text_dim"], font_size=10)
+            p_close.bind("<Enter>", lambda e: self._update_circle_button(
+                p_close, p_close_items, fill=self.COLORS["btn_hover_close"],
+                text_color=self.COLORS["white"]))
+            p_close.bind("<Leave>", lambda e: self._update_circle_button(
+                p_close, p_close_items, fill=self.COLORS["btn_default"],
+                text_color=self.COLORS["text_dim"]))
+            p_close.bind("<Button-1>", lambda e: picker.destroy())
 
-        # 底部紫色细线
-        tk.Frame(picker, bg=self.COLORS["accent"], height=1).pack(fill=tk.X)
+            # 底部紫色细线
+            tk.Frame(picker, bg=self.COLORS["accent"], height=1).pack(fill=tk.X)
 
         # 标题
-        tk.Label(picker, text="到期时间", font=("Segoe UI", 12, "bold"),
+        tk.Label(picker, text="到期时间", font=self._font("button"),
                  bg=self.COLORS["bg"], fg=self.COLORS["text"]).pack(pady=(12, 8))
 
         # 时间输入框容器
@@ -673,15 +974,17 @@ class CountdownApp:
         h_var = tk.StringVar(value="18")
         m_var = tk.StringVar(value="00")
         s_var = tk.StringVar(value="00")
+        mono_font = self._font("time", 18)
+        mono_bold = self._font("time", 18, bold=True)
 
         for var, mx in [(h_var, 23), (m_var, 59), (s_var, 59)]:
             sb = ttk.Spinbox(input_frame, textvariable=var, from_=0, to=mx,
-                             width=3, font=("Consolas", 18), wrap=True,
+                             width=3, font=mono_font, wrap=True,
                              style="TSpinbox")
             sb.pack(side=tk.LEFT, padx=6)
 
             if var != s_var:
-                tk.Label(input_frame, text=":", font=("Consolas", 18, "bold"),
+                tk.Label(input_frame, text=":", font=mono_bold,
                          bg=self.COLORS["glass"], fg=self.COLORS["text_dim"]).pack(side=tk.LEFT)
 
         def confirm():
@@ -693,24 +996,24 @@ class CountdownApp:
                 self.minute_var.set(f"{m:02d}")
                 self.second_var.set(f"{s:02d}")
                 picker.destroy()
-                if not self.running:
+                if self._state != STATE_RUNNING:
                     self.toggle_countdown()
             except ValueError:
-                pass
+                logger.debug("时间选择器输入无效", exc_info=True)
 
         # 确认 / 取消按钮
         btn_frame = tk.Frame(picker, bg=self.COLORS["bg"])
         btn_frame.pack(pady=14)
 
-        ok_btn = tk.Label(btn_frame, text="确认", font=("Segoe UI", 11, "bold"),
-                          bg=self.COLORS["accent"], fg="#FFFFFF", padx=24, pady=6,
+        ok_btn = tk.Label(btn_frame, text="确认", font=self._font("label", 11, bold=True),
+                          bg=self.COLORS["accent"], fg=self.COLORS["white"], padx=24, pady=6,
                           cursor="hand2")
         ok_btn.pack(side=tk.LEFT, padx=6)
         ok_btn.bind("<Button-1>", lambda e: confirm())
         ok_btn.bind("<Enter>", lambda e: ok_btn.config(bg=self.COLORS["accent_hover"]))
         ok_btn.bind("<Leave>", lambda e: ok_btn.config(bg=self.COLORS["accent"]))
 
-        cancel_btn = tk.Label(btn_frame, text="取消", font=("Segoe UI", 11),
+        cancel_btn = tk.Label(btn_frame, text="取消", font=self._font("label", 11),
                               bg=self.COLORS["card"], fg=self.COLORS["text_dim"],
                               padx=24, pady=6, cursor="hand2")
         cancel_btn.pack(side=tk.LEFT, padx=6)
@@ -720,6 +1023,10 @@ class CountdownApp:
 
         picker.bind("<Return>", lambda e: confirm())
         picker.bind("<Escape>", lambda e: picker.destroy())
+        try:
+            picker.focus_force()
+        except Exception:
+            logger.debug("时间选择器聚焦失败", exc_info=True)
 
     # ------------------------------------------------------------------
     # UI
@@ -785,9 +1092,9 @@ class CountdownApp:
         title_bar.bind("<B1-Motion>", self._on_drag)
 
         # 标题文字
-        title_label = tk.Label(title_bar, text="  ⏱ 倒计时工具",
+        title_label = tk.Label(title_bar, text=f"  ⏱ {APP_NAME}",
                                bg=self.COLORS["title_bar"], fg=self.COLORS["text"],
-                               font=("Segoe UI", 10, "bold"))
+                               font=self._font("label", 10, bold=True))
         title_label.pack(side=tk.LEFT, fill=tk.Y)
         title_label.bind("<Button-1>", self._start_drag)
         title_label.bind("<B1-Motion>", self._on_drag)
@@ -807,7 +1114,7 @@ class CountdownApp:
         close_btn.bind("<Enter>",
                        lambda e: self._update_circle_button(close_btn, close_btn_items,
                                                             fill=self.COLORS["btn_hover_close"],
-                                                            text_color="#FFFFFF"))
+                                                            text_color=self.COLORS["white"]))
         close_btn.bind("<Leave>",
                        lambda e: self._update_circle_button(close_btn, close_btn_items,
                                                             fill=self.COLORS["btn_default"],
@@ -825,7 +1132,7 @@ class CountdownApp:
         min_btn.bind("<Enter>",
                      lambda e: self._update_circle_button(min_btn, min_btn_items,
                                                           fill=self.COLORS["btn_hover_min"],
-                                                          text_color="#FFFFFF"))
+                                                          text_color=self.COLORS["white"]))
         min_btn.bind("<Leave>",
                      lambda e: self._update_circle_button(min_btn, min_btn_items,
                                                           fill=self.COLORS["btn_default"],
@@ -839,7 +1146,7 @@ class CountdownApp:
         # 标题
         title_frame = tk.Frame(main_frame, bg=self.COLORS["bg"])
         title_frame.pack(fill=tk.X, pady=(0, 14))
-        ttk.Label(title_frame, text="倒计时工具", style="Title.TLabel").pack()
+        ttk.Label(title_frame, text=APP_NAME, style="Title.TLabel").pack()
 
         # 当前时间卡片 - 带发光边框
         clock_card = RoundedFrame(main_frame, bg_color=self.COLORS["glass"],
@@ -882,15 +1189,17 @@ class CountdownApp:
             (self.second_var, 0, 59),
         ]
 
+        spin_font = self._font("time", 14)
+        spin_colon_font = self._font("time", 14, bold=True)
         for idx, (var, min_val, max_val) in enumerate(spinboxes):
             sb = ttk.Spinbox(
                 spin_input_frame, textvariable=var, from_=min_val, to=max_val,
-                width=3, font=("Consolas", 14), wrap=True,
+                width=3, font=spin_font, wrap=True,
                 justify="center",
             )
             sb.grid(row=0, column=idx * 2, padx=4)
             if idx < 2:
-                ttk.Label(spin_input_frame, text=":", font=("Consolas", 14, "bold"),
+                ttk.Label(spin_input_frame, text=":", font=spin_colon_font,
                           background=self.COLORS["glass"], foreground=self.COLORS["text_dim"]
                           ).grid(row=0, column=idx * 2 + 1)
 
@@ -933,7 +1242,7 @@ class CountdownApp:
             ("1小时", "01", "00", "00"),
         ]
         for text, h, m, s in preset_buttons:
-            btn = tk.Label(preset_inner, text=text, font=("Segoe UI", 9),
+            btn = tk.Label(preset_inner, text=text, font=self._font("label", 9),
                            bg=self.COLORS["input_bg"], fg=self.COLORS["text"],
                            padx=10, pady=4, cursor="hand2")
             btn.pack(side=tk.LEFT, padx=(0, 8))
@@ -968,93 +1277,122 @@ class CountdownApp:
     # ------------------------------------------------------------------
 
     def update_clock(self):
-        now = datetime.now().strftime("%H:%M:%S")
-        self.current_time_label.config(text=now)
-        # 同步 mini 窗口时间
+        now = datetime.now()
+        self.current_time_label.config(text=now.strftime("%H:%M:%S"))
         if self.mini_time_label:
-            self.mini_time_label.config(text=now)
-        self.master.after(1000, self.update_clock)
+            self.mini_time_label.config(text=now.strftime("%H:%M"))
+        self.master.after(next_second_delay_ms(), self.update_clock)
+
+    def _format_target_label(self, target, now=None):
+        return format_target_label(target, now)
 
     def _on_time_changed(self, *args):
         """当用户修改时间时，实时更新目标时间显示"""
+        if not self._applying_preset:
+            self._preset_duration = None
         try:
             h = int(self.hour_var.get())
             m = int(self.minute_var.get())
             s = int(self.second_var.get())
-            if not (0 <= h <= 23 and 0 <= m <= 59 and 0 <= s <= 59):
+            ok, _ = validate_hms(h, m, s)
+            if not ok:
                 self.target_time_label.config(text="")
                 return
             now = datetime.now()
-            target = now.replace(hour=h, minute=m, second=s, microsecond=0)
-            if target < now:
-                target += timedelta(days=1)
+            target = target_from_hms(h, m, s, now)
             self.target_time = target
-            self.target_time_label.config(text=target.strftime('%H:%M:%S'))
+            self.target_time_label.config(text=self._format_target_label(target, now))
         except ValueError:
             pass
 
     def toggle_countdown(self):
-        btn_text = self.btn_start.cget("text")
-        if btn_text == "重新开始":
+        if self._state == STATE_FINISHED:
             self._restart_countdown()
             return
-        self.running = not self.running
-        if self.running:
-            self.start_countdown()
-            self.btn_start.config(text="暂停")
-        else:
+        if self._state == STATE_RUNNING:
             if self._countdown_timer_id is not None:
                 try:
                     self.master.after_cancel(self._countdown_timer_id)
                 except Exception:
-                    pass
+                    logger.debug("暂停时取消倒计时定时器失败", exc_info=True)
                 self._countdown_timer_id = None
-            self.btn_start.config(text="继续")
+            self._set_state(ACTION_PAUSE)
+        elif self._state == STATE_PAUSED:
+            self._set_state(ACTION_RESUME)
+            if self.target_time:
+                self.update_countdown(self.target_time)
+            else:
+                self.start_countdown()
+        else:
+            # idle → start
+            self.start_countdown()
         self._sync_mini_state()
 
+    def _apply_target_to_spinboxes(self, target):
+        self._applying_preset = True
+        try:
+            self.hour_var.set(f"{target.hour:02d}")
+            self.minute_var.set(f"{target.minute:02d}")
+            self.second_var.set(f"{target.second:02d}")
+        finally:
+            self._applying_preset = False
+
     def _restart_countdown(self):
-        if self.target_time:
-            self.running = True
-            self.btn_start.config(text="暂停")
-            self.update_countdown(self.target_time)
-        else:
-            self.start_countdown()
+        if self._preset_duration is not None:
+            now = datetime.now()
+            target = now + self._preset_duration
+            self._apply_target_to_spinboxes(target)
+            self.target_time = target
+            self.target_time_label.config(text=self._format_target_label(target, now))
+            self._set_state(ACTION_RESTART)
+            self.update_countdown(target)
+            self._sync_mini_state()
+            return
+        # 校验失败保持 finished，不提前转 running
+        if not self.validate_inputs():
+            return
+        target = self.get_target_time()
+        if not target:
+            return
+        self.target_time = target
+        self._set_state(ACTION_RESTART)
+        self.update_countdown(self.target_time)
+        self._sync_mini_state()
 
     def start_countdown(self):
         if not self.validate_inputs():
-            self.running = False
+            self._set_state(ACTION_START_FAIL)
             return
         self.target_time = self.get_target_time()
         if not self.target_time:
+            self._set_state(ACTION_START_FAIL)
             return
+        if self._state == STATE_IDLE:
+            self._set_state(ACTION_START)
+        elif self._state == STATE_PAUSED:
+            self._set_state(ACTION_RESUME)
+        elif self._state == STATE_FINISHED:
+            self._set_state(ACTION_RESTART)
         self.update_countdown(self.target_time)
 
     def validate_inputs(self):
-        try:
-            for var, max_val in [(self.hour_var, 23),
-                                 (self.minute_var, 59),
-                                 (self.second_var, 59)]:
-                val = int(var.get())
-                if val < 0 or val > max_val:
-                    self.show_error(f"输入值应在 00-{max_val:02} 之间")
-                    return False
-            return True
-        except ValueError:
-            self.show_error("请输入有效数字")
+        ok, err = validate_hms(
+            self.hour_var.get(),
+            self.minute_var.get(),
+            self.second_var.get(),
+        )
+        if not ok:
+            self.show_error(err or "请输入有效数字")
             return False
+        return True
 
     def get_target_time(self):
-        now = datetime.now()
         try:
-            target = now.replace(
-                hour=int(self.hour_var.get()),
-                minute=int(self.minute_var.get()),
-                second=int(self.second_var.get()),
-                microsecond=0,
+            return target_from_hms(
+                int(self.hour_var.get()),
+                int(self.minute_var.get()),
+                int(self.second_var.get()),
             )
-            if target < now:
-                target += timedelta(days=1)
-            return target
         except ValueError as e:
             self.show_error(str(e))
             return None
@@ -1068,37 +1406,80 @@ class CountdownApp:
             try:
                 self.master.after_cancel(self._countdown_timer_id)
             except Exception:
-                pass
+                logger.debug("取消倒计时定时器失败", exc_info=True)
             self._countdown_timer_id = None
 
         remaining = target_time - datetime.now()
         if remaining.total_seconds() <= 0:
             self.countdown_text = "已到时间!"
             self.countdown_label.config(text="已到时间!", style="Success.TLabel")
-            self.running = False
-            self.btn_start.config(text="重新开始")
+            self._set_state(ACTION_FINISH)
             self._sync_mini_state()
-            self._alarm_count = 0
-            self._flash_visual()
+            self._on_countdown_finished()
             self._countdown_timer_id = None
             return
 
         total_seconds = int(remaining.total_seconds())
-        hours, remainder = divmod(total_seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        self.countdown_text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        self.countdown_text = format_remaining(total_seconds)
         self.countdown_label.config(text=self.countdown_text, style="Countdown.TLabel")
 
         # 同步 mini 窗口
         self._sync_mini_state()
 
-        self._countdown_timer_id = self.master.after(1000, lambda: self.update_countdown(target_time))
+        self._countdown_timer_id = self.master.after(
+            next_second_delay_ms(), lambda: self.update_countdown(target_time)
+        )
+
+    def _on_countdown_finished(self):
+        """结束提醒：闪烁 + 通知 + 提示音。失败只 log。"""
+        self._alarm_count = 0
+        self._bell_count = 0
+        try:
+            self._flash_visual()
+        except Exception:
+            logger.warning("视觉闪烁失败", exc_info=True)
+        try:
+            self._notify_finished()
+        except Exception:
+            logger.warning("结束通知失败", exc_info=True)
+        try:
+            self._ring_bell()
+        except Exception:
+            logger.warning("提示音失败", exc_info=True)
+
+    def _notify_finished(self):
+        title = APP_NAME
+        message = "倒计时已结束"
+        if self.tray_icon is not None:
+            try:
+                self.tray_icon.notify(message, title)
+                return
+            except Exception:
+                logger.debug("托盘 notify 失败", exc_info=True)
+        # 无托盘：非阻塞提示
+        try:
+            self.master.after(0, lambda: messagebox.showinfo(title, message, parent=self.master))
+        except Exception:
+            logger.debug("messagebox 通知失败", exc_info=True)
+
+    def _ring_bell(self):
+        """响铃 2~3 次，间隔约 400ms。"""
+        try:
+            self.master.bell()
+        except Exception:
+            logger.debug("bell 失败", exc_info=True)
+        self._bell_count += 1
+        if self._bell_count < 3:
+            self.master.after(400, self._ring_bell)
 
     def _flash_visual(self):
         if not self.countdown_label:
             return
-        current_fg = self.COLORS["success"] if self._alarm_count % 2 == 0 else self.COLORS["error"]
-        self.countdown_label.config(fg=current_fg)
+        style = ttk.Style()
+        fg = self.COLORS["success"] if self._alarm_count % 2 == 0 else self.COLORS["error"]
+        style.configure("Flash.TLabel", font=self.FONTS["countdown"],
+                        foreground=fg, background=self.COLORS["glass"])
+        self.countdown_label.config(style="Flash.TLabel")
         self._alarm_count += 1
         if self._alarm_count >= 6:
             self.countdown_label.config(style="Countdown.TLabel")
@@ -1109,19 +1490,21 @@ class CountdownApp:
 
     def reset(self):
         self._alarm_count = 0
+        self._bell_count = 0
+        self._preset_duration = None
         if self._alarm_timer_id is not None:
             try:
                 self.master.after_cancel(self._alarm_timer_id)
             except Exception:
-                pass
+                logger.debug("取消报警定时器失败", exc_info=True)
             self._alarm_timer_id = None
         if self._countdown_timer_id is not None:
             try:
                 self.master.after_cancel(self._countdown_timer_id)
             except Exception:
-                pass
+                logger.debug("重置时取消倒计时定时器失败", exc_info=True)
             self._countdown_timer_id = None
-        self.running = False
+        self._set_state(ACTION_RESET)
         self.target_time = None
         self.hour_var.set("18")
         self.minute_var.set("00")
@@ -1129,35 +1512,69 @@ class CountdownApp:
         self.countdown_text = "--:--:--"
         self.countdown_label.config(text="--:--:--", style="Countdown.TLabel")
         self.error_label.config(text="")
-        self.btn_start.config(text="开始倒计时")
         self._sync_mini_state()
 
     def show_error(self, message):
+        if self._error_timer_id is not None:
+            try:
+                self.master.after_cancel(self._error_timer_id)
+            except Exception:
+                logger.debug("取消错误提示定时器失败", exc_info=True)
+            self._error_timer_id = None
         self.error_label.config(text=message)
-        self.master.after(3000, lambda: self.error_label.config(text=""))
+        self._error_timer_id = self.master.after(3000, self._clear_error)
+
+    def _clear_error(self):
+        self.error_label.config(text="")
+        self._error_timer_id = None
 
     def _set_preset_time(self, hours, minutes, seconds):
         now = datetime.now()
-        duration = timedelta(hours=int(hours), minutes=int(minutes), seconds=int(seconds))
-        target = now + duration
+        target, duration = target_from_duration(hours, minutes, seconds, now)
+        self._preset_duration = duration
 
-        if self.running:
-            self.toggle_countdown()
-        self.running = True
-        self.btn_start.config(text="暂停")
+        self._apply_target_to_spinboxes(target)
         self.target_time = target
+        self.target_time_label.config(text=self._format_target_label(target, now))
+
+        if self._countdown_timer_id is not None:
+            try:
+                self.master.after_cancel(self._countdown_timer_id)
+            except Exception:
+                logger.debug("预设时取消倒计时定时器失败", exc_info=True)
+            self._countdown_timer_id = None
+
+        # 预设直接进入 running（任意状态可切）
+        self._state = STATE_RUNNING
+        self.running = True
+        if self.btn_start:
+            self.btn_start.config(text=button_text_for_state(STATE_RUNNING))
         self.update_countdown(target)
         self._sync_mini_state()
 
 
 def main():
+    ok, _ = _acquire_single_instance()
+    if not ok:
+        brought = _bring_existing_to_front()
+        if not brought:
+            try:
+                root = tk.Tk()
+                root.withdraw()
+                messagebox.showinfo(APP_NAME, f"{APP_NAME} 已在运行中。")
+                root.destroy()
+            except Exception:
+                logger.warning("单实例提示失败", exc_info=True)
+                print(f"{APP_NAME} 已在运行中。")
+        return
+
     missing = []
     try:
-        import pystray
+        import pystray  # noqa: F401
     except ImportError:
         missing.append("pystray")
     try:
-        from PIL import Image
+        from PIL import Image  # noqa: F401
     except ImportError:
         missing.append("pillow")
 

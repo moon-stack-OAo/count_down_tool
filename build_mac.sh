@@ -1,39 +1,43 @@
 #!/bin/bash
 
-# 设置编码
+# 倒计时工具 (Count Down Tool) - macOS 打包脚本
+
 export LANG=en_US.UTF-8
 
-# 获取脚本所在目录
 TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
-VENV_DIR="$TOOL_DIR/../../.venv"
+
+# 优先项目内 .venv，再回退上级
+if [ -x "$TOOL_DIR/.venv/bin/python3" ]; then
+    VENV_DIR="$TOOL_DIR/.venv"
+elif [ -x "$TOOL_DIR/../.venv/bin/python3" ]; then
+    VENV_DIR="$TOOL_DIR/../.venv"
+else
+    VENV_DIR="$TOOL_DIR/.venv"
+fi
 PYTHON="$VENV_DIR/bin/python3"
 
-# 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 echo ""
 echo "========================================"
-echo "  Building Work Countdown Tool for Mac"
+echo "  Building Count Down Tool for Mac"
 echo "========================================"
 echo ""
 
-# 检查 Python环境
 if [ ! -f "$PYTHON" ]; then
     echo -e "${RED}[ERROR]${NC} Python not found at: $PYTHON"
-    echo "Please ensure virtual environment is set up correctly."
+    echo "Please create venv: python3 -m venv \"$TOOL_DIR/.venv\""
     exit 1
 fi
 
-# 检查 PyInstaller
 if ! "$PYTHON" -m PyInstaller --version &> /dev/null; then
     echo -e "${YELLOW}[WARNING]${NC} PyInstaller not found. Installing..."
     "$PYTHON" -m pip install pyinstaller
 fi
 
-# 检查依赖
 echo "Checking dependencies..."
 MISSING_DEPS=()
 if ! "$PYTHON" -c "import pystray" &> /dev/null; then
@@ -49,10 +53,8 @@ if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
     "$PYTHON" -m pip install "${MISSING_DEPS[@]}"
 fi
 
-# 切换到工具目录
 cd "$TOOL_DIR" || exit 1
 
-# 清理旧的构建文件
 if [ -d "build" ]; then
     echo "Cleaning old build files..."
     rm -rf build
@@ -61,7 +63,6 @@ if [ -f "count_down_tool.spec" ]; then
     rm -f count_down_tool.spec
 fi
 
-# 检查图标文件
 ICON_OPTION=""
 if [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
     echo "Found icon file: count_down_tool.icns"
@@ -71,7 +72,12 @@ else
     echo "Building without custom icon. Run convert_icon.sh to create one."
 fi
 
-# 构建
+# macOS 上 --add-data 使用冒号分隔
+ADD_DATA_OPTION=""
+if [ -f "$TOOL_DIR/count_down_tool.ico" ]; then
+    ADD_DATA_OPTION="--add-data=$TOOL_DIR/count_down_tool.ico:."
+fi
+
 echo ""
 echo "Building application..."
 "$PYTHON" -m PyInstaller \
@@ -79,6 +85,8 @@ echo "Building application..."
     --windowed \
     --name "count_down_tool" \
     $ICON_OPTION \
+    $ADD_DATA_OPTION \
+    --hidden-import countdown_core \
     --hidden-import pystray \
     --hidden-import pystray._darwin \
     --hidden-import PIL \
@@ -88,30 +96,38 @@ echo "Building application..."
     --specpath "$TOOL_DIR" \
     "$TOOL_DIR/count_down_tool.py"
 
-# 检查构建结果
 echo ""
 echo "========================================"
-if [ -f "$TOOL_DIR/dist/count_down_tool" ]; then
+# --windowed 在 macOS 通常生成 .app；也兼容单文件可执行体
+APP_BUNDLE="$TOOL_DIR/dist/count_down_tool.app"
+APP_BIN="$TOOL_DIR/dist/count_down_tool"
+if [ -d "$APP_BUNDLE" ] || [ -f "$APP_BIN" ]; then
     echo -e "${GREEN}Build successful!${NC}"
-    echo "File: $TOOL_DIR/dist/count_down_tool"
+    if [ -d "$APP_BUNDLE" ]; then
+        echo "App bundle: $APP_BUNDLE"
+    fi
+    if [ -f "$APP_BIN" ]; then
+        echo "Binary: $APP_BIN"
+        chmod +x "$APP_BIN"
+    fi
     echo "========================================"
     echo ""
-    
-    # 清理构建文件
+
     echo "Cleaning build files..."
     rm -rf "$TOOL_DIR/build"
     rm -f "$TOOL_DIR/count_down_tool.spec"
-    
-    # 设置可执行权限
-    chmod +x "$TOOL_DIR/dist/count_down_tool"
-    
+
     echo "Done!"
     echo ""
-    echo "To run the application:"
-    echo "  $TOOL_DIR/dist/count_down_tool"
+    if [ -d "$APP_BUNDLE" ]; then
+        echo "To run the application:"
+        echo "  open \"$APP_BUNDLE\""
+    else
+        echo "To run the application:"
+        echo "  $APP_BIN"
+    fi
     echo ""
-    
-    # 打开输出目录
+
     if command -v open &> /dev/null; then
         open "$TOOL_DIR/dist"
     fi

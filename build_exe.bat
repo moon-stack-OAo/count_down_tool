@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title Work Countdown Tool Builder
+title Count Down Tool Builder
 
 set "TOOL_DIR=%~dp0"
 if "%TOOL_DIR:~-1%"=="\" set "TOOL_DIR=%TOOL_DIR:~0,-1%"
@@ -15,13 +15,13 @@ if not exist "%PYTHON%" (
 
 echo.
 echo ========================================
-echo   Building Work Countdown Tool
+echo   Building Count Down Tool
 echo ========================================
 echo.
 
 cd /d "%TOOL_DIR%"
 
-"%PYTHON%" -m PyInstaller --onefile --windowed --icon="%TOOL_DIR%\count_down_tool.ico" --name "count_down_tool" --add-data "%TOOL_DIR%\count_down_tool.ico;." --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder --distpath "%TOOL_DIR%\dist" --workpath "%TOOL_DIR%\build" --specpath "%TOOL_DIR%" "%TOOL_DIR%\count_down_tool.py"
+"%PYTHON%" -m PyInstaller --onefile --windowed --icon="%TOOL_DIR%\count_down_tool.ico" --name "count_down_tool" --add-data "%TOOL_DIR%\count_down_tool.ico;." --hidden-import countdown_core --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder --distpath "%TOOL_DIR%\dist" --workpath "%TOOL_DIR%\build" --specpath "%TOOL_DIR%" "%TOOL_DIR%\count_down_tool.py"
 
 echo.
 echo ========================================
