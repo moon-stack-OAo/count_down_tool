@@ -25,9 +25,21 @@ def create_mini_window(app):
     mini.overrideredirect(True)
     mini.attributes("-topmost", True)
     mini.configure(bg=app.COLORS["title_bar"])
-    if platform.system() == "Windows":
-        if app._transparent_mode:
+    system = platform.system()
+    if app._transparent_mode:
+        if system == "Windows":
             mini.attributes("-transparentcolor", app.COLORS["title_bar"])
+        else:
+            # macOS / Linux：色键不可用，用半透明 alpha
+            try:
+                mini.attributes("-alpha", 0.72)
+            except tk.TclError:
+                logger.debug("设置 Mini alpha 失败", exc_info=True)
+    else:
+        try:
+            mini.attributes("-alpha", 1.0)
+        except tk.TclError:
+            pass
 
     win_w, win_h = app.MINI_WIDTH, app.MINI_HEIGHT
     screen_w = mini.winfo_screenwidth()
@@ -40,7 +52,7 @@ def create_mini_window(app):
         y = screen_h - win_h - app.MINI_MARGIN_BOTTOM
     mini.geometry(f"{win_w}x{win_h}+{x}+{y}")
 
-    if app._transparent_mode and platform.system() == "Windows":
+    if app._transparent_mode:
         mini.configure(highlightthickness=0)
     else:
         mini.configure(highlightthickness=1, highlightbackground=app.COLORS["accent"])
@@ -121,6 +133,19 @@ def create_mini_window(app):
         mini.focus_force()
     except tk.TclError:
         pass
+
+    # Mini 快捷键（与完整窗一致；需焦点在 Mini 上）
+    mini.bind("<Escape>", lambda e: mini_close(app))
+    mini.bind("<m>", lambda e: app._switch_to_full())
+    mini.bind("<M>", lambda e: app._switch_to_full())
+    mini.bind("<t>", app._toggle_transparent_mode)
+    mini.bind("<T>", app._toggle_transparent_mode)
+    for w in drag_widgets:
+        w.bind("<t>", app._toggle_transparent_mode)
+        w.bind("<T>", app._toggle_transparent_mode)
+        w.bind("<m>", lambda e: app._switch_to_full())
+        w.bind("<M>", lambda e: app._switch_to_full())
+
     sync_mini_state(app)
 
 

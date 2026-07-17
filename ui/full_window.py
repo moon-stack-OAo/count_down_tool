@@ -286,6 +286,8 @@ def build_full_ui(app):
     app.master.bind("<Escape>", lambda e: app._hide_to_tray())
     app.master.bind("<m>", lambda e: app._toggle_mini_mode())
     app.master.bind("<M>", lambda e: app._toggle_mini_mode())
+    app.master.bind("<t>", app._toggle_transparent_mode)
+    app.master.bind("<T>", app._toggle_transparent_mode)
 
     app.master.protocol("WM_DELETE_WINDOW", app._hide_to_tray)
 
