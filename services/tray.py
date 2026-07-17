@@ -70,9 +70,28 @@ def init_tray_icon(app, icon_path):
         app.tray_icon = None
 
 
+def refresh_tray_menu(app):
+    """同步动态菜单文案/勾选状态。
+
+    Windows 上 pystray 会缓存原生菜单；callable 文案变更后必须调用 update_menu，
+    否则启动即 Mini 时仍显示「Mini 模式」而非「退出 Mini 模式」。
+    """
+    icon = getattr(app, "tray_icon", None)
+    if not icon:
+        return
+    try:
+        icon.update_menu()
+    except Exception:
+        logger.debug("刷新托盘菜单失败", exc_info=True)
+
+
 def make_tray_theme_handler(app, theme_id):
     def _handler(icon=None, item=None):
-        app.master.after(0, lambda: app._apply_theme(theme_id))
+        def _do():
+            app._apply_theme(theme_id)
+            refresh_tray_menu(app)
+
+        app.master.after(0, _do)
 
     return _handler
 
@@ -95,6 +114,7 @@ def tray_toggle_autostart(app, icon=None, item=None):
             return
         app._autostart = target
         app._save_config()
+        refresh_tray_menu(app)
 
     app.master.after(0, _do)
 
@@ -141,6 +161,7 @@ def tray_toggle_mini(app, icon=None, item=None):
 def tray_toggle_transparent(app, icon=None, item=None):
     def _do():
         app._toggle_transparent_mode()
+        refresh_tray_menu(app)
 
     app.master.after(0, _do)
 

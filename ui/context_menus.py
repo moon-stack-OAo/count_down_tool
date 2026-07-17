@@ -32,10 +32,25 @@ def _styled_menu(app, parent):
 
 
 def _popup(menu, event):
+    """弹出菜单。兼容右键与按钮点击（macOS 按钮事件坐标也可能有效）。"""
     try:
-        menu.tk_popup(event.x_root, event.y_root)
+        x = getattr(event, "x_root", None)
+        y = getattr(event, "y_root", None)
+        if x is None or y is None:
+            widget = getattr(event, "widget", None)
+            if widget is not None:
+                x = widget.winfo_rootx() + max(0, getattr(event, "x", 0))
+                y = widget.winfo_rooty() + max(0, getattr(event, "y", 0))
+            else:
+                return
+        menu.tk_popup(int(x), int(y))
+    except tk.TclError:
+        pass
     finally:
-        menu.grab_release()
+        try:
+            menu.grab_release()
+        except tk.TclError:
+            pass
 
 
 def add_countdown_toggle_item(menu, app):

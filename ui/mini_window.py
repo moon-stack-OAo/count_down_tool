@@ -18,9 +18,14 @@ def create_mini_window(app):
     if app.mini_window:
         return
 
+    is_darwin = platform.system() == "Darwin"
     mini = tk.Toplevel(app.master)
-    mini.title("")
-    mini.overrideredirect(True)
+    # macOS 上 overrideredirect 会导致右键/菜单/聚焦异常（与主窗、时间选择器一致）
+    if is_darwin:
+        mini.title("倒计时")
+    else:
+        mini.title("")
+        mini.overrideredirect(True)
     mini.attributes("-topmost", True)
     mini.configure(bg=app.COLORS["title_bar"])
     if platform.system() == "Windows":
@@ -28,6 +33,9 @@ def create_mini_window(app):
             mini.attributes("-transparentcolor", app.COLORS["title_bar"])
 
     win_w, win_h = app.MINI_WIDTH, app.MINI_HEIGHT
+    # Darwin 保留系统标题栏，高度略增以免内容被裁切
+    if is_darwin:
+        win_h = win_h + 8
     screen_w = mini.winfo_screenwidth()
     screen_h = mini.winfo_screenheight()
 
@@ -38,7 +46,7 @@ def create_mini_window(app):
         y = screen_h - win_h - app.MINI_MARGIN_BOTTOM
     mini.geometry(f"{win_w}x{win_h}+{x}+{y}")
 
-    if app._transparent_mode:
+    if app._transparent_mode and not is_darwin:
         mini.configure(highlightthickness=0)
     else:
         mini.configure(highlightthickness=1, highlightbackground=app.COLORS["accent"])
@@ -72,6 +80,16 @@ def create_mini_window(app):
     btn_frame = tk.Frame(content_frame, bg=app.COLORS["title_bar"])
     btn_frame.pack(side=tk.RIGHT, padx=(4, 0))
 
+    # 菜单按钮：macOS 触控板右键不稳定时的可靠入口
+    menu_btn = tk.Label(
+        btn_frame, text="⋯", font=app._font("label", 12, bold=True),
+        bg=app.COLORS["title_bar"], fg=app.COLORS["text_dim"], cursor="hand2",
+    )
+    menu_btn.pack(side=tk.LEFT, padx=(0, 4))
+    menu_btn.bind("<Button-1>", lambda e: show_mini_context_menu(app, e))
+    menu_btn.bind("<Enter>", lambda e: menu_btn.config(fg=app.COLORS["accent"]))
+    menu_btn.bind("<Leave>", lambda e: menu_btn.config(fg=app.COLORS["text_dim"]))
+
     expand_btn = tk.Label(
         btn_frame, text="↗", font=app._font("label", 10),
         bg=app.COLORS["title_bar"], fg=app.COLORS["accent_glow"], cursor="hand2",
@@ -100,19 +118,42 @@ def create_mini_window(app):
             widget.bind("<B1-Motion>", lambda e: mini_do_drag(app, e))
             widget.bind("<ButtonRelease-1>", lambda e: mini_end_drag(app, e))
 
-    for w in drag_widgets:
-        w.bind("<Button-3>", lambda e: show_mini_context_menu(app, e))
-        if platform.system() == "Darwin":
-            w.bind("<Control-Button-1>", lambda e: show_mini_context_menu(app, e))
+    bind_mini_context_menu(app, *drag_widgets, menu_btn, expand_btn, close_btn)
 
     app.mini_window = mini
+    # 确保 macOS 上 Toplevel 获得焦点，右键/菜单可弹出
+    try:
+        mini.lift()
+        mini.focus_force()
+    except tk.TclError:
+        pass
     sync_mini_state(app)
+
+
+def bind_mini_context_menu(app, *widgets):
+    """绑定 Mini 右键/副键菜单。
+
+    macOS：触控板副键常为 Button-2；Control+点击为 Control-Button-1。
+    无边框窗体上右键常失效，故同时提供 ⋯ 按钮。
+    """
+    sequences = ("<Button-2>", "<Button-3>", "<Control-Button-1>")
+    for w in widgets:
+        if w is None:
+            continue
+        for seq in sequences:
+            w.bind(seq, lambda e, a=app: show_mini_context_menu(a, e))
 
 
 def show_mini_context_menu(app, event):
     """Mini 右键菜单（委托共享构建，重建后绑定仍有效）。"""
     from ui.context_menus import popup_mini_menu
 
+    try:
+        if app.mini_window:
+            app.mini_window.lift()
+            app.mini_window.focus_force()
+    except tk.TclError:
+        pass
     popup_mini_menu(app, event)
 
 
@@ -176,8 +217,13 @@ def mini_close(app):
     """Mini 关闭：有托盘则隐藏到托盘，否则回到完整模式。"""
     if app._has_tray():
         app._is_mini = False
+        app._last_mode = "full"
         destroy_mini_window(app)
         app.master.withdraw()
+        app._save_config()
+        from services.tray import refresh_tray_menu
+
+        refresh_tray_menu(app)
         if app._first_hide:
             app._first_hide = False
             app.master.after(0, lambda: messagebox.showinfo(

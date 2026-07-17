@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3.7
+
+### 修复
+
+- **macOS Mini 右键菜单**：Darwin 不再对 Mini 使用 `overrideredirect`（否则右键/菜单失效）
+- 绑定 `Button-2` / `Button-3` / `Control-Button-1`；增加 **⋯** 菜单按钮作为可靠入口
+- 弹出前 `lift` + `focus_force`；Mini 略加宽以容纳按钮
+
+## 1.3.6
+
+### 修复
+
+- **托盘菜单不同步**：Windows 上 pystray 缓存原生菜单；启动默认/切换 Mini 后调用 `update_menu()`，正确显示「退出 Mini 模式」/「展开主窗口」
+- Mini 关闭到托盘时同步 `_is_mini` 与托盘文案
+
 ## 1.3.5
 
 ### 发布 / macOS 架构

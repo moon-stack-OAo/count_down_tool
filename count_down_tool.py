@@ -43,7 +43,7 @@ from countdown_core import (
     user_config_path,
     validate_hms,
 )
-from services.tray import HAS_PYSTRAY, init_tray_icon, stop_tray
+from services.tray import HAS_PYSTRAY, init_tray_icon, refresh_tray_menu, stop_tray
 from services.windows_native import (
     acquire_single_instance,
     bring_existing_to_front,
@@ -72,7 +72,7 @@ _ICON_PATH = resource_path("count_down_tool.ico")
 class CountdownApp:
     WINDOW_WIDTH = 500
     WINDOW_HEIGHT = 520
-    MINI_WIDTH = 220
+    MINI_WIDTH = 236
     MINI_HEIGHT = 48
     TITLE_DRAG_EXCLUDE_RIGHT = 380
     PICKER_WIDTH = 320
@@ -333,6 +333,7 @@ class CountdownApp:
             self._create_mini_window()
 
         self._save_config()
+        refresh_tray_menu(self)
 
     def _set_state(self, action: str) -> str:
         """按动作推进状态机，并同步按钮文案与 running 标志。"""
@@ -341,6 +342,7 @@ class CountdownApp:
         if self.btn_start:
             self.btn_start.config(text=button_text_for_state(self._state))
         self._apply_input_lock()
+        refresh_tray_menu(self)
         return self._state
 
     def _inputs_locked(self) -> bool:
@@ -552,6 +554,7 @@ class CountdownApp:
         self.master.withdraw()
         self._create_mini_window()
         self._save_config()
+        refresh_tray_menu(self)
 
     def _switch_to_full(self):
         """切换到完整模式"""
@@ -561,6 +564,7 @@ class CountdownApp:
         self.master.deiconify()
         self.master.lift()
         self._save_config()
+        refresh_tray_menu(self)
 
     def _create_mini_window(self):
         create_mini_window(self)
