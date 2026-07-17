@@ -2,7 +2,7 @@
 
 一个基于 Python Tkinter 的现代化深色主题桌面倒计时工具，支持完整模式和 Mini 桌面小组件模式。
 
-**当前版本：1.3.3**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.3.4**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 功能特性
 
@@ -96,7 +96,18 @@ build_exe.bat
 ./create_dmg.sh             # 创建 DMG：优先打包 .app，否则打包可执行文件
 ```
 
-输出可能是 `dist/count_down_tool.app` 和/或 `dist/count_down_tool`。
+本地输出可能是 `dist/count_down_tool.app` 和/或 `dist/count_down_tool`。  
+**GitHub Release（v1.3.4+）**：下载 `Count_Down_Tool_mac.zip` → 解压得到 `Count Down Tool.app` → 拖到「应用程序」。
+
+#### 首次打开若提示无法验证 / 已损坏
+
+```bash
+# 去掉隔离属性后打开（未公证的自用构建常用）
+xattr -cr "/Applications/Count Down Tool.app"
+open "/Applications/Count Down Tool.app"
+```
+
+或：右键 App →「打开」→ 再点「打开」。正式对外分发需 Apple 开发者证书 + 公证（notarize）。
 
 ## 项目结构
 
@@ -110,6 +121,7 @@ count_down_tool/
 │   ├── widgets.py           # RoundedFrame 等通用控件
 │   ├── full_window.py       # 完整模式布局
 │   ├── mini_window.py       # Mini 窗创建/拖动/右键
+│   ├── context_menus.py     # 托盘/右键共享菜单
 │   └── time_picker.py       # 时间选择器
 ├── services/
 │   ├── tray.py              # 托盘菜单与 icon 线程

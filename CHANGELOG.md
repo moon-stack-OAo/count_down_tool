@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.4
+
+### 发布 / macOS
+
+- CI 改为产出 **`Count Down Tool.app`**（zip），不再发布裸二进制
+- 构建后 `chmod +x` + ad-hoc `codesign`，降低「无法打开/已损坏」概率
+- Release 说明补充首次打开与 `xattr -cr` 去隔离属性步骤
+
 ## 1.3.3
 
 ### UI / 菜单

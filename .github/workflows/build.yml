@@ -32,9 +32,10 @@ jobs:
         working-directory: .
         run: |
           python -m PyInstaller \
-            --onefile \
+            --noconfirm \
             --windowed \
-            --name "count_down_tool" \
+            --name "Count Down Tool" \
+            --osx-bundle-identifier "com.foundtec.count-down-tool" \
             --hidden-import countdown_core \
             --hidden-import themes \
             --hidden-import autostart \
@@ -53,11 +54,31 @@ jobs:
             --hidden-import PIL._tkinter_finder \
             count_down_tool.py
 
+      - name: Package .app (chmod + ad-hoc sign + zip)
+        working-directory: .
+        run: |
+          set -euo pipefail
+          APP="dist/Count Down Tool.app"
+          if [ ! -d "$APP" ]; then
+            echo "ERROR: expected app bundle not found:"
+            ls -la dist || true
+            exit 1
+          fi
+          # 确保包内可执行文件有执行权限
+          find "$APP" -type f \( -name "Count Down Tool" -o -path "*/MacOS/*" \) -exec chmod +x {} \;
+          # 未购买开发者证书时使用 ad-hoc 签名，减少“已损坏/无法验证开发者”误报
+          codesign --force --deep --sign - "$APP" || true
+          codesign -dv --verbose=2 "$APP" || true
+          # zip 保留权限与符号链接；用户下载后双击解压即可
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent "Count Down Tool.app" "Count_Down_Tool_mac.zip"
+          ls -lh "Count_Down_Tool_mac.zip"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: count_down_tool_mac
-          path: dist/count_down_tool
+          path: dist/Count_Down_Tool_mac.zip
           if-no-files-found: error
 
   build-windows:
@@ -107,8 +128,19 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          body: |
+            ## macOS 首次打开说明
+            1. 下载 `Count_Down_Tool_mac.zip` 并解压得到 `Count Down Tool.app`
+            2. 将 `.app` 拖到「应用程序」
+            3. 若提示无法验证开发者：右键 App →「打开」→ 再点「打开」
+            4. 或在终端执行：
+               ```bash
+               xattr -cr "/Applications/Count Down Tool.app"
+               open "/Applications/Count Down Tool.app"
+               ```
+            > 当前为 CI 未公证（notarize）构建，仅适合自用/内部分发。
           files: |
-            artifacts/count_down_tool_mac/count_down_tool
+            artifacts/count_down_tool_mac/Count_Down_Tool_mac.zip
             artifacts/count_down_tool_win/count_down_tool.exe
           draft: false
           prerelease: false
