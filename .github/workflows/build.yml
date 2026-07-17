@@ -1,12 +1,19 @@
 name: Build Tools
 
-# 注意：push 下若同时写 tags 与 paths，tag 推送也会被 paths 过滤。
-# 为保证 v* tag 能构建并 create-release，此处不使用 paths。
+# 仅手动触发：Actions → Build Tools → Run workflow，填写已存在的 tag（如 v1.3.9）。
+# 推送 main / 打 tag 不会自动构建。
 on:
-  push:
-    branches: [ main, master ]
-    tags: [ 'v*' ]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: '要构建并发布的 tag（须已存在，如 v1.3.9）'
+        required: true
+        type: string
+      create_release:
+        description: '构建完成后创建/更新 GitHub Release'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -33,6 +40,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -112,6 +121,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -140,10 +151,12 @@ jobs:
       build-windows
     ]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: ${{ inputs.create_release }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -153,6 +166,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag }}
           # 同 tag 重跑时覆盖已有资产，避免 already_exists
           overwrite_files: true
           body: |
