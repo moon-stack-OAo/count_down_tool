@@ -111,7 +111,7 @@ class CountdownApp:
         self.mini_window = None
         self.mini_countdown_label = None
         self.mini_time_label = None
-        self.mini_target_label = None
+        self._transparent_mode = False
         self._drag_data = {"x": 0, "y": 0}
 
         # 倒计时状态（完整和 mini 共享）
@@ -327,7 +327,12 @@ class CountdownApp:
             image = self._load_tray_icon()
             menu = pystray.Menu(
                 pystray.MenuItem("显示主窗口", self._tray_show_window, default=True),
+                pystray.MenuItem("选择时间", self._tray_show_time_picker),
+                pystray.MenuItem(lambda _: "暂停" if self.running else "开始倒计时", self._tray_toggle_countdown),
+                pystray.Menu.SEPARATOR,
                 pystray.MenuItem("Mini 模式", self._tray_toggle_mini),
+                pystray.MenuItem("透明模式", self._tray_toggle_transparent,
+                                 checked=lambda _: self._transparent_mode),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem("退出", self._tray_quit),
             )
@@ -361,8 +366,19 @@ class CountdownApp:
     def _tray_show_window(self, icon=None, item=None):
         self.master.after(0, self._show_full_mode)
 
+    def _tray_show_time_picker(self, icon=None, item=None):
+        self.master.after(0, self._show_time_picker)
+
+    def _tray_toggle_countdown(self, icon=None, item=None):
+        self.master.after(0, self.toggle_countdown)
+
     def _tray_toggle_mini(self, icon=None, item=None):
         self.master.after(0, self._toggle_mini_mode)
+
+    def _tray_toggle_transparent(self, icon=None, item=None):
+        self._transparent_mode = not self._transparent_mode
+        if self._is_mini:
+            self.master.after(0, self._recreate_mini_window)
 
     def _tray_quit(self, icon=None, item=None):
         self.master.after(0, self._quit_app)
@@ -429,9 +445,10 @@ class CountdownApp:
         mini.overrideredirect(True)  # 无边框
         mini.attributes("-topmost", True)  # 置顶
         mini.configure(bg=self.COLORS["title_bar"])
-        # Windows 支持透明色，桌面背景穿透 title_bar 颜色区域显示
         if platform.system() == "Windows":
-            mini.attributes("-transparentcolor", self.COLORS["title_bar"])
+            if self._transparent_mode:
+                mini.attributes("-transparentcolor", self.COLORS["title_bar"])
+            # 否则不设透明度，完全不透明，WM_NCHITTEST 原生拖拽
 
         # 设置窗口大小和位置（屏幕右下角）
         win_w, win_h = 220, 48
@@ -445,8 +462,11 @@ class CountdownApp:
             y = screen_h - win_h - 60
         mini.geometry(f"{win_w}x{win_h}+{x}+{y}")
 
-        # 毛玻璃边框
-        mini.configure(highlightthickness=2, highlightbackground=self.COLORS["accent"])
+        # 毛玻璃边框（透明模式下去除边框）
+        if self._transparent_mode:
+            mini.configure(highlightthickness=0)
+        else:
+            mini.configure(highlightthickness=2, highlightbackground=self.COLORS["accent"])
 
         # 主容器
         main_frame = tk.Frame(mini, bg=self.COLORS["title_bar"])
@@ -501,44 +521,17 @@ class CountdownApp:
         close_btn.bind("<Enter>", lambda e: close_btn.config(fg=self.COLORS["btn_hover_close"]))
         close_btn.bind("<Leave>", lambda e: close_btn.config(fg=self.COLORS["text_dim"]))
 
-        # 目标时间显示（新增）
-        self.mini_target_label = tk.Label(
-            main_frame, text="",
-            font=self.FONTS["mini_time"],
-            bg=self.COLORS["title_bar"], fg=self.COLORS["accent_glow"],
-        )
-        self.mini_target_label.pack(fill=tk.X, pady=(2, 0))
-
-        # 拖动功能
-        main_frame.bind("<Button-1>", self._mini_start_drag)
-        main_frame.bind("<B1-Motion>", self._mini_do_drag)
-        self.mini_time_label.bind("<Button-1>", self._mini_start_drag)
-        self.mini_time_label.bind("<B1-Motion>", self._mini_do_drag)
-        self.mini_countdown_label.bind("<Button-1>", self._mini_start_drag)
-        self.mini_countdown_label.bind("<B1-Motion>", self._mini_do_drag)
-
-        # 右键菜单
-        self.mini_menu = tk.Menu(mini, tearoff=0)
-        self.mini_menu.configure(bg=self.COLORS["title_bar"], fg=self.COLORS["text"],
-                                 activebackground=self.COLORS["accent"],
-                                 activeforeground="#FFFFFF",
-                                 relief="flat", borderwidth=1)
-        self.mini_menu.add_command(label="选择时间", command=self._show_time_picker)
-        self.mini_menu.add_command(label="开始倒计时", command=self.toggle_countdown)
-        self.mini_menu.add_command(label="展开完整模式", command=self._switch_to_full)
-        self.mini_menu.add_separator()
-        self.mini_menu.add_command(label="退出", command=self._quit_app)
-
-        def show_mini_menu(event):
-            # 动态更新菜单文本
-            self.mini_menu.entryconfig(1, label="暂停" if self.running else "开始倒计时")
-            # 倒计时中禁用选择时间
-            self.mini_menu.entryconfig(0, state="disabled" if self.running else "normal")
-            self.mini_menu.post(event.x_root, event.y_root)
-
-        main_frame.bind("<Button-3>", show_mini_menu)
-        self.mini_time_label.bind("<Button-3>", show_mini_menu)
-        self.mini_countdown_label.bind("<Button-3>", show_mini_menu)
+        # 拖拽功能（透明模式不需要拖拽）
+        if platform.system() == "Windows":
+            if not self._transparent_mode:
+                for w in (mini, main_frame, content_frame,
+                          self.mini_time_label, self.mini_countdown_label):
+                    w.bind("<Button-1>", self._mini_start_drag)
+        else:
+            for widget in (mini, main_frame, content_frame,
+                           self.mini_time_label, self.mini_countdown_label):
+                widget.bind("<Button-1>", self._mini_start_drag)
+                widget.bind("<B1-Motion>", self._mini_do_drag)
 
         self.mini_window = mini
 
@@ -565,11 +558,27 @@ class CountdownApp:
             self.mini_countdown_label = None
             self.mini_time_label = None
 
+    def _recreate_mini_window(self):
+        """重建 mini 窗口（切换透明模式时）"""
+        self._destroy_mini_window()
+        self._create_mini_window()
+
     def _mini_start_drag(self, event):
-        self._drag_data["x"] = event.x
-        self._drag_data["y"] = event.y
+        if platform.system() == "Windows":
+            try:
+                import ctypes
+                hwnd = int(self.mini_window.frame(), 16)
+                ctypes.windll.user32.ReleaseCapture()
+                ctypes.windll.user32.PostMessageW(hwnd, 0xA1, 2, 0)
+            except Exception:
+                pass
+        else:
+            self._drag_data["x"] = event.x
+            self._drag_data["y"] = event.y
 
     def _mini_do_drag(self, event):
+        if platform.system() == "Windows":
+            return
         if self.mini_window:
             x = self.mini_window.winfo_x() + event.x - self._drag_data["x"]
             y = self.mini_window.winfo_y() + event.y - self._drag_data["y"]
@@ -587,12 +596,6 @@ class CountdownApp:
                 self.mini_countdown_label.config(fg=self.COLORS["success"])
             else:
                 self.mini_countdown_label.config(fg=self.COLORS["text_dim"])
-
-            # 同步目标时间显示
-            if self.mini_target_label and self.target_time:
-                self.mini_target_label.config(text=self.target_time.strftime('%H:%M:%S'))
-            elif self.mini_target_label:
-                self.mini_target_label.config(text="")
 
     def _show_time_picker(self):
         """弹出时间选择器 - 无边框毛玻璃风格"""
@@ -980,8 +983,6 @@ class CountdownApp:
             s = int(self.second_var.get())
             if not (0 <= h <= 23 and 0 <= m <= 59 and 0 <= s <= 59):
                 self.target_time_label.config(text="")
-                if self.mini_target_label:
-                    self.mini_target_label.config(text="")
                 return
             now = datetime.now()
             target = now.replace(hour=h, minute=m, second=s, microsecond=0)
@@ -989,8 +990,6 @@ class CountdownApp:
                 target += timedelta(days=1)
             self.target_time = target
             self.target_time_label.config(text=target.strftime('%H:%M:%S'))
-            if self.mini_target_label:
-                self.mini_target_label.config(text=target.strftime('%H:%M:%S'))
         except ValueError:
             pass
 
