@@ -7,6 +7,7 @@
 - **macOS Mini 右键菜单**：Darwin 不再对 Mini 使用 `overrideredirect`（否则右键/菜单失效）
 - 绑定 `Button-2` / `Button-3` / `Control-Button-1`；增加 **⋯** 菜单按钮作为可靠入口
 - 弹出前 `lift` + `focus_force`；Mini 略加宽以容纳按钮
+- **CI**：Intel 构建 runner 由已退役的 `macos-13` 改为 `macos-15-intel`
 
 ## 1.3.6
 

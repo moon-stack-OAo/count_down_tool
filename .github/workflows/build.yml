@@ -23,7 +23,8 @@ jobs:
             arch: arm64
             zip_name: Count_Down_Tool_mac_arm64.zip
             artifact: count_down_tool_mac_arm64
-          - runner: macos-13
+          # macos-13 已于 2025-12 退役；Intel 请用 macos-15-intel（最后一代 x86_64 runner）
+          - runner: macos-15-intel
             arch: x86_64
             zip_name: Count_Down_Tool_mac_x86_64.zip
             artifact: count_down_tool_mac_x86_64
