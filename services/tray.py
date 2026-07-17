@@ -9,6 +9,7 @@ from tkinter import messagebox
 from autostart import is_autostart_enabled, set_autostart
 from countdown_core import APP_NAME, button_text_for_state
 from themes import list_themes
+from ui.context_menus import tray_mini_menu_label, tray_window_menu_label
 
 logger = logging.getLogger("count_down_tool")
 
@@ -37,13 +38,20 @@ def init_tray_icon(app, icon_path):
                 )
             )
         menu = pystray.Menu(
-            pystray.MenuItem("显示主窗口", lambda icon=None, item=None: tray_show_window(app),
-                             default=True),
+            # 文案随 Mini/完整模式动态变化
+            pystray.MenuItem(
+                lambda _: tray_window_menu_label(app._is_mini),
+                lambda icon=None, item=None: tray_show_window(app),
+                default=True,
+            ),
             pystray.MenuItem("选择时间", lambda icon=None, item=None: tray_show_time_picker(app)),
             pystray.MenuItem(lambda _: button_text_for_state(app._state),
                              lambda icon=None, item=None: tray_toggle_countdown(app)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Mini 模式", lambda icon=None, item=None: tray_toggle_mini(app)),
+            pystray.MenuItem(
+                lambda _: tray_mini_menu_label(app._is_mini),
+                lambda icon=None, item=None: tray_toggle_mini(app),
+            ),
             pystray.MenuItem("透明模式",
                              lambda icon=None, item=None: tray_toggle_transparent(app),
                              checked=lambda _: app._transparent_mode),

@@ -35,6 +35,7 @@ from countdown_core import (
     merge_mini_position,
     next_second_delay_ms,
     next_state,
+    progress_ratio,
     resource_path,
     save_config_dict,
     target_from_duration,
@@ -69,11 +70,11 @@ _ICON_PATH = resource_path("count_down_tool.ico")
 
 
 class CountdownApp:
-    WINDOW_WIDTH = 560
-    WINDOW_HEIGHT = 610
+    WINDOW_WIDTH = 500
+    WINDOW_HEIGHT = 520
     MINI_WIDTH = 220
     MINI_HEIGHT = 48
-    TITLE_DRAG_EXCLUDE_RIGHT = 440
+    TITLE_DRAG_EXCLUDE_RIGHT = 380
     PICKER_WIDTH = 320
     PICKER_HEIGHT = 240
     CORNER_RADIUS = 20
@@ -107,6 +108,12 @@ class CountdownApp:
         self._error_timer_id = None
         self._preset_duration = None
         self._applying_preset = False
+        # 进度条：start 时记录总时长；暂停时冻结当前进度
+        self._duration_total_seconds = 0.0
+        self._progress_value = 0.0
+        self._time_spinboxes = []
+        self._preset_chips = []
+        self.progress_canvas = None
 
         # 报警相关
         self._alarm_count = 0
@@ -283,6 +290,9 @@ class CountdownApp:
         self.target_time_label = None
         self.countdown_label = None
         self.error_label = None
+        self.progress_canvas = None
+        self._time_spinboxes = []
+        self._preset_chips = []
 
         self._setup_ui()
 
@@ -313,6 +323,10 @@ class CountdownApp:
         except Exception:
             logger.debug("主题切换后刷新目标时间失败", exc_info=True)
 
+        # 主题重建后按状态恢复锁定与进度
+        self._apply_input_lock()
+        self._refresh_progress_bar()
+
         # Mini 开着则按新颜色重建
         if was_mini:
             self._is_mini = True
@@ -326,7 +340,115 @@ class CountdownApp:
         self.running = self._state == STATE_RUNNING
         if self.btn_start:
             self.btn_start.config(text=button_text_for_state(self._state))
+        self._apply_input_lock()
         return self._state
+
+    def _inputs_locked(self) -> bool:
+        """running / paused 时锁定到期时间与快捷预设。"""
+        return self._state in (STATE_RUNNING, STATE_PAUSED)
+
+    def _apply_input_lock(self):
+        """按状态启用/禁用 Spinbox 与预设 chip。"""
+        locked = self._inputs_locked()
+        spin_state = "disabled" if locked else "normal"
+        for sb in getattr(self, "_time_spinboxes", None) or []:
+            try:
+                sb.config(state=spin_state)
+            except Exception:
+                logger.debug("设置 Spinbox 状态失败", exc_info=True)
+
+        chips = getattr(self, "_preset_chips", None) or []
+        c = self.COLORS
+        for btn in chips:
+            try:
+                btn.unbind("<Enter>")
+                btn.unbind("<Leave>")
+                btn.unbind("<Button-1>")
+            except Exception:
+                pass
+            if locked:
+                try:
+                    btn.config(
+                        bg=c.get("btn_default", c["chip"]),
+                        fg=c["text_muted"],
+                        cursor="arrow",
+                    )
+                except Exception:
+                    logger.debug("预设 chip 禁用样式失败", exc_info=True)
+            else:
+                hms = getattr(btn, "_preset_hms", None)
+                try:
+                    btn.config(bg=c["chip"], fg=c["text"], cursor="hand2")
+                    btn.bind(
+                        "<Enter>",
+                        lambda e, b=btn: b.config(
+                            bg=c["chip_hover"], fg=c["accent_glow"]
+                        ),
+                    )
+                    btn.bind(
+                        "<Leave>",
+                        lambda e, b=btn: b.config(bg=c["chip"], fg=c["text"]),
+                    )
+                    if hms is not None:
+                        hh, mm, ss = hms
+                        btn.bind(
+                            "<Button-1>",
+                            lambda e, h=hh, m=mm, s=ss: self._set_preset_time(h, m, s),
+                        )
+                except Exception:
+                    logger.debug("预设 chip 启用失败", exc_info=True)
+
+    def _record_duration_total(self, target_time, now=None):
+        """成功开始/重启时记录总时长（秒）。"""
+        if now is None:
+            now = datetime.now()
+        if self._preset_duration is not None:
+            total = self._preset_duration.total_seconds()
+        elif target_time is not None:
+            total = (target_time - now).total_seconds()
+        else:
+            total = 0.0
+        self._duration_total_seconds = max(0.0, float(total))
+        self._progress_value = 0.0
+
+    def _update_progress_from_remaining(self, remaining_seconds: float):
+        """根据剩余秒数刷新进度（running 时调用）。"""
+        self._progress_value = progress_ratio(
+            remaining_seconds, self._duration_total_seconds
+        )
+        self._draw_progress_bar(self._progress_value)
+
+    def _refresh_progress_bar(self):
+        """按状态绘制进度：idle=0，finished=1，paused/running 用缓存值。"""
+        if self._state == STATE_IDLE:
+            self._progress_value = 0.0
+        elif self._state == STATE_FINISHED:
+            self._progress_value = 1.0
+        # paused / running：保持 _progress_value（暂停冻结）
+        self._draw_progress_bar(self._progress_value)
+
+    def _draw_progress_bar(self, ratio: float):
+        """在 Canvas 上绘制细进度条。"""
+        canvas = getattr(self, "progress_canvas", None)
+        fill_id = getattr(self, "_progress_fill_id", None)
+        if not canvas or fill_id is None:
+            return
+        try:
+            w = float(getattr(self, "_progress_bar_w", 280) or 280)
+            h = float(getattr(self, "_progress_bar_h", 4) or 4)
+            r = max(0.0, min(1.0, float(ratio)))
+            fill_w = w * r
+            canvas.coords(fill_id, 0, 0, fill_w, h)
+            c = self.COLORS
+            canvas.itemconfig(fill_id, fill=c["accent"])
+            track_id = getattr(self, "_progress_track_id", None)
+            if track_id is not None:
+                canvas.itemconfig(
+                    track_id, fill=c.get("border", c.get("card_border", c["chip"]))
+                )
+                canvas.coords(track_id, 0, 0, w, h)
+        except Exception:
+            logger.debug("绘制进度条失败", exc_info=True)
 
     def _set_icon(self):
         try:
@@ -534,6 +656,7 @@ class CountdownApp:
             self._apply_target_to_spinboxes(target)
             self.target_time = target
             self.target_time_label.config(text=self._format_target_label(target, now))
+            self._record_duration_total(target, now)
             self._set_state(ACTION_RESTART)
             self.update_countdown(target)
             self._sync_mini_state()
@@ -545,6 +668,7 @@ class CountdownApp:
         if not target:
             return
         self.target_time = target
+        self._record_duration_total(target)
         self._set_state(ACTION_RESTART)
         self.update_countdown(self.target_time)
         self._sync_mini_state()
@@ -557,6 +681,9 @@ class CountdownApp:
         if not self.target_time:
             self._set_state(ACTION_START_FAIL)
             return
+        # 仅 idle / finished 重新记总时长；resume 保持原总时长与进度
+        if self._state in (STATE_IDLE, STATE_FINISHED):
+            self._record_duration_total(self.target_time)
         if self._state == STATE_IDLE:
             self._set_state(ACTION_START)
         elif self._state == STATE_PAUSED:
@@ -600,18 +727,22 @@ class CountdownApp:
             self._countdown_timer_id = None
 
         remaining = target_time - datetime.now()
-        if remaining.total_seconds() <= 0:
+        rem_sec = remaining.total_seconds()
+        if rem_sec <= 0:
             self.countdown_text = "已到时间!"
             self.countdown_label.config(text="已到时间!", style="Success.TLabel")
+            self._progress_value = 1.0
+            self._draw_progress_bar(1.0)
             self._set_state(ACTION_FINISH)
             self._sync_mini_state()
             self._on_countdown_finished()
             self._countdown_timer_id = None
             return
 
-        total_seconds = int(remaining.total_seconds())
+        total_seconds = int(rem_sec)
         self.countdown_text = format_remaining(total_seconds)
         self.countdown_label.config(text=self.countdown_text, style="Countdown.TLabel")
+        self._update_progress_from_remaining(rem_sec)
 
         # 同步 mini 窗口
         self._sync_mini_state()
@@ -682,6 +813,8 @@ class CountdownApp:
         self._alarm_count = 0
         self._bell_count = 0
         self._preset_duration = None
+        self._duration_total_seconds = 0.0
+        self._progress_value = 0.0
         if self._alarm_timer_id is not None:
             try:
                 self.master.after_cancel(self._alarm_timer_id)
@@ -702,6 +835,7 @@ class CountdownApp:
         self.countdown_text = "--:--:--"
         self.countdown_label.config(text="--:--:--", style="Countdown.TLabel")
         self.error_label.config(text="")
+        self._draw_progress_bar(0.0)
         self._sync_mini_state()
 
     def show_error(self, message):
@@ -719,6 +853,9 @@ class CountdownApp:
         self._error_timer_id = None
 
     def _set_preset_time(self, hours, minutes, seconds):
+        # running / paused 时锁定，忽略点击
+        if self._inputs_locked():
+            return
         now = datetime.now()
         target, duration = target_from_duration(hours, minutes, seconds, now)
         self._preset_duration = duration
@@ -734,11 +871,13 @@ class CountdownApp:
                 logger.debug("预设时取消倒计时定时器失败", exc_info=True)
             self._countdown_timer_id = None
 
-        # 预设直接进入 running（任意状态可切）
+        # 预设直接进入 running（idle / finished 可切）
+        self._record_duration_total(target, now)
         self._state = STATE_RUNNING
         self.running = True
         if self.btn_start:
             self.btn_start.config(text=button_text_for_state(STATE_RUNNING))
+        self._apply_input_lock()
         self.update_countdown(target)
         self._sync_mini_state()
 

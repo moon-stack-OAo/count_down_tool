@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from countdown_core import APP_NAME
+from ui.context_menus import bind_full_context_menu, bind_full_context_menu_tree
 from ui.widgets import RoundedFrame, init_circle_button, update_circle_button
 
 
@@ -141,42 +142,75 @@ def build_full_ui(app):
 
     # ===== 主内容区域 =====
     main_frame = tk.Frame(app.master, bg=c["bg"])
-    main_frame.pack(fill=tk.BOTH, expand=True, padx=24, pady=(18, 24))
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=24, pady=(16, 20))
 
-    title_frame = tk.Frame(main_frame, bg=c["bg"])
-    title_frame.pack(fill=tk.X, pady=(0, 6))
-    ttk.Label(title_frame, text=APP_NAME, style="Title.TLabel").pack()
-    ttk.Label(title_frame, text="专注当下 · 准时结束", style="Subtitle.TLabel").pack(
-        pady=(2, 10)
+    # ----- 倒计时主视觉卡（置顶）-----
+    countdown_card = RoundedFrame(main_frame, bg_color=c["glass"],
+                                  border_color=c["accent"],
+                                  corner_radius=14, border_width=2, height=168)
+    countdown_card.pack(fill=tk.X, pady=(0, 14))
+    countdown_inner = tk.Frame(countdown_card, bg=c["glass"])
+    countdown_inner.place(relx=0.5, rely=0.5, anchor="center")
+
+    app.countdown_label = ttk.Label(countdown_inner, text="--:--:--",
+                                    style="Countdown.TLabel",
+                                    background=c["glass"])
+    app.countdown_label.pack(pady=(0, 6))
+
+    # 进度条（细条，accent 色；主题重建后需重新挂到 app）
+    _progress_w, _progress_h = 280, 4
+    app.progress_canvas = tk.Canvas(
+        countdown_inner,
+        width=_progress_w,
+        height=_progress_h,
+        bg=c["glass"],
+        highlightthickness=0,
+        bd=0,
+    )
+    app.progress_canvas.pack(pady=(2, 8))
+    app._progress_bar_w = _progress_w
+    app._progress_bar_h = _progress_h
+    app._progress_track_id = app.progress_canvas.create_rectangle(
+        0, 0, _progress_w, _progress_h,
+        fill=c.get("border", c["card_border"]), outline="",
+    )
+    app._progress_fill_id = app.progress_canvas.create_rectangle(
+        0, 0, 0, _progress_h,
+        fill=c["accent"], outline="",
     )
 
-    clock_card = RoundedFrame(main_frame, bg_color=c["glass"],
-                              border_color=c["card_border"],
-                              corner_radius=14, height=148)
-    clock_card.pack(fill=tk.X, pady=(0, 12))
-    clock_inner = tk.Frame(clock_card, bg=c["glass"])
-    clock_inner.place(relx=0.5, rely=0.5, anchor="center")
+    app.target_time_label = ttk.Label(
+        countdown_inner, text="",
+        font=app._font("label", 11),
+        foreground=c["text_dim"],
+        background=c["glass"],
+    )
+    app.target_time_label.pack()
 
-    ttk.Label(clock_inner, text="当前时间", style="Dim.TLabel",
-              background=c["glass"]).pack(pady=(0, 2))
-    app.current_time_label = ttk.Label(clock_inner, style="Time.TLabel",
-                                       background=c["glass"])
-    app.current_time_label.pack()
+    app.current_time_label = ttk.Label(
+        countdown_inner, text="",
+        font=app._font("label", 9),
+        foreground=c["text_dim"],
+        background=c["glass"],
+    )
+    app.current_time_label.pack(pady=(8, 0))
 
-    app.target_time_label = ttk.Label(clock_inner, text="",
-                                      font=app.FONTS["time"],
-                                      foreground=c["text_dim"],
-                                      background=c["glass"])
-    app.target_time_label.pack(pady=(6, 0))
+    # ----- 设置卡：到期时间 + 快捷预设 -----
+    settings_card = RoundedFrame(main_frame, bg_color=c["glass"],
+                                 border_color=c["card_border"],
+                                 corner_radius=14, height=128)
+    settings_card.pack(fill=tk.X, pady=(0, 12))
+    settings_inner = tk.Frame(settings_card, bg=c["glass"])
+    settings_inner.place(relx=0.5, rely=0.5, anchor="center")
 
-    input_sub = tk.Frame(clock_inner, bg=c["glass"])
-    input_sub.pack(pady=(10, 0))
+    time_row = tk.Frame(settings_inner, bg=c["glass"])
+    time_row.pack()
 
-    ttk.Label(input_sub, text="到期时间", style="Dim.TLabel",
-              background=c["glass"]).pack(pady=(0, 6))
+    ttk.Label(time_row, text="到期时间", style="Dim.TLabel",
+              background=c["glass"]).pack(side=tk.LEFT, padx=(0, 12))
 
-    spin_input_frame = tk.Frame(input_sub, bg=c["glass"])
-    spin_input_frame.pack()
+    spin_input_frame = tk.Frame(time_row, bg=c["glass"])
+    spin_input_frame.pack(side=tk.LEFT)
 
     app.hour_var = tk.StringVar(value="18")
     app.minute_var = tk.StringVar(value="00")
@@ -188,6 +222,7 @@ def build_full_ui(app):
         (app.second_var, 0, 59),
     ]
 
+    app._time_spinboxes = []
     spin_font = app._font("time", 14)
     spin_colon_font = app._font("time", 14, bold=True)
     for idx, (var, min_val, max_val) in enumerate(spinboxes):
@@ -197,6 +232,7 @@ def build_full_ui(app):
             justify="center",
         )
         sb.grid(row=0, column=idx * 2, padx=4)
+        app._time_spinboxes.append(sb)
         if idx < 2:
             ttk.Label(spin_input_frame, text=":", font=spin_colon_font,
                       background=c["glass"], foreground=c["text_muted"]
@@ -206,47 +242,33 @@ def build_full_ui(app):
     app.minute_var.trace_add("write", app._on_time_changed)
     app.second_var.trace_add("write", app._on_time_changed)
 
-    countdown_card = RoundedFrame(main_frame, bg_color=c["glass"],
-                                  border_color=c["accent"],
-                                  corner_radius=14, border_width=2, height=120)
-    countdown_card.pack(fill=tk.X, pady=(0, 12))
-    countdown_inner = tk.Frame(countdown_card, bg=c["glass"])
-    countdown_inner.place(relx=0.5, rely=0.5, anchor="center")
+    preset_row = tk.Frame(settings_inner, bg=c["glass"])
+    preset_row.pack(pady=(14, 0))
 
-    ttk.Label(countdown_inner, text="剩余时间", style="Dim.TLabel",
-              background=c["glass"]).pack()
-    app.countdown_label = ttk.Label(countdown_inner, text="--:--:--",
-                                    style="Countdown.TLabel",
-                                    background=c["glass"])
-    app.countdown_label.pack(pady=6)
-
-    preset_card = RoundedFrame(main_frame, bg_color=c["glass"],
-                               border_color=c["card_border"],
-                               corner_radius=14)
-    preset_card.pack(fill=tk.X, pady=(0, 12))
-    preset_inner = tk.Frame(preset_card, bg=c["glass"])
-    preset_inner.place(relx=0.5, rely=0.5, anchor="center")
-
-    ttk.Label(preset_inner, text="快捷预设", style="Dim.TLabel",
-              background=c["glass"]).pack(side=tk.LEFT, padx=(0, 12))
+    ttk.Label(preset_row, text="快捷", style="Dim.TLabel",
+              background=c["glass"]).pack(side=tk.LEFT, padx=(0, 10))
 
     preset_buttons = [
-        ("5分钟", "00", "05", "00"),
-        ("10分钟", "00", "10", "00"),
-        ("15分钟", "00", "15", "00"),
-        ("30分钟", "00", "30", "00"),
-        ("1小时", "01", "00", "00"),
+        ("+5分", "00", "05", "00"),
+        ("+10分", "00", "10", "00"),
+        ("+15分", "00", "15", "00"),
+        ("+30分", "00", "30", "00"),
+        ("+1时", "01", "00", "00"),
     ]
+    app._preset_chips = []
     for text, h, m, s in preset_buttons:
-        btn = tk.Label(preset_inner, text=text, font=app._font("label", 9),
+        btn = tk.Label(preset_row, text=text, font=app._font("label", 9),
                        bg=c["chip"], fg=c["text"],
-                       padx=11, pady=5, cursor="hand2")
-        btn.pack(side=tk.LEFT, padx=(0, 8))
-        btn.bind("<Enter>", lambda e, b=btn: b.config(
-            bg=c["chip_hover"], fg=c["accent_glow"]))
-        btn.bind("<Leave>", lambda e, b=btn: b.config(
-            bg=c["chip"], fg=c["text"]))
-        btn.bind("<Button-1>", lambda e, hh=h, mm=m, ss=s: app._set_preset_time(hh, mm, ss))
+                       padx=10, pady=5, cursor="hand2")
+        btn.pack(side=tk.LEFT, padx=(0, 6))
+        btn._preset_hms = (h, m, s)  # type: ignore[attr-defined]
+        app._preset_chips.append(btn)
+
+    # 按当前状态应用输入锁定与进度条
+    if hasattr(app, "_apply_input_lock"):
+        app._apply_input_lock()
+    if hasattr(app, "_refresh_progress_bar"):
+        app._refresh_progress_bar()
 
     app.error_label = ttk.Label(main_frame, style="Error.TLabel")
     app.error_label.pack(pady=(0, 10))
@@ -266,3 +288,8 @@ def build_full_ui(app):
     app.master.bind("<M>", lambda e: app._toggle_mini_mode())
 
     app.master.protocol("WM_DELETE_WINDOW", app._hide_to_tray)
+
+    # 右键菜单：标题区 + 主内容树（不绑关闭/最小化按钮，避免误触）
+    # Button-3 与标题拖动（Button-1）互不干扰
+    bind_full_context_menu(app, title_bar, title_label)
+    bind_full_context_menu_tree(app, main_frame)

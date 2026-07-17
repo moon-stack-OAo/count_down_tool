@@ -110,27 +110,10 @@ def create_mini_window(app):
 
 
 def show_mini_context_menu(app, event):
-    """Mini 右键菜单。"""
-    menu = tk.Menu(app.mini_window or app.master, tearoff=0,
-                   bg=app.COLORS["card"], fg=app.COLORS["text"],
-                   activebackground=app.COLORS["accent"],
-                   activeforeground=app.COLORS["white"])
-    menu.add_command(label="展开完整模式", command=app._switch_to_full)
-    if platform.system() == "Windows":
-        menu.add_command(
-            label="关闭透明模式" if app._transparent_mode else "开启透明模式",
-            command=app._toggle_transparent_mode,
-        )
-    menu.add_separator()
-    if app._has_tray():
-        menu.add_command(label="隐藏到托盘", command=lambda: mini_close(app))
-    else:
-        menu.add_command(label="关闭", command=lambda: mini_close(app))
-    menu.add_command(label="退出", command=app._quit_app)
-    try:
-        menu.tk_popup(event.x_root, event.y_root)
-    finally:
-        menu.grab_release()
+    """Mini 右键菜单（委托共享构建，重建后绑定仍有效）。"""
+    from ui.context_menus import popup_mini_menu
+
+    popup_mini_menu(app, event)
 
 
 def destroy_mini_window(app):

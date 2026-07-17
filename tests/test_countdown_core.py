@@ -39,6 +39,7 @@ from countdown_core import (
     next_second_delay_ms,
     next_state,
     parse_mini_geometry,
+    progress_ratio,
     read_lock_pid,
     resource_path,
     save_config_dict,
@@ -137,6 +138,31 @@ class TestFormatRemaining(unittest.TestCase):
 
     def test_negative_clamped(self):
         self.assertEqual(format_remaining(-5), "00:00:00")
+
+
+class TestProgressRatio(unittest.TestCase):
+    def test_start_zero(self):
+        self.assertEqual(progress_ratio(100, 100), 0.0)
+
+    def test_half(self):
+        self.assertAlmostEqual(progress_ratio(50, 100), 0.5)
+
+    def test_finished(self):
+        self.assertEqual(progress_ratio(0, 100), 1.0)
+
+    def test_clamp_over_one(self):
+        self.assertEqual(progress_ratio(-10, 100), 1.0)
+
+    def test_clamp_under_zero(self):
+        self.assertEqual(progress_ratio(150, 100), 0.0)
+
+    def test_total_zero_is_done(self):
+        self.assertEqual(progress_ratio(0, 0), 1.0)
+        self.assertEqual(progress_ratio(5, 0), 1.0)
+
+    def test_invalid_returns_zero(self):
+        self.assertEqual(progress_ratio("x", 10), 0.0)
+        self.assertEqual(progress_ratio(10, None), 0.0)
 
 
 class TestFormatTargetLabel(unittest.TestCase):

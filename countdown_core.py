@@ -10,7 +10,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple, Union
 
-__version__ = "1.3.0"
+__version__ = "1.3.3"
 APP_NAME = "倒计时工具"
 APP_NAME_EN = "Count Down Tool"
 
@@ -204,6 +204,27 @@ def format_remaining(total_seconds: int) -> str:
     hours, remainder = divmod(total, 3600)
     minutes, seconds = divmod(remainder, 60)
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def progress_ratio(remaining_seconds: float, total_seconds: float) -> float:
+    """
+    倒计时进度比：已过 / 总时长，夹紧到 [0, 1]。
+    remaining 为剩余秒数；total 为总时长秒数。
+    total <= 0 时返回 1.0（视为已完成，避免除零）。
+    """
+    try:
+        remaining = float(remaining_seconds)
+        total = float(total_seconds)
+    except (TypeError, ValueError):
+        return 0.0
+    if total <= 0:
+        return 1.0
+    ratio = 1.0 - (remaining / total)
+    if ratio < 0.0:
+        return 0.0
+    if ratio > 1.0:
+        return 1.0
+    return ratio
 
 
 def format_target_label(

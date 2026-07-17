@@ -43,6 +43,7 @@ jobs:
             --hidden-import ui.mini_window \
             --hidden-import ui.time_picker \
             --hidden-import ui.full_window \
+            --hidden-import ui.context_menus \
             --hidden-import services \
             --hidden-import services.tray \
             --hidden-import services.windows_native \
@@ -78,7 +79,7 @@ jobs:
       - name: Build with PyInstaller
         working-directory: .
         run: |
-          python -m PyInstaller --onefile --windowed --name "count_down_tool" --icon="count_down_tool.ico" --add-data "count_down_tool.ico;." --hidden-import countdown_core --hidden-import themes --hidden-import autostart --hidden-import ui --hidden-import ui.widgets --hidden-import ui.mini_window --hidden-import ui.time_picker --hidden-import ui.full_window --hidden-import services --hidden-import services.tray --hidden-import services.windows_native --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder count_down_tool.py
+          python -m PyInstaller --onefile --windowed --name "count_down_tool" --icon="count_down_tool.ico" --add-data "count_down_tool.ico;." --hidden-import countdown_core --hidden-import themes --hidden-import autostart --hidden-import ui --hidden-import ui.widgets --hidden-import ui.mini_window --hidden-import ui.time_picker --hidden-import ui.full_window --hidden-import ui.context_menus --hidden-import services --hidden-import services.tray --hidden-import services.windows_native --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder count_down_tool.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

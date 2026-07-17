@@ -1,0 +1,156 @@
+# -*- coding: utf-8 -*-
+"""右键上下文菜单：Mini / 完整窗共享构建（主线程弹出）。"""
+
+import platform
+import tkinter as tk
+from tkinter import messagebox
+
+from autostart import is_autostart_enabled, set_autostart
+from countdown_core import APP_NAME, button_text_for_state
+from themes import list_themes
+
+
+def tray_window_menu_label(is_mini: bool) -> str:
+    """托盘「显示/展开」文案。"""
+    return "展开主窗口" if is_mini else "显示主窗口"
+
+
+def tray_mini_menu_label(is_mini: bool) -> str:
+    """托盘 Mini 切换文案。"""
+    return "退出 Mini 模式" if is_mini else "Mini 模式"
+
+
+def _styled_menu(app, parent):
+    return tk.Menu(
+        parent,
+        tearoff=0,
+        bg=app.COLORS["card"],
+        fg=app.COLORS["text"],
+        activebackground=app.COLORS["accent"],
+        activeforeground=app.COLORS["white"],
+    )
+
+
+def _popup(menu, event):
+    try:
+        menu.tk_popup(event.x_root, event.y_root)
+    finally:
+        menu.grab_release()
+
+
+def add_countdown_toggle_item(menu, app):
+    """开始 / 暂停 / 继续 / 重新开始。"""
+    menu.add_command(
+        label=button_text_for_state(app._state),
+        command=app.toggle_countdown,
+    )
+
+
+def add_transparent_item(menu, app):
+    """Windows 透明模式（✓ 前缀表示已开启）。"""
+    if platform.system() != "Windows":
+        return
+    label = "✓ 透明模式" if app._transparent_mode else "透明模式"
+    menu.add_command(label=label, command=app._toggle_transparent_mode)
+
+
+def add_exit_item(menu, app):
+    menu.add_command(label="退出", command=app._quit_app)
+
+
+def _toggle_autostart_ui(app):
+    """主线程切换开机自启（与托盘逻辑一致）。"""
+    target = not is_autostart_enabled()
+    ok = set_autostart(target)
+    if not ok:
+        messagebox.showerror(
+            APP_NAME,
+            "设置开机自启失败。\n请检查是否有权限写入启动文件夹。",
+            parent=app.master,
+        )
+        app._autostart = is_autostart_enabled()
+        return
+    app._autostart = target
+    app._save_config()
+
+
+def add_autostart_item(menu, app):
+    """开机自启（Windows 有效；其它平台项仍可点，set_autostart 内部会处理）。"""
+    label = "✓ 开机自启" if app._autostart else "开机自启"
+    menu.add_command(label=label, command=lambda: _toggle_autostart_ui(app))
+
+
+def add_theme_cascade(menu, app):
+    """主题级联子菜单。"""
+    theme_menu = _styled_menu(app, menu)
+    for tid, name in list_themes():
+        mark = "✓ " if app._theme_id == tid else ""
+        theme_menu.add_command(
+            label=f"{mark}{name}",
+            command=lambda t=tid: app._apply_theme(t),
+        )
+    menu.add_cascade(label="主题", menu=theme_menu)
+
+
+def popup_mini_menu(app, event):
+    """Mini 右键菜单。"""
+    from ui.mini_window import mini_close
+
+    parent = app.mini_window or app.master
+    menu = _styled_menu(app, parent)
+    menu.add_command(label="展开完整模式", command=app._switch_to_full)
+    add_countdown_toggle_item(menu, app)
+    menu.add_separator()
+    add_transparent_item(menu, app)
+    if app._has_tray():
+        menu.add_command(label="隐藏到托盘", command=lambda: mini_close(app))
+    else:
+        menu.add_command(label="关闭", command=lambda: mini_close(app))
+    menu.add_separator()
+    add_exit_item(menu, app)
+    _popup(menu, event)
+
+
+def popup_full_menu(app, event):
+    """完整窗右键菜单。"""
+    menu = _styled_menu(app, app.master)
+    menu.add_command(label="切换到 Mini 模式", command=app._switch_to_mini)
+    add_countdown_toggle_item(menu, app)
+    menu.add_separator()
+    if app._has_tray():
+        menu.add_command(label="隐藏到托盘", command=app._hide_to_tray)
+    else:
+        # 无托盘时补齐设置入口，避免自启/主题丢失
+        if platform.system() == "Windows":
+            add_autostart_item(menu, app)
+        add_theme_cascade(menu, app)
+    menu.add_separator()
+    add_exit_item(menu, app)
+    _popup(menu, event)
+
+
+def bind_full_context_menu(app, *widgets):
+    """为完整窗区域绑定右键（Button-3；macOS 另绑 Control-Button-1）。"""
+    for w in widgets:
+        if w is None:
+            continue
+        w.bind("<Button-3>", lambda e, a=app: popup_full_menu(a, e))
+        if platform.system() == "Darwin":
+            w.bind("<Control-Button-1>", lambda e, a=app: popup_full_menu(a, e))
+
+
+def bind_full_context_menu_tree(app, root_widget):
+    """递归绑定 root 及其子控件（用于主内容区）。"""
+    if root_widget is None:
+        return
+
+    def _walk(w):
+        bind_full_context_menu(app, w)
+        try:
+            children = w.winfo_children()
+        except tk.TclError:
+            return
+        for child in children:
+            _walk(child)
+
+    _walk(root_widget)
