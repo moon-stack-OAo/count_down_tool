@@ -245,11 +245,20 @@ def show_mini_context_menu(app, event):
     popup_mini_menu(app, event)
 
 
-def destroy_mini_window(app):
-    """销毁 Mini 并保存位置与尺寸。"""
+def destroy_mini_window(app, capture_size=True):
+    """销毁 Mini 并保存位置（默认也保存尺寸）。
+
+    capture_size=False：仅保存位置，不覆盖 _mini_size（用于「恢复默认大小」）。
+    """
     if app.mini_window:
         try:
-            _capture_mini_geometry(app)
+            if capture_size:
+                _capture_mini_geometry(app)
+            else:
+                geo = app.mini_window.geometry()
+                pos = parse_mini_geometry(geo)
+                if pos is not None:
+                    app._mini_pos = pos
             app._save_config()
         except Exception:
             logger.warning("保存 Mini 窗口几何失败", exc_info=True)
@@ -532,7 +541,9 @@ def reset_mini_size(app):
     """恢复平台默认 Mini 尺寸并重建窗口。"""
     app._mini_size = None
     if app.mini_window:
-        recreate_mini_window(app)
+        # 销毁时勿把当前放大尺寸写回 _mini_size
+        destroy_mini_window(app, capture_size=False)
+        create_mini_window(app)
     app._save_config()
 
 

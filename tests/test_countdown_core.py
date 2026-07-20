@@ -356,9 +356,11 @@ class TestMiniSizeHelpers(unittest.TestCase):
         self.assertEqual(cfg.get("mini_size"), None)
 
     def test_merge_mini_size_none(self):
-        cfg = {"mini_size": [1, 2]}
+        cfg = {"mini_size": [1, 2], "theme": "dark"}
         merged = merge_mini_size(cfg, None)
-        self.assertEqual(merged["mini_size"], [1, 2])
+        self.assertNotIn("mini_size", merged)
+        self.assertEqual(merged["theme"], "dark")
+        self.assertEqual(cfg["mini_size"], [1, 2])
 
     def test_mini_content_scale(self):
         self.assertAlmostEqual(mini_content_scale(236, 48, 236, 48), 1.0)

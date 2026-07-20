@@ -344,10 +344,15 @@ def merge_mini_size(
     config: Optional[Dict[str, Any]],
     mini_size: Optional[Union[Tuple[int, int], list]],
 ) -> Dict[str, Any]:
-    """合并 mini 尺寸到配置副本，不丢其它字段。"""
+    """合并 mini 尺寸到配置副本，不丢其它字段。
+
+    mini_size 为 None 时删除配置中的 mini_size（表示恢复默认尺寸）。
+    """
     result: Dict[str, Any] = dict(config) if isinstance(config, dict) else {}
     if mini_size:
         result["mini_size"] = list(mini_size)
+    else:
+        result.pop("mini_size", None)
     return result
 
 

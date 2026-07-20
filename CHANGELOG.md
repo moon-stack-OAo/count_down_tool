@@ -10,6 +10,7 @@
 
 - **Mini 不进 Alt+Tab / 任务栏**（Windows）：标为工具窗（`WS_EX_TOOLWINDOW`），避免与完整窗一样出现在切换列表
 - **完整窗保留 Alt+Tab / 任务栏**：`WS_EX_APPWINDOW`；从 Mini / 托盘恢复时重新应用，避免 `withdraw` 后丢失
+- **恢复默认大小无效**：销毁时不再把当前尺寸写回；配置中 `mini_size` 在恢复默认时正确清除
 
 ## 1.3.13
 
