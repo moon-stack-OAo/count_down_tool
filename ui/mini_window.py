@@ -24,19 +24,32 @@ def create_mini_window(app):
     mini.title("")
     mini.overrideredirect(True)
     mini.attributes("-topmost", True)
-    mini.configure(bg=app.COLORS["title_bar"])
     system = platform.system()
+    # macOS 透明：-transparent + systemTransparent（底板透明、文字不透明）
+    # Windows 透明：-transparentcolor 色键抠底
+    if app._transparent_mode and system == "Darwin":
+        bg = "systemTransparent"
+    else:
+        bg = app.COLORS["title_bar"]
+    mini.configure(bg=bg)
     if app._transparent_mode:
         if system == "Windows":
             mini.attributes("-transparentcolor", app.COLORS["title_bar"])
-        else:
-            # macOS / Linux：色键不可用，用半透明 alpha
+        elif system == "Darwin":
             try:
-                mini.attributes("-alpha", 0.72)
+                mini.attributes("-transparent", True)
             except tk.TclError:
-                logger.debug("设置 Mini alpha 失败", exc_info=True)
+                # 旧 Tk 无 -transparent 时回退半透明
+                try:
+                    mini.attributes("-alpha", 0.3)
+                except tk.TclError:
+                    logger.debug("设置 Mini 透明失败", exc_info=True)
+                bg = app.COLORS["title_bar"]
+                mini.configure(bg=bg)
     else:
         try:
+            if system == "Darwin":
+                mini.attributes("-transparent", False)
             mini.attributes("-alpha", 1.0)
         except tk.TclError:
             pass
@@ -57,39 +70,39 @@ def create_mini_window(app):
     else:
         mini.configure(highlightthickness=1, highlightbackground=app.COLORS["accent"])
 
-    main_frame = tk.Frame(mini, bg=app.COLORS["title_bar"])
+    main_frame = tk.Frame(mini, bg=bg)
     main_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
 
-    content_frame = tk.Frame(main_frame, bg=app.COLORS["title_bar"])
+    content_frame = tk.Frame(main_frame, bg=bg)
     content_frame.pack(fill=tk.BOTH, expand=True)
 
     app.mini_time_label = tk.Label(
         content_frame, text=datetime.now().strftime("%H:%M"),
         font=app.FONTS["mini_time"],
-        bg=app.COLORS["title_bar"], fg=app.COLORS["text_dim"],
+        bg=bg, fg=app.COLORS["text_dim"],
     )
     app.mini_time_label.pack(side=tk.LEFT)
 
     tk.Label(
         content_frame, text="│",
         font=app.FONTS["mini_time"],
-        bg=app.COLORS["title_bar"], fg=app.COLORS["border"],
+        bg=bg, fg=app.COLORS["border"],
     ).pack(side=tk.LEFT, padx=4)
 
     app.mini_countdown_label = tk.Label(
         content_frame, text=app.countdown_text,
         font=app.FONTS["mini_countdown"],
-        bg=app.COLORS["title_bar"], fg=app.COLORS["white"],
+        bg=bg, fg=app.COLORS["white"],
     )
     app.mini_countdown_label.pack(side=tk.LEFT, expand=True)
 
-    btn_frame = tk.Frame(content_frame, bg=app.COLORS["title_bar"])
+    btn_frame = tk.Frame(content_frame, bg=bg)
     btn_frame.pack(side=tk.RIGHT, padx=(4, 0))
 
     # 菜单按钮：macOS 触控板右键不稳定时的可靠入口
     menu_btn = tk.Label(
         btn_frame, text="⋯", font=app._font("label", 12, bold=True),
-        bg=app.COLORS["title_bar"], fg=app.COLORS["text_dim"], cursor="hand2",
+        bg=bg, fg=app.COLORS["text_dim"], cursor="hand2",
     )
     menu_btn.pack(side=tk.LEFT, padx=(0, 4))
     menu_btn.bind("<Button-1>", lambda e: show_mini_context_menu(app, e))
@@ -98,14 +111,14 @@ def create_mini_window(app):
 
     expand_btn = tk.Label(
         btn_frame, text="↗", font=app._font("label", 10),
-        bg=app.COLORS["title_bar"], fg=app.COLORS["accent_glow"], cursor="hand2",
+        bg=bg, fg=app.COLORS["accent_glow"], cursor="hand2",
     )
     expand_btn.pack(side=tk.LEFT, padx=(0, 4))
     expand_btn.bind("<Button-1>", lambda e: app._switch_to_full())
 
     close_btn = tk.Label(
         btn_frame, text="×", font=app._font("label", 10, bold=True),
-        bg=app.COLORS["title_bar"], fg=app.COLORS["text_dim"], cursor="hand2",
+        bg=bg, fg=app.COLORS["text_dim"], cursor="hand2",
     )
     close_btn.pack(side=tk.LEFT)
     close_btn.bind("<Button-1>", lambda e: mini_close(app))

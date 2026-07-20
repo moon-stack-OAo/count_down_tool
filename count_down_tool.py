@@ -531,7 +531,7 @@ class CountdownApp:
         show_time_picker(self)
 
     def _toggle_transparent_mode(self, event=None):
-        """切换透明模式（Windows 色键抠色；macOS/Linux 半透明 alpha）。"""
+        """切换透明模式（Windows 色键抠色；macOS systemTransparent）。"""
         self._transparent_mode = not self._transparent_mode
         self._save_config()
         if self._is_mini:

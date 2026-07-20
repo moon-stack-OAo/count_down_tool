@@ -62,7 +62,7 @@ def add_countdown_toggle_item(menu, app):
 
 
 def add_transparent_item(menu, app):
-    """透明模式（Windows 色键；macOS/Linux 半透明）。✓ 表示已开启。"""
+    """透明模式（Windows 色键；macOS systemTransparent）。✓ 表示已开启。"""
     label = "✓ 透明模式" if app._transparent_mode else "透明模式"
     menu.add_command(label=label, command=app._toggle_transparent_mode)
 
