@@ -140,6 +140,14 @@ class CountdownApp:
         self.mini_window = None
         self.mini_countdown_label = None
         self.mini_time_label = None
+        self.mini_sep_label = None
+        self.mini_main_frame = None
+        self.mini_content_frame = None
+        self.mini_btn_frame = None
+        self.mini_menu_btn = None
+        self.mini_expand_btn = None
+        self.mini_close_btn = None
+        self._mini_layout_scale = None
         self._transparent_mode = False
         self._last_mode = "full"
         self._drag_data = {"x": 0, "y": 0}
@@ -557,6 +565,7 @@ class CountdownApp:
         self.master.deiconify()
         self.master.lift()
         self.master.focus_force()
+        self._set_taskbar_visible()
 
     def _has_tray(self):
         return bool(HAS_PYSTRAY and self.tray_icon)
@@ -620,6 +629,8 @@ class CountdownApp:
         self._destroy_mini_window()
         self.master.deiconify()
         self.master.lift()
+        # withdraw/deiconify 后需重新声明任务栏/Alt+Tab 可见
+        self._set_taskbar_visible()
         self._save_config()
         refresh_tray_menu(self)
 

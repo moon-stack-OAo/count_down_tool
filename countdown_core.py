@@ -291,6 +291,30 @@ def normalize_mini_size(
     return w, h
 
 
+def mini_content_scale(
+    width: int,
+    height: int,
+    base_w: int,
+    base_h: int,
+    min_scale: float = 0.55,
+    max_scale: float = 3.0,
+) -> float:
+    """相对默认 Mini 尺寸计算内容缩放比（取宽高比中较小者，保证装得下）。"""
+    try:
+        w, h = int(width), int(height)
+        bw, bh = int(base_w), int(base_h)
+    except (TypeError, ValueError):
+        return 1.0
+    if w <= 0 or h <= 0 or bw <= 0 or bh <= 0:
+        return 1.0
+    scale = min(w / float(bw), h / float(bh))
+    if scale < min_scale:
+        return min_scale
+    if scale > max_scale:
+        return max_scale
+    return scale
+
+
 def load_config_dict(path: str) -> Dict[str, Any]:
     """读取 JSON 配置；不存在或损坏时返回空 dict。"""
     try:

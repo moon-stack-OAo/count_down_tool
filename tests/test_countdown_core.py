@@ -37,6 +37,7 @@ from countdown_core import (
     merge_config,
     merge_mini_position,
     merge_mini_size,
+    mini_content_scale,
     next_second_delay_ms,
     next_state,
     normalize_mini_size,
@@ -358,6 +359,13 @@ class TestMiniSizeHelpers(unittest.TestCase):
         cfg = {"mini_size": [1, 2]}
         merged = merge_mini_size(cfg, None)
         self.assertEqual(merged["mini_size"], [1, 2])
+
+    def test_mini_content_scale(self):
+        self.assertAlmostEqual(mini_content_scale(236, 48, 236, 48), 1.0)
+        self.assertAlmostEqual(mini_content_scale(472, 96, 236, 48), 2.0)
+        self.assertAlmostEqual(mini_content_scale(118, 48, 236, 48), 0.55, places=2)
+        self.assertAlmostEqual(mini_content_scale(236, 24, 236, 48), 0.55, places=2)
+        self.assertEqual(mini_content_scale(0, 48, 236, 48), 1.0)
 
 
 class TestResourcePath(unittest.TestCase):

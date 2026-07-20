@@ -10,11 +10,12 @@ from tkinter import messagebox
 from countdown_core import (
     STATE_FINISHED,
     STATE_RUNNING,
+    mini_content_scale,
     normalize_mini_size,
     parse_mini_geometry,
     parse_mini_size,
 )
-from services.windows_native import start_native_window_drag
+from services.windows_native import set_tool_window, start_native_window_drag
 
 logger = logging.getLogger("count_down_tool")
 
@@ -97,13 +98,8 @@ def create_mini_window(app):
     else:
         mini.configure(highlightthickness=1, highlightbackground=app.COLORS["accent"])
 
-    pad_x, pad_y = (8, 5) if system == "Darwin" else (6, 4)
-    gap = 5 if system == "Darwin" else 4
-    btn_menu_sz = 18 if system == "Darwin" else 12
-    btn_sz = 16 if system == "Darwin" else 10
-
     main_frame = tk.Frame(mini, bg=bg)
-    main_frame.pack(fill=tk.BOTH, expand=True, padx=pad_x, pady=pad_y)
+    main_frame.pack(fill=tk.BOTH, expand=True)
 
     content_frame = tk.Frame(main_frame, bg=bg)
     content_frame.pack(fill=tk.BOTH, expand=True)
@@ -115,11 +111,12 @@ def create_mini_window(app):
     )
     app.mini_time_label.pack(side=tk.LEFT)
 
-    tk.Label(
+    app.mini_sep_label = tk.Label(
         content_frame, text="│",
         font=app.FONTS["mini_time"],
         bg=bg, fg=app.COLORS["border"],
-    ).pack(side=tk.LEFT, padx=gap)
+    )
+    app.mini_sep_label.pack(side=tk.LEFT)
 
     app.mini_countdown_label = tk.Label(
         content_frame, text=app.countdown_text,
@@ -129,27 +126,27 @@ def create_mini_window(app):
     app.mini_countdown_label.pack(side=tk.LEFT, expand=True)
 
     btn_frame = tk.Frame(content_frame, bg=bg)
-    btn_frame.pack(side=tk.RIGHT, padx=(gap, 0))
+    btn_frame.pack(side=tk.RIGHT)
 
     # 菜单按钮：macOS 触控板右键不稳定时的可靠入口
     menu_btn = tk.Label(
-        btn_frame, text="⋯", font=app._font("label", btn_menu_sz, bold=True),
+        btn_frame, text="⋯", font=app._font("label", 12, bold=True),
         bg=bg, fg=app.COLORS["text_dim"], cursor="hand2",
     )
-    menu_btn.pack(side=tk.LEFT, padx=(0, gap))
+    menu_btn.pack(side=tk.LEFT)
     menu_btn.bind("<Button-1>", lambda e: show_mini_context_menu(app, e))
     menu_btn.bind("<Enter>", lambda e: menu_btn.config(fg=app.COLORS["accent"]))
     menu_btn.bind("<Leave>", lambda e: menu_btn.config(fg=app.COLORS["text_dim"]))
 
     expand_btn = tk.Label(
-        btn_frame, text="↗", font=app._font("label", btn_sz),
+        btn_frame, text="↗", font=app._font("label", 10),
         bg=bg, fg=app.COLORS["accent_glow"], cursor="hand2",
     )
-    expand_btn.pack(side=tk.LEFT, padx=(0, gap))
+    expand_btn.pack(side=tk.LEFT)
     expand_btn.bind("<Button-1>", lambda e: app._switch_to_full())
 
     close_btn = tk.Label(
-        btn_frame, text="×", font=app._font("label", btn_sz, bold=True),
+        btn_frame, text="×", font=app._font("label", 10, bold=True),
         bg=bg, fg=app.COLORS["text_dim"], cursor="hand2",
     )
     close_btn.pack(side=tk.LEFT)
@@ -157,8 +154,22 @@ def create_mini_window(app):
     close_btn.bind("<Enter>", lambda e: close_btn.config(fg=app.COLORS["btn_hover_close"]))
     close_btn.bind("<Leave>", lambda e: close_btn.config(fg=app.COLORS["text_dim"]))
 
-    drag_widgets = (mini, main_frame, content_frame,
-                    app.mini_time_label, app.mini_countdown_label)
+    app.mini_main_frame = main_frame
+    app.mini_content_frame = content_frame
+    app.mini_btn_frame = btn_frame
+    app.mini_menu_btn = menu_btn
+    app.mini_expand_btn = expand_btn
+    app.mini_close_btn = close_btn
+    app._mini_layout_scale = None
+    app.mini_window = mini
+    # 桌面小组件：不进任务栏 / Alt+Tab
+    set_tool_window(mini)
+    apply_mini_content_scale(app, win_w, win_h, force=True)
+
+    drag_widgets = (
+        mini, main_frame, content_frame,
+        app.mini_time_label, app.mini_sep_label, app.mini_countdown_label,
+    )
     for widget in drag_widgets:
         widget.bind("<Button-1>", lambda e: mini_on_press(app, e))
         widget.bind("<B1-Motion>", lambda e: mini_on_motion(app, e))
@@ -168,7 +179,6 @@ def create_mini_window(app):
 
     bind_mini_context_menu(app, *drag_widgets, menu_btn, expand_btn, close_btn)
 
-    app.mini_window = mini
     # 确保 macOS 上 Toplevel 获得焦点，右键/菜单可弹出
     try:
         mini.lift()
@@ -250,7 +260,79 @@ def destroy_mini_window(app):
         app.mini_window = None
         app.mini_countdown_label = None
         app.mini_time_label = None
+        app.mini_sep_label = None
+        app.mini_main_frame = None
+        app.mini_content_frame = None
+        app.mini_btn_frame = None
+        app.mini_menu_btn = None
+        app.mini_expand_btn = None
+        app.mini_close_btn = None
+        app._mini_layout_scale = None
         app._resize_data = None
+
+
+def apply_mini_content_scale(app, width=None, height=None, force=False):
+    """按相对默认尺寸的比例缩放 Mini 字号与内边距。"""
+    if not getattr(app, "mini_window", None):
+        return
+    try:
+        if width is None or height is None:
+            width = app.mini_window.winfo_width()
+            height = app.mini_window.winfo_height()
+        width, height = int(width), int(height)
+        if width <= 1 or height <= 1:
+            return
+    except (tk.TclError, TypeError, ValueError):
+        return
+
+    base_w, base_h = app.default_mini_size()
+    scale = mini_content_scale(width, height, base_w, base_h)
+    prev = getattr(app, "_mini_layout_scale", None)
+    if not force and prev is not None and abs(prev - scale) < 0.02:
+        return
+    app._mini_layout_scale = scale
+
+    system = platform.system()
+    base_pad_x, base_pad_y = (8, 5) if system == "Darwin" else (6, 4)
+    base_gap = 5 if system == "Darwin" else 4
+    base_menu = 18 if system == "Darwin" else 12
+    base_btn = 16 if system == "Darwin" else 10
+
+    def _sz(base, floor=7):
+        return max(floor, int(round(base * scale)))
+
+    pad_x = _sz(base_pad_x, 2)
+    pad_y = _sz(base_pad_y, 2)
+    gap = _sz(base_gap, 2)
+    time_sz = _sz(app.FONTS["mini_time"][1], 8)
+    count_sz = _sz(app.FONTS["mini_countdown"][1], 10)
+    menu_sz = _sz(base_menu, 8)
+    btn_sz = _sz(base_btn, 8)
+
+    try:
+        if getattr(app, "mini_main_frame", None):
+            app.mini_main_frame.pack_configure(padx=pad_x, pady=pad_y)
+        if getattr(app, "mini_time_label", None):
+            app.mini_time_label.config(font=app._font("mini_time", time_sz, bold=True))
+        if getattr(app, "mini_sep_label", None):
+            app.mini_sep_label.config(font=app._font("mini_time", time_sz, bold=True))
+            app.mini_sep_label.pack_configure(padx=gap)
+        if getattr(app, "mini_countdown_label", None):
+            app.mini_countdown_label.config(
+                font=app._font("mini_countdown", count_sz, bold=True)
+            )
+        if getattr(app, "mini_btn_frame", None):
+            app.mini_btn_frame.pack_configure(padx=(gap, 0))
+        if getattr(app, "mini_menu_btn", None):
+            app.mini_menu_btn.config(font=app._font("label", menu_sz, bold=True))
+            app.mini_menu_btn.pack_configure(padx=(0, gap))
+        if getattr(app, "mini_expand_btn", None):
+            app.mini_expand_btn.config(font=app._font("label", btn_sz))
+            app.mini_expand_btn.pack_configure(padx=(0, gap))
+        if getattr(app, "mini_close_btn", None):
+            app.mini_close_btn.config(font=app._font("label", btn_sz, bold=True))
+    except tk.TclError:
+        pass
 
 
 def recreate_mini_window(app):
@@ -404,6 +486,7 @@ def _do_resize(app, event):
 
     try:
         win.geometry(f"{w}x{h}+{x}+{y}")
+        apply_mini_content_scale(app, w, h)
     except tk.TclError:
         pass
 
@@ -418,6 +501,8 @@ def mini_on_release(app, event=None):
     try:
         _capture_mini_geometry(app)
         app._save_config()
+        if was_resize:
+            apply_mini_content_scale(app, force=True)
     except Exception:
         logger.warning("结束 Mini 操作时保存几何失败", exc_info=True)
     if was_resize:

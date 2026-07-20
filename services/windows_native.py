@@ -222,11 +222,60 @@ def set_taskbar_visible(master):
         set_window_long.restype = ctypes.c_long
 
         style = get_window_long(hwnd, GWL_EXSTYLE)
-        style = style & ~WS_EX_TOOLWINDOW
-        style = style | WS_EX_APPWINDOW
+        style = (style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
         set_window_long(hwnd, GWL_EXSTYLE, style)
+        try:
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+            SWP_NOZORDER = 0x0004
+            SWP_FRAMECHANGED = 0x0020
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, 0, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
+            )
+        except Exception:
+            pass
     except Exception:
         logger.warning("任务栏可见性设置失败", exc_info=True)
+
+
+def set_tool_window(window):
+    """将窗口标为工具窗：不进任务栏 / Alt+Tab（桌面小组件用）。"""
+    if platform.system() != "Windows":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        hwnd = int(window.frame(), 16)
+        GWL_EXSTYLE = -20
+        WS_EX_APPWINDOW = 0x00040000
+        WS_EX_TOOLWINDOW = 0x00000080
+
+        get_window_long = ctypes.windll.user32.GetWindowLongW
+        set_window_long = ctypes.windll.user32.SetWindowLongW
+        get_window_long.argtypes = [wintypes.HWND, ctypes.c_int]
+        get_window_long.restype = ctypes.c_long
+        set_window_long.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long]
+        set_window_long.restype = ctypes.c_long
+
+        style = get_window_long(hwnd, GWL_EXSTYLE)
+        style = (style & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW
+        set_window_long(hwnd, GWL_EXSTYLE, style)
+        # 刷新扩展样式，确保 Alt+Tab 立即生效
+        try:
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+            SWP_NOZORDER = 0x0004
+            SWP_FRAMECHANGED = 0x0020
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, 0, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
+            )
+        except Exception:
+            pass
+    except Exception:
+        logger.warning("工具窗样式设置失败", exc_info=True)
 
 
 def start_native_window_drag(window):
