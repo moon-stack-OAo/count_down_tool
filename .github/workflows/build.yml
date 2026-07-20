@@ -150,31 +150,63 @@ jobs:
         with:
           path: artifacts
 
+      - name: Build release notes
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES_FILE=release_notes.md
+          SECTION_FILE=changelog_section.md
+
+          # 从 CHANGELOG 提取对应版本段落（## x.y.z 至下一 ##）
+          if [ -f CHANGELOG.md ]; then
+            awk -v ver="$VERSION" '
+              $0 ~ "^## " ver "( |$)" { found=1; next }
+              found && /^## / { exit }
+              found { print }
+            ' CHANGELOG.md | sed -e 's/[[:space:]]*$//' | awk 'NF{p=1} p' > "$SECTION_FILE" || true
+          else
+            : > "$SECTION_FILE"
+          fi
+
+          if [ ! -s "$SECTION_FILE" ]; then
+            echo "_（CHANGELOG 中未找到 ${VERSION} 条目，请查看提交记录）_" > "$SECTION_FILE"
+          fi
+
+          {
+            echo "## 更新内容"
+            echo ""
+            cat "$SECTION_FILE"
+            echo ""
+            echo "## 下载说明"
+            echo ""
+            echo "| 平台 | 文件 | 适用 |"
+            echo "| --- | --- | --- |"
+            echo "| Windows | \`count_down_tool.exe\` | 64 位 Windows |"
+            echo "| macOS Apple Silicon | \`Count_Down_Tool_mac_arm64.zip\` | M1 / M2 / M3 / M4… |"
+            echo "| macOS Intel | \`Count_Down_Tool_mac_x86_64.zip\` | Intel 芯片 Mac |"
+            echo ""
+            echo "不确定芯片：左上角 → 关于本机 → 芯片/处理器。"
+            echo "Apple Silicon 一般选 **arm64**；Intel 选 **x86_64**。"
+            echo ""
+            echo "## macOS 首次打开"
+            echo "1. 下载对应架构的 zip，解压得到 \`Count Down Tool.app\`"
+            echo "2. 拖到「应用程序」"
+            echo "3. 若提示无法验证开发者：右键 App →「打开」→ 再点「打开」"
+            echo "4. 或终端："
+            echo "   \`\`\`bash"
+            echo "   xattr -cr \"/Applications/Count Down Tool.app\""
+            echo "   open \"/Applications/Count Down Tool.app\""
+            echo "   \`\`\`"
+            echo "> 当前为 CI 未公证（notarize）构建，仅适合自用/内部分发。"
+          } > "$NOTES_FILE"
+
+          echo "----- release notes preview -----"
+          cat "$NOTES_FILE"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          body: |
-            ## 下载说明
-
-            | 平台 | 文件 | 适用 |
-            | --- | --- | --- |
-            | Windows | `count_down_tool.exe` | 64 位 Windows |
-            | macOS Apple Silicon | `Count_Down_Tool_mac_arm64.zip` | M1 / M2 / M3 / M4… |
-            | macOS Intel | `Count_Down_Tool_mac_x86_64.zip` | Intel 芯片 Mac |
-
-            不确定芯片：左上角 → 关于本机 → 芯片/处理器。  
-            Apple Silicon 一般选 **arm64**；Intel 选 **x86_64**。
-
-            ## macOS 首次打开
-            1. 下载对应架构的 zip，解压得到 `Count Down Tool.app`
-            2. 拖到「应用程序」
-            3. 若提示无法验证开发者：右键 App →「打开」→ 再点「打开」
-            4. 或终端：
-               ```bash
-               xattr -cr "/Applications/Count Down Tool.app"
-               open "/Applications/Count Down Tool.app"
-               ```
-            > 当前为 CI 未公证（notarize）构建，仅适合自用/内部分发。
+          body_path: release_notes.md
           files: |
             artifacts/count_down_tool_mac_arm64/Count_Down_Tool_mac_arm64.zip
             artifacts/count_down_tool_mac_x86_64/Count_Down_Tool_mac_x86_64.zip

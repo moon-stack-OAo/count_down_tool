@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.12
+
+### 修复
+
+- **macOS Mini 尺寸**：在 1.3.11 基础上约减半（590×120，字号 25/40），边距与按钮同步缩小
+
+## 1.3.11
+
+### 修复
+
+- **macOS Mini 过小**：Retina / Tk 点阵下窗口与字号放大；强制 geometry / minsize，避免被压成极小条
+
+## 1.3.10
+
+### 修复
+
+- **macOS 透明模式**：改用 `-transparent` + `systemTransparent` 真正抠底；失败时回退 `-alpha`
+- Windows 仍使用 `-transparentcolor` 色键透明
+
 ## 1.3.9
 
 ### 功能
