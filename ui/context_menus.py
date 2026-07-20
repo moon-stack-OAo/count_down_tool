@@ -107,7 +107,7 @@ def add_theme_cascade(menu, app):
 
 def popup_mini_menu(app, event):
     """Mini 右键菜单。"""
-    from ui.mini_window import mini_close
+    from ui.mini_window import mini_close, reset_mini_size
 
     parent = app.mini_window or app.master
     menu = _styled_menu(app, parent)
@@ -115,6 +115,7 @@ def popup_mini_menu(app, event):
     add_countdown_toggle_item(menu, app)
     menu.add_separator()
     add_transparent_item(menu, app)
+    menu.add_command(label="恢复默认大小", command=lambda: reset_mini_size(app))
     if app._has_tray():
         menu.add_command(label="隐藏到托盘", command=lambda: mini_close(app))
     else:

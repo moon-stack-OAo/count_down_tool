@@ -36,9 +36,12 @@ from countdown_core import (
     load_config_dict,
     merge_config,
     merge_mini_position,
+    merge_mini_size,
     next_second_delay_ms,
     next_state,
+    normalize_mini_size,
     parse_mini_geometry,
+    parse_mini_size,
     progress_ratio,
     read_lock_pid,
     resource_path,
@@ -316,6 +319,45 @@ class TestParseMiniGeometry(unittest.TestCase):
         self.assertIsNone(parse_mini_geometry(""))
         self.assertIsNone(parse_mini_geometry("220x48"))
         self.assertIsNone(parse_mini_geometry(None))
+
+
+class TestParseMiniSize(unittest.TestCase):
+    def test_full_geo(self):
+        self.assertEqual(parse_mini_size("220x48+100+200"), (220, 48))
+
+    def test_size_only(self):
+        self.assertEqual(parse_mini_size("300x80"), (300, 80))
+
+    def test_invalid(self):
+        self.assertIsNone(parse_mini_size(""))
+        self.assertIsNone(parse_mini_size("+10+20"))
+        self.assertIsNone(parse_mini_size("0x48+1+2"))
+        self.assertIsNone(parse_mini_size(None))
+
+
+class TestMiniSizeHelpers(unittest.TestCase):
+    def test_normalize_clamps(self):
+        self.assertEqual(normalize_mini_size([50, 10], 180, 36, 900, 240), (180, 36))
+        self.assertEqual(normalize_mini_size((1000, 300), 180, 36, 900, 240), (900, 240))
+        self.assertEqual(normalize_mini_size([400, 80], 180, 36, 900, 240), (400, 80))
+
+    def test_normalize_invalid(self):
+        self.assertIsNone(normalize_mini_size(None, 1, 1, 10, 10))
+        self.assertIsNone(normalize_mini_size([1], 1, 1, 10, 10))
+        self.assertIsNone(normalize_mini_size("bad", 1, 1, 10, 10))
+        self.assertIsNone(normalize_mini_size([-1, 20], 1, 1, 10, 10))
+
+    def test_merge_mini_size(self):
+        cfg = {"theme": "dark", "mini_position": [1, 2]}
+        merged = merge_mini_size(cfg, (300, 60))
+        self.assertEqual(merged["mini_size"], [300, 60])
+        self.assertEqual(merged["theme"], "dark")
+        self.assertEqual(cfg.get("mini_size"), None)
+
+    def test_merge_mini_size_none(self):
+        cfg = {"mini_size": [1, 2]}
+        merged = merge_mini_size(cfg, None)
+        self.assertEqual(merged["mini_size"], [1, 2])
 
 
 class TestResourcePath(unittest.TestCase):

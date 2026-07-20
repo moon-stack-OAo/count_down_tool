@@ -8,7 +8,7 @@
 
 - **倒计时**：自定义到期时间（时/分/秒），实时显示剩余时间与进度条
 - **运行锁定**：倒计时进行中/暂停时锁定到期时间与快捷预设，避免目标与剩余不一致
-- **Mini 桌面小组件**：右下角迷你悬浮窗，始终置顶，可拖动；右键可展开/开始暂停/透明/隐藏/退出
+- **Mini 桌面小组件**：右下角迷你悬浮窗，始终置顶，可拖动；边缘/四角可缩放并记住大小；右键可展开/开始暂停/透明/恢复默认大小/隐藏/退出
 - **系统托盘**：支持托盘图标；文案随 Mini/完整模式变化；右键切换模式/退出；结束时托盘通知
 - **完整窗右键**：切换 Mini、倒计时控制、隐藏到托盘/退出（无托盘时含自启与主题）
 - **开机自启**（Windows）：托盘「开机自启」勾选，写入启动文件夹快捷方式
@@ -48,7 +48,7 @@ python count_down_tool.py
 ### Mini 模式
 
 - 默认出现在桌面右下角迷你悬浮窗（可由配置 `last_mode` 控制）
-- 左键拖动调整位置（位置写入用户配置目录）
+- 左键拖动调整位置；拖动边缘/四角调整大小（位置与尺寸写入用户配置目录）
 - 右键菜单（macOS 亦支持触控板副键 / Control+点击；亦可点 **⋯**）：展开完整模式 / 开始·暂停·继续 / 透明模式 / 隐藏到托盘 / 退出
 - 快捷键：`Esc` 隐藏/关闭，`M` 回完整模式，`T` 切换透明（Windows 色键抠底；macOS/Linux 半透明）
 - 展开按钮回到完整模式；关闭按钮有托盘时隐藏到托盘，无托盘时回到完整模式
@@ -63,7 +63,7 @@ python count_down_tool.py
 ### 配置与资源
 
 - 用户配置：`%APPDATA%/count_down_tool/config.json`（Windows）或 `~/.config/count_down_tool/config.json`
-- 字段示例见 `config.example.json`：`mini_position`、`transparent_mode`、`last_mode`、`autostart`、`theme_id`、`theme_custom`
+- 字段示例见 `config.example.json`：`mini_position`、`mini_size`、`transparent_mode`、`last_mode`、`autostart`、`theme_id`、`theme_custom`
 - 打包后图标等资源从程序包内加载
 
 ### 转换图标（macOS）
@@ -129,7 +129,7 @@ count_down_tool/
 ├── ui/
 │   ├── widgets.py           # RoundedFrame 等通用控件
 │   ├── full_window.py       # 完整模式布局
-│   ├── mini_window.py       # Mini 窗创建/拖动/右键
+│   ├── mini_window.py       # Mini 窗创建/拖动/缩放/右键
 │   ├── context_menus.py     # 托盘/右键共享菜单
 │   └── time_picker.py       # 时间选择器
 ├── services/

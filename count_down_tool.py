@@ -33,6 +33,8 @@ from countdown_core import (
     load_config_dict,
     merge_config,
     merge_mini_position,
+    merge_mini_size,
+    normalize_mini_size,
     next_second_delay_ms,
     next_state,
     progress_ratio,
@@ -74,10 +76,18 @@ class CountdownApp:
     WINDOW_HEIGHT = 520
     MINI_WIDTH = 236
     MINI_HEIGHT = 48
-    # macOS Retina / Tk 点阵下 Mini 易偏小，约为 Windows 的 2.5 倍
-    MINI_WIDTH_MAC = 590
-    MINI_HEIGHT_MAC = 120
-    TITLE_DRAG_EXCLUDE_RIGHT = 190
+    # macOS Retina / Tk 点阵下 Mini 易偏小，约为 Windows 的 1.9 倍
+    MINI_WIDTH_MAC = 450
+    MINI_HEIGHT_MAC = 90
+    MINI_MIN_WIDTH = 180
+    MINI_MIN_HEIGHT = 36
+    MINI_MAX_WIDTH = 900
+    MINI_MAX_HEIGHT = 240
+    MINI_MIN_WIDTH_MAC = 280
+    MINI_MIN_HEIGHT_MAC = 56
+    MINI_MAX_WIDTH_MAC = 1400
+    MINI_MAX_HEIGHT_MAC = 360
+    TITLE_DRAG_EXCLUDE_RIGHT = 150
     PICKER_WIDTH = 320
     PICKER_HEIGHT = 240
     CORNER_RADIUS = 20
@@ -145,6 +155,8 @@ class CountdownApp:
         self.countdown_text = "--:--:--"
 
         self._mini_pos = None  # 保存 Mini 窗口位置
+        self._mini_size = None  # 保存 Mini 窗口尺寸 (w, h)
+        self._resize_data = None  # Mini 边缘缩放状态
         self._config_file = user_config_path()
         self._load_config()
         self.master.configure(bg=self.COLORS["bg"])
@@ -183,8 +195,8 @@ class CountdownApp:
                 "countdown": ("Menlo", 42, "bold"),
                 "label": ("Helvetica Neue", 11),
                 "button": ("Helvetica Neue", 12, "bold"),
-                "mini_time": ("Menlo", 25, "bold"),
-                "mini_countdown": ("Menlo", 40, "bold"),
+                "mini_time": ("Menlo", 18, "bold"),
+                "mini_countdown": ("Menlo", 28, "bold"),
             }
         else:
             return {
@@ -213,6 +225,10 @@ class CountdownApp:
             config = load_config_dict(self._config_file)
             self._loaded_keys = set(config.keys())
             self._mini_pos = config.get("mini_position")
+            min_w, min_h, max_w, max_h = self._mini_size_limits()
+            self._mini_size = normalize_mini_size(
+                config.get("mini_size"), min_w, min_h, max_w, max_h
+            )
             if "transparent_mode" in config:
                 self._transparent_mode = bool(config.get("transparent_mode"))
             lm = config.get("last_mode")
@@ -237,12 +253,47 @@ class CountdownApp:
         except Exception:
             logger.exception("读取配置失败")
             self._mini_pos = None
+            self._mini_size = None
             self.COLORS = resolve_theme(self._theme_id, self._theme_custom)
+
+    def default_mini_size(self):
+        """当前平台 Mini 默认尺寸。"""
+        if platform.system() == "Darwin":
+            return (
+                getattr(self, "MINI_WIDTH_MAC", 450),
+                getattr(self, "MINI_HEIGHT_MAC", 90),
+            )
+        return self.MINI_WIDTH, self.MINI_HEIGHT
+
+    def _mini_size_limits(self):
+        """Mini 可调尺寸上下限 (min_w, min_h, max_w, max_h)。"""
+        if platform.system() == "Darwin":
+            return (
+                self.MINI_MIN_WIDTH_MAC,
+                self.MINI_MIN_HEIGHT_MAC,
+                self.MINI_MAX_WIDTH_MAC,
+                self.MINI_MAX_HEIGHT_MAC,
+            )
+        return (
+            self.MINI_MIN_WIDTH,
+            self.MINI_MIN_HEIGHT,
+            self.MINI_MAX_WIDTH,
+            self.MINI_MAX_HEIGHT,
+        )
+
+    def resolved_mini_size(self):
+        """用户保存尺寸或平台默认。"""
+        min_w, min_h, max_w, max_h = self._mini_size_limits()
+        normalized = normalize_mini_size(self._mini_size, min_w, min_h, max_w, max_h)
+        if normalized:
+            return normalized
+        return self.default_mini_size()
 
     def _save_config(self):
         try:
             config = load_config_dict(self._config_file)
             config = merge_mini_position(config, self._mini_pos)
+            config = merge_mini_size(config, self._mini_size)
             mode = "mini" if self._is_mini else "full"
             config = merge_config(
                 config,

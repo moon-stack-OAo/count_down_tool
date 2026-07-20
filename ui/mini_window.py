@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Mini 桌面小组件：创建 / 拖动 / 右键菜单。"""
+"""Mini 桌面小组件：创建 / 拖动 / 缩放 / 右键菜单。"""
 
 import logging
 import platform
@@ -7,10 +7,31 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox
 
-from countdown_core import STATE_FINISHED, STATE_RUNNING, parse_mini_geometry
+from countdown_core import (
+    STATE_FINISHED,
+    STATE_RUNNING,
+    normalize_mini_size,
+    parse_mini_geometry,
+    parse_mini_size,
+)
 from services.windows_native import start_native_window_drag
 
 logger = logging.getLogger("count_down_tool")
+
+# 边缘热区宽度（像素）
+_RESIZE_BORDER = 6
+
+# 边缘 → 光标
+_RESIZE_CURSORS = {
+    "n": "sb_v_double_arrow",
+    "s": "sb_v_double_arrow",
+    "e": "sb_h_double_arrow",
+    "w": "sb_h_double_arrow",
+    "ne": "size_ne_sw",
+    "sw": "size_ne_sw",
+    "nw": "size_nw_se",
+    "se": "size_nw_se",
+}
 
 
 def create_mini_window(app):
@@ -54,11 +75,8 @@ def create_mini_window(app):
         except tk.TclError:
             pass
 
-    if system == "Darwin":
-        win_w = getattr(app, "MINI_WIDTH_MAC", 590)
-        win_h = getattr(app, "MINI_HEIGHT_MAC", 120)
-    else:
-        win_w, win_h = app.MINI_WIDTH, app.MINI_HEIGHT
+    win_w, win_h = app.resolved_mini_size()
+    min_w, min_h, max_w, max_h = app._mini_size_limits()
     screen_w = mini.winfo_screenwidth()
     screen_h = mini.winfo_screenheight()
 
@@ -69,8 +87,8 @@ def create_mini_window(app):
         y = screen_h - win_h - app.MINI_MARGIN_BOTTOM
     mini.geometry(f"{win_w}x{win_h}+{x}+{y}")
     try:
-        mini.minsize(win_w, win_h)
-        mini.maxsize(win_w, win_h)
+        mini.minsize(min_w, min_h)
+        mini.maxsize(max_w, max_h)
     except tk.TclError:
         pass
 
@@ -79,10 +97,10 @@ def create_mini_window(app):
     else:
         mini.configure(highlightthickness=1, highlightbackground=app.COLORS["accent"])
 
-    pad_x, pad_y = (10, 6) if system == "Darwin" else (6, 4)
-    gap = 6 if system == "Darwin" else 4
-    btn_menu_sz = 24 if system == "Darwin" else 12
-    btn_sz = 20 if system == "Darwin" else 10
+    pad_x, pad_y = (8, 5) if system == "Darwin" else (6, 4)
+    gap = 5 if system == "Darwin" else 4
+    btn_menu_sz = 18 if system == "Darwin" else 12
+    btn_sz = 16 if system == "Darwin" else 10
 
     main_frame = tk.Frame(mini, bg=bg)
     main_frame.pack(fill=tk.BOTH, expand=True, padx=pad_x, pady=pad_y)
@@ -141,15 +159,12 @@ def create_mini_window(app):
 
     drag_widgets = (mini, main_frame, content_frame,
                     app.mini_time_label, app.mini_countdown_label)
-    if platform.system() == "Windows":
-        for w in drag_widgets:
-            w.bind("<Button-1>", lambda e: mini_start_drag(app, e))
-            w.bind("<ButtonRelease-1>", lambda e: mini_end_drag(app, e))
-    else:
-        for widget in drag_widgets:
-            widget.bind("<Button-1>", lambda e: mini_start_drag(app, e))
-            widget.bind("<B1-Motion>", lambda e: mini_do_drag(app, e))
-            widget.bind("<ButtonRelease-1>", lambda e: mini_end_drag(app, e))
+    for widget in drag_widgets:
+        widget.bind("<Button-1>", lambda e: mini_on_press(app, e))
+        widget.bind("<B1-Motion>", lambda e: mini_on_motion(app, e))
+        widget.bind("<ButtonRelease-1>", lambda e: mini_on_release(app, e))
+        widget.bind("<Motion>", lambda e: mini_on_hover(app, e))
+        widget.bind("<Leave>", lambda e: mini_on_leave(app, e))
 
     bind_mini_context_menu(app, *drag_widgets, menu_btn, expand_btn, close_btn)
 
@@ -173,7 +188,7 @@ def create_mini_window(app):
         w.bind("<m>", lambda e: app._switch_to_full())
         w.bind("<M>", lambda e: app._switch_to_full())
 
-    # macOS：布局后再强制尺寸，避免被压成极小窗
+    # macOS：布局后再强制不低于用户/默认尺寸，避免被压成极小窗
     def _force_mini_size(event=None, w=win_w, h=win_h, win=mini):
         try:
             if not win.winfo_exists():
@@ -221,15 +236,13 @@ def show_mini_context_menu(app, event):
 
 
 def destroy_mini_window(app):
-    """销毁 Mini 并保存位置。"""
+    """销毁 Mini 并保存位置与尺寸。"""
     if app.mini_window:
         try:
-            pos = parse_mini_geometry(app.mini_window.geometry())
-            if pos is not None:
-                app._mini_pos = pos
-                app._save_config()
+            _capture_mini_geometry(app)
+            app._save_config()
         except Exception:
-            logger.warning("保存 Mini 窗口位置失败", exc_info=True)
+            logger.warning("保存 Mini 窗口几何失败", exc_info=True)
         try:
             app.mini_window.destroy()
         except Exception:
@@ -237,6 +250,7 @@ def destroy_mini_window(app):
         app.mini_window = None
         app.mini_countdown_label = None
         app.mini_time_label = None
+        app._resize_data = None
 
 
 def recreate_mini_window(app):
@@ -245,16 +259,109 @@ def recreate_mini_window(app):
     create_mini_window(app)
 
 
-def mini_start_drag(app, event):
-    if platform.system() == "Windows":
+def _event_xy_in_window(app, event):
+    """将事件坐标转为相对 Mini 窗口左上角。"""
+    win = app.mini_window
+    if not win:
+        return 0, 0
+    try:
+        return event.x_root - win.winfo_rootx(), event.y_root - win.winfo_rooty()
+    except tk.TclError:
+        return event.x, event.y
+
+
+def _hit_resize_edge(app, x, y):
+    """根据相对窗口坐标判断缩放边缘；中心返回 None。"""
+    win = app.mini_window
+    if not win:
+        return None
+    try:
+        w = max(win.winfo_width(), 1)
+        h = max(win.winfo_height(), 1)
+    except tk.TclError:
+        return None
+    b = _RESIZE_BORDER
+    on_w = x <= b
+    on_e = x >= w - b
+    on_n = y <= b
+    on_s = y >= h - b
+    if on_n and on_w:
+        return "nw"
+    if on_n and on_e:
+        return "ne"
+    if on_s and on_w:
+        return "sw"
+    if on_s and on_e:
+        return "se"
+    if on_n:
+        return "n"
+    if on_s:
+        return "s"
+    if on_w:
+        return "w"
+    if on_e:
+        return "e"
+    return None
+
+
+def mini_on_hover(app, event):
+    """边缘悬停时切换缩放光标。"""
+    if not app.mini_window or app._resize_data:
+        return
+    x, y = _event_xy_in_window(app, event)
+    edge = _hit_resize_edge(app, x, y)
+    cursor = _RESIZE_CURSORS.get(edge, "")
+    try:
+        app.mini_window.configure(cursor=cursor)
+    except tk.TclError:
+        pass
+
+
+def mini_on_leave(app, event):
+    if app._resize_data:
+        return
+    try:
         if app.mini_window:
-            start_native_window_drag(app.mini_window)
+            app.mini_window.configure(cursor="")
+    except tk.TclError:
+        pass
+
+
+def mini_on_press(app, event):
+    """按下：边缘开始缩放，否则拖动窗口。"""
+    if not app.mini_window:
+        return
+    x, y = _event_xy_in_window(app, event)
+    edge = _hit_resize_edge(app, x, y)
+    if edge:
+        try:
+            win = app.mini_window
+            app._resize_data = {
+                "edge": edge,
+                "start_x": event.x_root,
+                "start_y": event.y_root,
+                "orig_x": win.winfo_x(),
+                "orig_y": win.winfo_y(),
+                "orig_w": win.winfo_width(),
+                "orig_h": win.winfo_height(),
+            }
+        except tk.TclError:
+            app._resize_data = None
+        return
+
+    app._resize_data = None
+    if platform.system() == "Windows":
+        start_native_window_drag(app.mini_window)
     else:
         app._drag_data["x"] = event.x
         app._drag_data["y"] = event.y
 
 
-def mini_do_drag(app, event):
+def mini_on_motion(app, event):
+    """拖动或缩放。"""
+    if app._resize_data:
+        _do_resize(app, event)
+        return
     if platform.system() == "Windows":
         return
     if app.mini_window:
@@ -264,16 +371,84 @@ def mini_do_drag(app, event):
         app._mini_pos = (x, y)
 
 
-def mini_end_drag(app, event=None):
+def _do_resize(app, event):
+    data = app._resize_data
+    win = app.mini_window
+    if not data or not win:
+        return
+    min_w, min_h, max_w, max_h = app._mini_size_limits()
+    dx = event.x_root - data["start_x"]
+    dy = event.y_root - data["start_y"]
+    edge = data["edge"]
+    x, y = data["orig_x"], data["orig_y"]
+    w, h = data["orig_w"], data["orig_h"]
+
+    if "e" in edge:
+        w = data["orig_w"] + dx
+    if "s" in edge:
+        h = data["orig_h"] + dy
+    if "w" in edge:
+        w = data["orig_w"] - dx
+        x = data["orig_x"] + dx
+    if "n" in edge:
+        h = data["orig_h"] - dy
+        y = data["orig_y"] + dy
+
+    w = max(min_w, min(max_w, w))
+    h = max(min_h, min(max_h, h))
+    # 钳制后修正左/上边位置，避免窗口跳动
+    if "w" in edge:
+        x = data["orig_x"] + data["orig_w"] - w
+    if "n" in edge:
+        y = data["orig_y"] + data["orig_h"] - h
+
+    try:
+        win.geometry(f"{w}x{h}+{x}+{y}")
+    except tk.TclError:
+        pass
+
+
+def mini_on_release(app, event=None):
+    """松手：保存位置与尺寸。"""
+    if not app.mini_window:
+        app._resize_data = None
+        return
+    was_resize = bool(app._resize_data)
+    app._resize_data = None
+    try:
+        _capture_mini_geometry(app)
+        app._save_config()
+    except Exception:
+        logger.warning("结束 Mini 操作时保存几何失败", exc_info=True)
+    if was_resize:
+        try:
+            app.mini_window.configure(cursor="")
+        except tk.TclError:
+            pass
+
+
+def _capture_mini_geometry(app):
+    """从当前 Mini 窗口读取位置与尺寸到 app 状态。"""
     if not app.mini_window:
         return
-    try:
-        pos = parse_mini_geometry(app.mini_window.geometry())
-        if pos is not None:
-            app._mini_pos = pos
-            app._save_config()
-    except Exception:
-        logger.warning("结束 Mini 拖动时保存位置失败", exc_info=True)
+    geo = app.mini_window.geometry()
+    pos = parse_mini_geometry(geo)
+    if pos is not None:
+        app._mini_pos = pos
+    size = parse_mini_size(geo)
+    if size is not None:
+        min_w, min_h, max_w, max_h = app._mini_size_limits()
+        normalized = normalize_mini_size(size, min_w, min_h, max_w, max_h)
+        if normalized:
+            app._mini_size = normalized
+
+
+def reset_mini_size(app):
+    """恢复平台默认 Mini 尺寸并重建窗口。"""
+    app._mini_size = None
+    if app.mini_window:
+        recreate_mini_window(app)
+    app._save_config()
 
 
 def mini_close(app):

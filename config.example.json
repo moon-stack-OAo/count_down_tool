@@ -1,5 +1,6 @@
 {
   "mini_position": [100, 200],
+  "mini_size": [236, 48],
   "transparent_mode": false,
   "last_mode": "full",
   "autostart": false,

@@ -251,6 +251,46 @@ def parse_mini_geometry(geo: str) -> Optional[Tuple[int, int]]:
         return None
 
 
+def parse_mini_size(geo: str) -> Optional[Tuple[int, int]]:
+    """从 Tk geometry `WxH+X+Y` 或 `WxH` 解析宽高。"""
+    if not geo or not isinstance(geo, str):
+        return None
+    try:
+        size_part = geo.split("+", 1)[0]
+        if "x" not in size_part:
+            return None
+        w_str, h_str = size_part.split("x", 1)
+        w, h = int(w_str), int(h_str)
+        if w <= 0 or h <= 0:
+            return None
+        return w, h
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_mini_size(
+    size: Optional[Union[Tuple[int, int], list]],
+    min_w: int,
+    min_h: int,
+    max_w: int,
+    max_h: int,
+) -> Optional[Tuple[int, int]]:
+    """校验并钳制 mini 尺寸；非法则返回 None。"""
+    if size is None:
+        return None
+    try:
+        if not isinstance(size, (list, tuple)) or len(size) != 2:
+            return None
+        w, h = int(size[0]), int(size[1])
+    except (TypeError, ValueError):
+        return None
+    if w <= 0 or h <= 0:
+        return None
+    w = max(min_w, min(max_w, w))
+    h = max(min_h, min(max_h, h))
+    return w, h
+
+
 def load_config_dict(path: str) -> Dict[str, Any]:
     """读取 JSON 配置；不存在或损坏时返回空 dict。"""
     try:
@@ -276,6 +316,17 @@ def merge_mini_position(
     return result
 
 
+def merge_mini_size(
+    config: Optional[Dict[str, Any]],
+    mini_size: Optional[Union[Tuple[int, int], list]],
+) -> Dict[str, Any]:
+    """合并 mini 尺寸到配置副本，不丢其它字段。"""
+    result: Dict[str, Any] = dict(config) if isinstance(config, dict) else {}
+    if mini_size:
+        result["mini_size"] = list(mini_size)
+    return result
+
+
 def merge_config(
     config: Optional[Dict[str, Any]],
     **updates: Any,
@@ -285,7 +336,7 @@ def merge_config(
     值为 None 的 key 不写入（保留原值）。
 
     常用字段：
-    - mini_position / transparent_mode / last_mode
+    - mini_position / mini_size / transparent_mode / last_mode
     - autostart: Optional[bool]
     - theme_id: Optional[str]
     - theme_custom: Optional[dict]（仅 non-None 时写入；可传 {} 清空自定义色）
