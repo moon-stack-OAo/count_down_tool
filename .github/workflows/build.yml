@@ -213,5 +213,7 @@ jobs:
             artifacts/count_down_tool_win/count_down_tool.exe
           draft: false
           prerelease: false
+          # 同 tag 重推时覆盖附件，避免 already_exists
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
