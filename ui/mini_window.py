@@ -55,8 +55,8 @@ def create_mini_window(app):
             pass
 
     if system == "Darwin":
-        win_w = getattr(app, "MINI_WIDTH_MAC", 1180)
-        win_h = getattr(app, "MINI_HEIGHT_MAC", 240)
+        win_w = getattr(app, "MINI_WIDTH_MAC", 590)
+        win_h = getattr(app, "MINI_HEIGHT_MAC", 120)
     else:
         win_w, win_h = app.MINI_WIDTH, app.MINI_HEIGHT
     screen_w = mini.winfo_screenwidth()
@@ -79,10 +79,10 @@ def create_mini_window(app):
     else:
         mini.configure(highlightthickness=1, highlightbackground=app.COLORS["accent"])
 
-    pad_x, pad_y = (20, 12) if system == "Darwin" else (6, 4)
-    gap = 12 if system == "Darwin" else 4
-    btn_menu_sz = 48 if system == "Darwin" else 12
-    btn_sz = 40 if system == "Darwin" else 10
+    pad_x, pad_y = (10, 6) if system == "Darwin" else (6, 4)
+    gap = 6 if system == "Darwin" else 4
+    btn_menu_sz = 24 if system == "Darwin" else 12
+    btn_sz = 20 if system == "Darwin" else 10
 
     main_frame = tk.Frame(mini, bg=bg)
     main_frame.pack(fill=tk.BOTH, expand=True, padx=pad_x, pady=pad_y)

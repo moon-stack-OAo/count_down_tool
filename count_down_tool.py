@@ -74,10 +74,10 @@ class CountdownApp:
     WINDOW_HEIGHT = 520
     MINI_WIDTH = 236
     MINI_HEIGHT = 48
-    # macOS Retina / Tk 点阵下 Mini 易偏小，约为 Windows 的 5 倍
-    MINI_WIDTH_MAC = 1180
-    MINI_HEIGHT_MAC = 240
-    TITLE_DRAG_EXCLUDE_RIGHT = 380
+    # macOS Retina / Tk 点阵下 Mini 易偏小，约为 Windows 的 2.5 倍
+    MINI_WIDTH_MAC = 590
+    MINI_HEIGHT_MAC = 120
+    TITLE_DRAG_EXCLUDE_RIGHT = 190
     PICKER_WIDTH = 320
     PICKER_HEIGHT = 240
     CORNER_RADIUS = 20
@@ -183,8 +183,8 @@ class CountdownApp:
                 "countdown": ("Menlo", 42, "bold"),
                 "label": ("Helvetica Neue", 11),
                 "button": ("Helvetica Neue", 12, "bold"),
-                "mini_time": ("Menlo", 50, "bold"),
-                "mini_countdown": ("Menlo", 80, "bold"),
+                "mini_time": ("Menlo", 25, "bold"),
+                "mini_countdown": ("Menlo", 40, "bold"),
             }
         else:
             return {
