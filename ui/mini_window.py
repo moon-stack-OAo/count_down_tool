@@ -54,7 +54,11 @@ def create_mini_window(app):
         except tk.TclError:
             pass
 
-    win_w, win_h = app.MINI_WIDTH, app.MINI_HEIGHT
+    if system == "Darwin":
+        win_w = getattr(app, "MINI_WIDTH_MAC", 1180)
+        win_h = getattr(app, "MINI_HEIGHT_MAC", 240)
+    else:
+        win_w, win_h = app.MINI_WIDTH, app.MINI_HEIGHT
     screen_w = mini.winfo_screenwidth()
     screen_h = mini.winfo_screenheight()
 
@@ -64,14 +68,24 @@ def create_mini_window(app):
         x = screen_w - win_w - app.MINI_MARGIN_RIGHT
         y = screen_h - win_h - app.MINI_MARGIN_BOTTOM
     mini.geometry(f"{win_w}x{win_h}+{x}+{y}")
+    try:
+        mini.minsize(win_w, win_h)
+        mini.maxsize(win_w, win_h)
+    except tk.TclError:
+        pass
 
     if app._transparent_mode:
         mini.configure(highlightthickness=0)
     else:
         mini.configure(highlightthickness=1, highlightbackground=app.COLORS["accent"])
 
+    pad_x, pad_y = (20, 12) if system == "Darwin" else (6, 4)
+    gap = 12 if system == "Darwin" else 4
+    btn_menu_sz = 48 if system == "Darwin" else 12
+    btn_sz = 40 if system == "Darwin" else 10
+
     main_frame = tk.Frame(mini, bg=bg)
-    main_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=pad_x, pady=pad_y)
 
     content_frame = tk.Frame(main_frame, bg=bg)
     content_frame.pack(fill=tk.BOTH, expand=True)
@@ -87,7 +101,7 @@ def create_mini_window(app):
         content_frame, text="│",
         font=app.FONTS["mini_time"],
         bg=bg, fg=app.COLORS["border"],
-    ).pack(side=tk.LEFT, padx=4)
+    ).pack(side=tk.LEFT, padx=gap)
 
     app.mini_countdown_label = tk.Label(
         content_frame, text=app.countdown_text,
@@ -97,27 +111,27 @@ def create_mini_window(app):
     app.mini_countdown_label.pack(side=tk.LEFT, expand=True)
 
     btn_frame = tk.Frame(content_frame, bg=bg)
-    btn_frame.pack(side=tk.RIGHT, padx=(4, 0))
+    btn_frame.pack(side=tk.RIGHT, padx=(gap, 0))
 
     # 菜单按钮：macOS 触控板右键不稳定时的可靠入口
     menu_btn = tk.Label(
-        btn_frame, text="⋯", font=app._font("label", 12, bold=True),
+        btn_frame, text="⋯", font=app._font("label", btn_menu_sz, bold=True),
         bg=bg, fg=app.COLORS["text_dim"], cursor="hand2",
     )
-    menu_btn.pack(side=tk.LEFT, padx=(0, 4))
+    menu_btn.pack(side=tk.LEFT, padx=(0, gap))
     menu_btn.bind("<Button-1>", lambda e: show_mini_context_menu(app, e))
     menu_btn.bind("<Enter>", lambda e: menu_btn.config(fg=app.COLORS["accent"]))
     menu_btn.bind("<Leave>", lambda e: menu_btn.config(fg=app.COLORS["text_dim"]))
 
     expand_btn = tk.Label(
-        btn_frame, text="↗", font=app._font("label", 10),
+        btn_frame, text="↗", font=app._font("label", btn_sz),
         bg=bg, fg=app.COLORS["accent_glow"], cursor="hand2",
     )
-    expand_btn.pack(side=tk.LEFT, padx=(0, 4))
+    expand_btn.pack(side=tk.LEFT, padx=(0, gap))
     expand_btn.bind("<Button-1>", lambda e: app._switch_to_full())
 
     close_btn = tk.Label(
-        btn_frame, text="×", font=app._font("label", 10, bold=True),
+        btn_frame, text="×", font=app._font("label", btn_sz, bold=True),
         bg=bg, fg=app.COLORS["text_dim"], cursor="hand2",
     )
     close_btn.pack(side=tk.LEFT)
@@ -158,6 +172,23 @@ def create_mini_window(app):
         w.bind("<T>", app._toggle_transparent_mode)
         w.bind("<m>", lambda e: app._switch_to_full())
         w.bind("<M>", lambda e: app._switch_to_full())
+
+    # macOS：布局后再强制尺寸，避免被压成极小窗
+    def _force_mini_size(event=None, w=win_w, h=win_h, win=mini):
+        try:
+            if not win.winfo_exists():
+                return
+            if win.winfo_width() < w - 2 or win.winfo_height() < h - 2:
+                geo = win.geometry()
+                parts = geo.split("+")
+                pos = f"+{parts[1]}+{parts[2]}" if len(parts) == 3 else ""
+                win.geometry(f"{w}x{h}{pos}")
+        except tk.TclError:
+            pass
+
+    if system == "Darwin":
+        mini.after_idle(_force_mini_size)
+        mini.after(50, _force_mini_size)
 
     sync_mini_state(app)
 
