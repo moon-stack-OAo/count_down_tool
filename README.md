@@ -2,14 +2,14 @@
 
 ![Python](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
-![Windows](https://img.shields.io/badge/Windows%20(v1.3.16)-0078D6?logo=windows&logoColor=white)
-![macOS](https://img.shields.io/badge/macOS%20(v1.3.16)-000000?logo=apple&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.3.16-brightgreen.svg)
+![Windows](https://img.shields.io/badge/Windows%20(v1.3.17)-0078D6?logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS%20(v1.3.17)-000000?logo=apple&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.3.17-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 一个基于 Python Tkinter 的现代化深色主题桌面倒计时工具，支持完整模式和 Mini 桌面小组件模式。
 
-**当前版本：1.3.16**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.3.17**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 功能特性
 
@@ -91,7 +91,12 @@ python count_down_tool.py
 scripts\build_exe.bat
 ```
 
-输出：`dist/count_down_tool.exe`
+输出（版本取自 `core.countdown_core.__version__`）：
+
+```text
+dist/count_down_tool-<version>-win64.exe
+# 例：dist/count_down_tool-1.3.17-win64.exe
+```
 
 ### macOS
 
@@ -102,18 +107,24 @@ scripts\build_exe.bat
 ./scripts/build_mac_all.sh
 
 # 或分步执行
-./scripts/build_mac.sh      # 仅打包（--windowed，尽量产出 .app）
+./scripts/build_mac.sh      # 仅打包（--windowed，尽量产出 .app + 带版本 zip）
 ./scripts/create_dmg.sh     # 创建 DMG：优先打包 .app，否则打包可执行文件
 ```
 
-本地输出可能是 `dist/count_down_tool.app` 和/或 `dist/count_down_tool`。
+本地输出：`dist/count_down_tool.app`（安装用固定名）以及带版本的 zip：
 
-**GitHub Release（v1.3.5+）请按芯片选择：**
+```text
+dist/count_down_tool-<version>-mac-arm64.zip   # Apple Silicon
+dist/count_down_tool-<version>-mac-x86_64.zip  # Intel
+```
 
-| 文件                               | 适用                          |
-|----------------------------------|-----------------------------|
-| `count_down_tool_mac_arm64.zip`  | Apple Silicon（M1/M2/M3/M4…） |
-| `count_down_tool_mac_x86_64.zip` | Intel Mac                   |
+**GitHub Release 请按芯片选择（文件名含版本号）：**
+
+| 文件 | 适用 |
+|------|------|
+| `count_down_tool-<version>-win64.exe` | 64 位 Windows |
+| `count_down_tool-<version>-mac-arm64.zip` | Apple Silicon（M1/M2/M3/M4…） |
+| `count_down_tool-<version>-mac-x86_64.zip` | Intel Mac |
 
 「关于本机」可查看芯片类型。解压后将 `count_down_tool.app` 拖到「应用程序」。
 

@@ -74,6 +74,17 @@ echo ""
 echo -e "${YELLOW}[5/5]${NC} 开始打包..."
 cd "$TOOL_DIR" || exit 1
 
+VERSION="$("$PYTHON" -c "from core.countdown_core import __version__; print(__version__)")"
+ARCH="$(uname -m)"
+case "$ARCH" in
+    arm64|aarch64) ZIP_SUFFIX="mac-arm64" ;;
+    x86_64|amd64)  ZIP_SUFFIX="mac-x86_64" ;;
+    *)             ZIP_SUFFIX="mac-${ARCH}" ;;
+esac
+ZIP_NAME="count_down_tool-${VERSION}-${ZIP_SUFFIX}.zip"
+echo "  版本: ${VERSION}  架构: ${ARCH}"
+echo "  产物 zip: ${ZIP_NAME}"
+
 ICON_OPTION=""
 if [ -f "$TOOL_DIR/assets/count_down_tool.icns" ]; then
     ICON_OPTION="--icon=$TOOL_DIR/assets/count_down_tool.icns"
@@ -125,11 +136,19 @@ echo ""
 echo "========================================"
 APP_BUNDLE="$TOOL_DIR/dist/count_down_tool.app"
 APP_BIN="$TOOL_DIR/dist/count_down_tool"
+ZIP_PATH="$TOOL_DIR/dist/${ZIP_NAME}"
 if [ -d "$APP_BUNDLE" ] || [ -f "$APP_BIN" ]; then
     echo -e "${GREEN}✓ 打包成功!${NC}"
     echo ""
     if [ -d "$APP_BUNDLE" ]; then
         echo "App: $APP_BUNDLE"
+        find "$APP_BUNDLE" -type f \( -name "count_down_tool" -o -path "*/MacOS/*" \) -exec chmod +x {} \; 2>/dev/null || true
+        if command -v codesign &> /dev/null; then
+            codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
+        fi
+        rm -f "$ZIP_PATH"
+        (cd "$TOOL_DIR/dist" && ditto -c -k --sequesterRsrc --keepParent "count_down_tool.app" "${ZIP_NAME}")
+        echo "带版本 zip: $ZIP_PATH"
     fi
     if [ -f "$APP_BIN" ]; then
         echo "输出文件: $APP_BIN"
@@ -152,6 +171,7 @@ if [ -d "$APP_BUNDLE" ] || [ -f "$APP_BIN" ]; then
     if [ -d "$APP_BUNDLE" ]; then
         echo "运行应用:"
         echo "  open \"$APP_BUNDLE\""
+        echo "  # 或解压 ${ZIP_NAME}"
     else
         echo "运行应用:"
         echo "  $APP_BIN"

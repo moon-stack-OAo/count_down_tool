@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.17
+
+### 构建
+
+- **产物文件名带版本号**：Windows `count_down_tool-<version>-win64.exe`；macOS zip `count_down_tool-<version>-mac-arm64.zip` / `…-mac-x86_64.zip`（`.app` 内部名不变）；CI 优先用 tag，本地用 `__version__`
+
 ## 1.3.16
 
 ### 变更

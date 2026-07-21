@@ -19,15 +19,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # zip_name：Release 对外文件名；artifact：Actions 中间产物目录名（勿与 zip 仅大小写区分）
+          # zip_suffix：Release 对外文件名后缀；artifact：Actions 中间产物目录名
           - runner: macos-14
             arch: arm64
-            zip_name: count_down_tool_mac_arm64.zip
+            zip_suffix: mac-arm64
             artifact: mac-arm64
           # macos-13 已于 2025-12 退役；Intel 请用 macos-15-intel（最后一代 x86_64 runner）
           - runner: macos-15-intel
             arch: x86_64
-            zip_name: count_down_tool_mac_x86_64.zip
+            zip_suffix: mac-x86_64
             artifact: mac-x86_64
     runs-on: ${{ matrix.runner }}
     name: Build macOS (${{ matrix.arch }})
@@ -39,6 +39,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Resolve version
+        id: ver
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(python -c "from core.countdown_core import __version__; print(__version__)")"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: ${VERSION}"
 
       - name: Verify host arch
         run: |
@@ -87,10 +99,12 @@ jobs:
             --hidden-import PIL._tkinter_finder \
             count_down_tool.py
 
-      - name: Package .app (chmod + ad-hoc sign + zip)
+      - name: Package .app (chmod + ad-hoc sign + versioned zip)
         working-directory: .
         run: |
           set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          ZIP_NAME="count_down_tool-${VERSION}-${{ matrix.zip_suffix }}.zip"
           APP="dist/count_down_tool.app"
           if [ ! -d "$APP" ]; then
             echo "ERROR: expected app bundle not found:"
@@ -106,14 +120,15 @@ jobs:
           codesign --force --deep --sign - "$APP" || true
           codesign -dv --verbose=2 "$APP" || true
           cd dist
-          ditto -c -k --sequesterRsrc --keepParent "count_down_tool.app" "${{ matrix.zip_name }}"
-          ls -lh "${{ matrix.zip_name }}"
+          ditto -c -k --sequesterRsrc --keepParent "count_down_tool.app" "${ZIP_NAME}"
+          ls -lh "${ZIP_NAME}"
+          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.zip_name }}
+          path: dist/count_down_tool-${{ steps.ver.outputs.version }}-${{ matrix.zip_suffix }}.zip
           if-no-files-found: error
 
   build-windows:
@@ -128,6 +143,19 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(python -c "from core.countdown_core import __version__; print(__version__)")"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: ${VERSION}"
+
       - name: Install dependencies
         run: |
           pip install pyinstaller pystray pillow
@@ -137,12 +165,21 @@ jobs:
         run: |
           python -m PyInstaller --onefile --windowed --name "count_down_tool" --icon="assets/count_down_tool.ico" --add-data "assets/count_down_tool.ico;assets" --hidden-import core --hidden-import core.countdown_core --hidden-import core.themes --hidden-import services.autostart --hidden-import app --hidden-import app.countdown --hidden-import app.config_store --hidden-import app.window_chrome --hidden-import app.theme --hidden-import app.mode --hidden-import ui --hidden-import ui.widgets --hidden-import ui.mini_window --hidden-import ui.time_picker --hidden-import ui.full_window --hidden-import ui.context_menus --hidden-import ui.mini_text_picker --hidden-import services --hidden-import services.tray --hidden-import services.windows_native --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder count_down_tool.py
 
+      - name: Rename to versioned exe
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          OUT="dist/count_down_tool-${VERSION}-win64.exe"
+          mv "dist/count_down_tool.exe" "$OUT"
+          ls -lh "$OUT"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           # 与 dist 内 exe 文件名区分：artifact 仅作 CI 目录名
           name: win-exe
-          path: dist/count_down_tool.exe
+          path: dist/count_down_tool-${{ steps.ver.outputs.version }}-win64.exe
           if-no-files-found: error
 
   create-release:
@@ -167,6 +204,9 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           NOTES_FILE=release_notes.md
           SECTION_FILE=changelog_section.md
+          WIN_EXE="count_down_tool-${VERSION}-win64.exe"
+          MAC_ARM="count_down_tool-${VERSION}-mac-arm64.zip"
+          MAC_X86="count_down_tool-${VERSION}-mac-x86_64.zip"
 
           # 从 CHANGELOG 提取对应版本段落（## x.y.z 至下一 ##）
           if [ -f CHANGELOG.md ]; then
@@ -192,9 +232,9 @@ jobs:
             echo ""
             echo "| 平台 | 文件 | 适用 |"
             echo "| --- | --- | --- |"
-            echo "| Windows | \`count_down_tool.exe\` | 64 位 Windows |"
-            echo "| macOS Apple Silicon | \`count_down_tool_mac_arm64.zip\` | M1 / M2 / M3 / M4… |"
-            echo "| macOS Intel | \`count_down_tool_mac_x86_64.zip\` | Intel 芯片 Mac |"
+            echo "| Windows | \`${WIN_EXE}\` | 64 位 Windows |"
+            echo "| macOS Apple Silicon | \`${MAC_ARM}\` | M1 / M2 / M3 / M4… |"
+            echo "| macOS Intel | \`${MAC_X86}\` | Intel 芯片 Mac |"
             echo ""
             echo "不确定芯片：左上角 → 关于本机 → 芯片/处理器。"
             echo "Apple Silicon 一般选 **arm64**；Intel 选 **x86_64**。"
@@ -214,14 +254,17 @@ jobs:
           echo "----- release notes preview -----"
           cat "$NOTES_FILE"
 
+          # 列出实际产物路径供上传
+          find artifacts -type f | sort
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           body_path: release_notes.md
           files: |
-            artifacts/mac-arm64/count_down_tool_mac_arm64.zip
-            artifacts/mac-x86_64/count_down_tool_mac_x86_64.zip
-            artifacts/win-exe/count_down_tool.exe
+            artifacts/mac-arm64/*
+            artifacts/mac-x86_64/*
+            artifacts/win-exe/*
           draft: false
           prerelease: false
           # 同 tag 重推时覆盖附件，避免 already_exists

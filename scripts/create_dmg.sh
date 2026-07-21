@@ -9,7 +9,19 @@ export LANG=en_US.UTF-8
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOOL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="count_down_tool"
-DMG_NAME="count_down_tool_mac.dmg"
+# 带版本号的 DMG 名（在项目根读 __version__；失败则用无版本后缀）
+VERSION=""
+if [ -x "$TOOL_DIR/.venv/bin/python3" ]; then
+    VERSION="$(cd "$TOOL_DIR" && "$TOOL_DIR/.venv/bin/python3" -c "from core.countdown_core import __version__; print(__version__)" 2>/dev/null || true)"
+fi
+if [ -z "$VERSION" ]; then
+    VERSION="$(cd "$TOOL_DIR" && python3 -c "from core.countdown_core import __version__; print(__version__)" 2>/dev/null || true)"
+fi
+if [ -n "$VERSION" ]; then
+    DMG_NAME="count_down_tool-${VERSION}-mac.dmg"
+else
+    DMG_NAME="count_down_tool_mac.dmg"
+fi
 VOLUME_NAME="Count Down Tool"
 APP_BUNDLE="$TOOL_DIR/dist/${APP_NAME}.app"
 APP_BIN="$TOOL_DIR/dist/${APP_NAME}"

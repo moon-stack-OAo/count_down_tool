@@ -56,6 +56,17 @@ fi
 
 cd "$TOOL_DIR" || exit 1
 
+VERSION="$("$PYTHON" -c "from core.countdown_core import __version__; print(__version__)")"
+ARCH="$(uname -m)"
+case "$ARCH" in
+    arm64|aarch64) ZIP_SUFFIX="mac-arm64" ;;
+    x86_64|amd64)  ZIP_SUFFIX="mac-x86_64" ;;
+    *)             ZIP_SUFFIX="mac-${ARCH}" ;;
+esac
+ZIP_NAME="count_down_tool-${VERSION}-${ZIP_SUFFIX}.zip"
+echo "Version: ${VERSION}  Arch: ${ARCH}"
+echo "Zip name (if packaged): ${ZIP_NAME}"
+
 if [ -d "build" ]; then
     echo "Cleaning old build files..."
     rm -rf build
@@ -122,12 +133,21 @@ echo "Building application..."
 echo ""
 echo "========================================"
 # --windowed 在 macOS 通常生成 .app；也兼容单文件可执行体
+# .app 内部名保持 count_down_tool.app；对外 zip 带版本号
 APP_BUNDLE="$TOOL_DIR/dist/count_down_tool.app"
 APP_BIN="$TOOL_DIR/dist/count_down_tool"
+ZIP_PATH="$TOOL_DIR/dist/${ZIP_NAME}"
 if [ -d "$APP_BUNDLE" ] || [ -f "$APP_BIN" ]; then
     echo -e "${GREEN}Build successful!${NC}"
     if [ -d "$APP_BUNDLE" ]; then
         echo "App bundle: $APP_BUNDLE"
+        find "$APP_BUNDLE" -type f \( -name "count_down_tool" -o -path "*/MacOS/*" \) -exec chmod +x {} \; 2>/dev/null || true
+        if command -v codesign &> /dev/null; then
+            codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
+        fi
+        rm -f "$ZIP_PATH"
+        (cd "$TOOL_DIR/dist" && ditto -c -k --sequesterRsrc --keepParent "count_down_tool.app" "${ZIP_NAME}")
+        echo "Versioned zip: $ZIP_PATH"
     fi
     if [ -f "$APP_BIN" ]; then
         echo "Binary: $APP_BIN"
@@ -145,6 +165,7 @@ if [ -d "$APP_BUNDLE" ] || [ -f "$APP_BIN" ]; then
     if [ -d "$APP_BUNDLE" ]; then
         echo "To run the application:"
         echo "  open \"$APP_BUNDLE\""
+        echo "  # or unzip ${ZIP_NAME}"
     else
         echo "To run the application:"
         echo "  $APP_BIN"

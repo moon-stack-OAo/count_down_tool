@@ -24,13 +24,28 @@ echo.
 
 cd /d "%TOOL_DIR%"
 
+rem 从 core.countdown_core.__version__ 读取版本，产物带版本号
+set "VERSION="
+for /f "usebackq delims=" %%V in (`"%PYTHON%" -c "from core.countdown_core import __version__; print(__version__)"`) do set "VERSION=%%V"
+if not defined VERSION (
+    echo [ERROR] Failed to read __version__ from core.countdown_core
+    pause
+    exit /b 1
+)
+set "OUT_EXE=count_down_tool-%VERSION%-win64.exe"
+echo   Version: %VERSION%
+echo   Output:  dist\%OUT_EXE%
+echo.
+
 "%PYTHON%" -m PyInstaller --onefile --windowed --icon="%ICON_FILE%" --name "count_down_tool" --add-data "%ICON_FILE%;assets" --hidden-import core --hidden-import core.countdown_core --hidden-import core.themes --hidden-import services.autostart --hidden-import app --hidden-import app.countdown --hidden-import app.config_store --hidden-import app.window_chrome --hidden-import app.theme --hidden-import app.mode --hidden-import ui --hidden-import ui.widgets --hidden-import ui.mini_window --hidden-import ui.time_picker --hidden-import ui.full_window --hidden-import ui.context_menus --hidden-import ui.mini_text_picker --hidden-import services --hidden-import services.tray --hidden-import services.windows_native --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder --distpath "%TOOL_DIR%\dist" --workpath "%TOOL_DIR%\build" --specpath "%TOOL_DIR%" "%TOOL_DIR%\count_down_tool.py"
 
 echo.
 echo ========================================
 if exist "%TOOL_DIR%\dist\count_down_tool.exe" (
+    if exist "%TOOL_DIR%\dist\%OUT_EXE%" del /q "%TOOL_DIR%\dist\%OUT_EXE%"
+    ren "%TOOL_DIR%\dist\count_down_tool.exe" "%OUT_EXE%"
     echo   Build successful!
-    echo   File: %TOOL_DIR%\dist\count_down_tool.exe
+    echo   File: %TOOL_DIR%\dist\%OUT_EXE%
     echo ========================================
     echo.
     echo   Cleaning build files...
