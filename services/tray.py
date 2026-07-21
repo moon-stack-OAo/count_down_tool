@@ -44,7 +44,11 @@ def init_tray_icon(app, icon_path):
                 lambda icon=None, item=None: tray_show_window(app),
                 default=True,
             ),
-            pystray.MenuItem("选择时间", lambda icon=None, item=None: tray_show_time_picker(app)),
+            pystray.MenuItem(
+                "选择时间",
+                lambda icon=None, item=None: tray_show_time_picker(app),
+                enabled=lambda _: not app._inputs_locked(),
+            ),
             pystray.MenuItem(lambda _: button_text_for_state(app._state),
                              lambda icon=None, item=None: tray_toggle_countdown(app)),
             pystray.Menu.SEPARATOR,
@@ -74,12 +78,16 @@ def refresh_tray_menu(app):
     """同步动态菜单文案/勾选状态。
 
     Windows 上 pystray 会缓存原生菜单；callable 文案变更后必须调用 update_menu，
-    否则启动即 Mini 时仍显示「Mini 模式」而非「退出 Mini 模式」。
+    否则暂停/开始后仍显示旧的「开始倒计时/暂停」文案。
     """
     icon = getattr(app, "tray_icon", None)
     if not icon:
         return
     try:
+        # 重新赋值 menu 再 update，避免部分平台只刷新勾选不刷新文案
+        menu = getattr(icon, "menu", None)
+        if menu is not None:
+            icon.menu = menu
         icon.update_menu()
     except Exception:
         logger.debug("刷新托盘菜单失败", exc_info=True)
@@ -151,7 +159,12 @@ def tray_show_time_picker(app, icon=None, item=None):
 
 
 def tray_toggle_countdown(app, icon=None, item=None):
-    app.master.after(0, app.toggle_countdown)
+    def _do():
+        app.toggle_countdown()
+        # 状态变更后强制重建托盘原生菜单（Windows 缓存）
+        refresh_tray_menu(app)
+
+    app.master.after(0, _do)
 
 
 def tray_toggle_mini(app, icon=None, item=None):

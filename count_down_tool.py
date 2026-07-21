@@ -88,8 +88,8 @@ class CountdownApp:
     MINI_MAX_WIDTH_MAC = 1400
     MINI_MAX_HEIGHT_MAC = 360
     TITLE_DRAG_EXCLUDE_RIGHT = 150
-    PICKER_WIDTH = 320
-    PICKER_HEIGHT = 240
+    PICKER_WIDTH = 420
+    PICKER_HEIGHT = 440
     CORNER_RADIUS = 20
     MINI_MARGIN_RIGHT = 20
     MINI_MARGIN_BOTTOM = 60
@@ -408,8 +408,8 @@ class CountdownApp:
         return self._state
 
     def _inputs_locked(self) -> bool:
-        """running / paused 时锁定到期时间与快捷预设。"""
-        return self._state in (STATE_RUNNING, STATE_PAUSED)
+        """仅 running 时锁定到期时间与快捷预设；暂停后可改时间。"""
+        return self._state == STATE_RUNNING
 
     def _apply_input_lock(self):
         """按状态启用/禁用 Spinbox 与预设 chip。"""
@@ -591,6 +591,9 @@ class CountdownApp:
         self.master.destroy()
 
     def _show_time_picker(self):
+        # 仅 running 禁止改到期时间；paused / idle / finished 可开
+        if self._inputs_locked():
+            return
         show_time_picker(self)
 
     def _toggle_transparent_mode(self, event=None):
@@ -925,7 +928,7 @@ class CountdownApp:
         self._error_timer_id = None
 
     def _set_preset_time(self, hours, minutes, seconds):
-        # running / paused 时锁定，忽略点击
+        # 仅 running 时锁定，忽略点击
         if self._inputs_locked():
             return
         now = datetime.now()
@@ -950,6 +953,7 @@ class CountdownApp:
         if self.btn_start:
             self.btn_start.config(text=button_text_for_state(STATE_RUNNING))
         self._apply_input_lock()
+        refresh_tray_menu(self)
         self.update_countdown(target)
         self._sync_mini_state()
 

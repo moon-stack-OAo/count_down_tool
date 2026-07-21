@@ -31,19 +31,27 @@ def _styled_menu(app, parent):
     )
 
 
+def _popup_xy(event):
+    """从事件解析屏幕坐标。"""
+    x = getattr(event, "x_root", None)
+    y = getattr(event, "y_root", None)
+    if x is None or y is None:
+        widget = getattr(event, "widget", None)
+        if widget is not None:
+            x = widget.winfo_rootx() + max(0, getattr(event, "x", 0))
+            y = widget.winfo_rooty() + max(0, getattr(event, "y", 0))
+        else:
+            return None, None
+    return int(x), int(y)
+
+
 def _popup(menu, event):
     """弹出菜单。兼容右键与按钮点击（macOS 按钮事件坐标也可能有效）。"""
     try:
-        x = getattr(event, "x_root", None)
-        y = getattr(event, "y_root", None)
-        if x is None or y is None:
-            widget = getattr(event, "widget", None)
-            if widget is not None:
-                x = widget.winfo_rootx() + max(0, getattr(event, "x", 0))
-                y = widget.winfo_rooty() + max(0, getattr(event, "y", 0))
-            else:
-                return
-        menu.tk_popup(int(x), int(y))
+        x, y = _popup_xy(event)
+        if x is None:
+            return
+        menu.tk_popup(x, y)
     except tk.TclError:
         pass
     finally:
@@ -53,8 +61,15 @@ def _popup(menu, event):
             pass
 
 
+def _menu_alive(menu):
+    try:
+        return bool(menu) and menu.winfo_exists()
+    except tk.TclError:
+        return False
+
+
 def add_countdown_toggle_item(menu, app):
-    """开始 / 暂停 / 继续 / 重新开始。"""
+    """开始 / 暂停 / 继续 / 重新开始（按当前 app._state 生成文案）。"""
     menu.add_command(
         label=button_text_for_state(app._state),
         command=app.toggle_countdown,
@@ -105,41 +120,79 @@ def add_theme_cascade(menu, app):
     menu.add_cascade(label="主题", menu=theme_menu)
 
 
-def popup_mini_menu(app, event):
-    """Mini 右键菜单。"""
+def _fill_mini_menu(menu, app):
+    """按最新状态填充 Mini 菜单（postcommand / 弹出前调用）。"""
     from ui.mini_window import mini_close, reset_mini_size
 
-    parent = app.mini_window or app.master
-    menu = _styled_menu(app, parent)
+    try:
+        menu.delete(0, tk.END)
+    except tk.TclError:
+        return
     menu.add_command(label="展开完整模式", command=app._switch_to_full)
     add_countdown_toggle_item(menu, app)
+    pick_state = tk.DISABLED if app._inputs_locked() else tk.NORMAL
+    menu.add_command(
+        label="选择时间",
+        command=app._show_time_picker,
+        state=pick_state,
+    )
     menu.add_separator()
     add_transparent_item(menu, app)
     menu.add_command(label="恢复默认大小", command=lambda: reset_mini_size(app))
-    if app._has_tray():
-        menu.add_command(label="隐藏到托盘", command=lambda: mini_close(app))
-    else:
+    # Mini 已有 × 关闭；隐藏到托盘走托盘/× 即可，右键不再重复
+    if not app._has_tray():
         menu.add_command(label="关闭", command=lambda: mini_close(app))
     menu.add_separator()
     add_exit_item(menu, app)
-    _popup(menu, event)
 
 
-def popup_full_menu(app, event):
-    """完整窗右键菜单。"""
-    menu = _styled_menu(app, app.master)
+def _fill_full_menu(menu, app):
+    """按最新状态填充完整窗右键菜单。"""
+    try:
+        menu.delete(0, tk.END)
+    except tk.TclError:
+        return
     menu.add_command(label="切换到 Mini 模式", command=app._switch_to_mini)
     add_countdown_toggle_item(menu, app)
     menu.add_separator()
     if app._has_tray():
         menu.add_command(label="隐藏到托盘", command=app._hide_to_tray)
     else:
-        # 无托盘时补齐设置入口，避免自启/主题丢失
         if platform.system() == "Windows":
             add_autostart_item(menu, app)
         add_theme_cascade(menu, app)
     menu.add_separator()
     add_exit_item(menu, app)
+
+
+def _ensure_ctx_menu(app, attr, parent, filler):
+    """复用 Menu，用 postcommand 在每次显示前按最新状态重建条目。"""
+    menu = getattr(app, attr, None)
+    if not _menu_alive(menu):
+        menu = _styled_menu(app, parent)
+        setattr(app, attr, menu)
+
+    def _post():
+        filler(menu, app)
+
+    try:
+        menu.configure(postcommand=_post)
+    except tk.TclError:
+        pass
+    filler(menu, app)
+    return menu
+
+
+def popup_mini_menu(app, event):
+    """Mini 右键/⋯ 菜单：每次显示前按 app._state 重建文案与启用态。"""
+    parent = app.mini_window or app.master
+    menu = _ensure_ctx_menu(app, "_mini_ctx_menu", parent, _fill_mini_menu)
+    _popup(menu, event)
+
+
+def popup_full_menu(app, event):
+    """完整窗右键菜单：每次显示前按最新状态重建。"""
+    menu = _ensure_ctx_menu(app, "_full_ctx_menu", app.master, _fill_full_menu)
     _popup(menu, event)
 
 
