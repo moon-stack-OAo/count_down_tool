@@ -63,7 +63,8 @@ python count_down_tool.py
 ### 配置与资源
 
 - 用户配置：`%APPDATA%/count_down_tool/config.json`（Windows）或 `~/.config/count_down_tool/config.json`
-- 字段示例见 `config.example.json`：`mini_position`、`mini_size`、`transparent_mode`、`last_mode`、`autostart`、`theme_id`、`theme_custom`、`mini_text`（Mini 当前时间/倒计时三态字色，值为主题色键）
+- 字段示例见 `config.example.json`：`mini_position`、`mini_size`、`transparent_mode`、`last_mode`、`autostart`、`theme_id`、
+  `theme_custom`、`mini_text`（Mini 当前时间/倒计时三态字色，值为主题色键）
 - 打包后图标等资源从程序包内加载
 
 ### 转换图标（macOS）
@@ -101,19 +102,19 @@ scripts\build_exe.bat
 
 **GitHub Release（v1.3.5+）请按芯片选择：**
 
-| 文件 | 适用 |
-| --- | --- |
-| `Count_Down_Tool_mac_arm64.zip` | Apple Silicon（M1/M2/M3/M4…） |
-| `Count_Down_Tool_mac_x86_64.zip` | Intel Mac |
+| 文件                               | 适用                          |
+|----------------------------------|-----------------------------|
+| `count_down_tool_mac_arm64.zip`  | Apple Silicon（M1/M2/M3/M4…） |
+| `count_down_tool_mac_x86_64.zip` | Intel Mac                   |
 
-「关于本机」可查看芯片类型。解压后将 `Count Down Tool.app` 拖到「应用程序」。
+「关于本机」可查看芯片类型。解压后将 `count_down_tool.app` 拖到「应用程序」。
 
 #### 首次打开若提示无法验证 / 已损坏
 
 ```bash
 # 去掉隔离属性后打开（未公证的自用构建常用）
-xattr -cr "/Applications/Count Down Tool.app"
-open "/Applications/Count Down Tool.app"
+xattr -cr "/Applications/count_down_tool.app"
+open "/Applications/count_down_tool.app"
 ```
 
 或：右键 App →「打开」→ 再点「打开」。正式对外分发需 Apple 开发者证书 + 公证（notarize）。

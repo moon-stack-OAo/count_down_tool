@@ -19,15 +19,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # zip_name：Release 对外文件名；artifact：Actions 中间产物目录名（勿与 zip 仅大小写区分）
           - runner: macos-14
             arch: arm64
-            zip_name: Count_Down_Tool_mac_arm64.zip
-            artifact: count_down_tool_mac_arm64
+            zip_name: count_down_tool_mac_arm64.zip
+            artifact: mac-arm64
           # macos-13 已于 2025-12 退役；Intel 请用 macos-15-intel（最后一代 x86_64 runner）
           - runner: macos-15-intel
             arch: x86_64
-            zip_name: Count_Down_Tool_mac_x86_64.zip
-            artifact: count_down_tool_mac_x86_64
+            zip_name: count_down_tool_mac_x86_64.zip
+            artifact: mac-x86_64
     runs-on: ${{ matrix.runner }}
     name: Build macOS (${{ matrix.arch }})
 
@@ -56,7 +57,7 @@ jobs:
           python -m PyInstaller \
             --noconfirm \
             --windowed \
-            --name "Count Down Tool" \
+            --name "count_down_tool" \
             --target-arch ${{ matrix.arch }} \
             --osx-bundle-identifier "com.foundtec.count-down-tool" \
             --add-data "assets/count_down_tool.ico:assets" \
@@ -89,22 +90,22 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
-          APP="dist/Count Down Tool.app"
+          APP="dist/count_down_tool.app"
           if [ ! -d "$APP" ]; then
             echo "ERROR: expected app bundle not found:"
             ls -la dist || true
             exit 1
           fi
-          BIN="$APP/Contents/MacOS/Count Down Tool"
+          BIN="$APP/Contents/MacOS/count_down_tool"
           if [ -f "$BIN" ]; then
             file "$BIN" || true
             lipo -info "$BIN" || true
           fi
-          find "$APP" -type f \( -name "Count Down Tool" -o -path "*/MacOS/*" \) -exec chmod +x {} \;
+          find "$APP" -type f \( -name "count_down_tool" -o -path "*/MacOS/*" \) -exec chmod +x {} \;
           codesign --force --deep --sign - "$APP" || true
           codesign -dv --verbose=2 "$APP" || true
           cd dist
-          ditto -c -k --sequesterRsrc --keepParent "Count Down Tool.app" "${{ matrix.zip_name }}"
+          ditto -c -k --sequesterRsrc --keepParent "count_down_tool.app" "${{ matrix.zip_name }}"
           ls -lh "${{ matrix.zip_name }}"
 
       - name: Upload artifact
@@ -138,7 +139,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: count_down_tool_win
+          # 与 dist 内 exe 文件名区分：artifact 仅作 CI 目录名
+          name: win-exe
           path: dist/count_down_tool.exe
           if-no-files-found: error
 
@@ -190,20 +192,20 @@ jobs:
             echo "| 平台 | 文件 | 适用 |"
             echo "| --- | --- | --- |"
             echo "| Windows | \`count_down_tool.exe\` | 64 位 Windows |"
-            echo "| macOS Apple Silicon | \`Count_Down_Tool_mac_arm64.zip\` | M1 / M2 / M3 / M4… |"
-            echo "| macOS Intel | \`Count_Down_Tool_mac_x86_64.zip\` | Intel 芯片 Mac |"
+            echo "| macOS Apple Silicon | \`count_down_tool_mac_arm64.zip\` | M1 / M2 / M3 / M4… |"
+            echo "| macOS Intel | \`count_down_tool_mac_x86_64.zip\` | Intel 芯片 Mac |"
             echo ""
             echo "不确定芯片：左上角 → 关于本机 → 芯片/处理器。"
             echo "Apple Silicon 一般选 **arm64**；Intel 选 **x86_64**。"
             echo ""
             echo "## macOS 首次打开"
-            echo "1. 下载对应架构的 zip，解压得到 \`Count Down Tool.app\`"
+            echo "1. 下载对应架构的 zip，解压得到 \`count_down_tool.app\`"
             echo "2. 拖到「应用程序」"
             echo "3. 若提示无法验证开发者：右键 App →「打开」→ 再点「打开」"
             echo "4. 或终端："
             echo "   \`\`\`bash"
-            echo "   xattr -cr \"/Applications/Count Down Tool.app\""
-            echo "   open \"/Applications/Count Down Tool.app\""
+            echo "   xattr -cr \"/Applications/count_down_tool.app\""
+            echo "   open \"/Applications/count_down_tool.app\""
             echo "   \`\`\`"
             echo "> 当前为 CI 未公证（notarize）构建，仅适合自用/内部分发。"
           } > "$NOTES_FILE"
@@ -216,9 +218,9 @@ jobs:
         with:
           body_path: release_notes.md
           files: |
-            artifacts/count_down_tool_mac_arm64/Count_Down_Tool_mac_arm64.zip
-            artifacts/count_down_tool_mac_x86_64/Count_Down_Tool_mac_x86_64.zip
-            artifacts/count_down_tool_win/count_down_tool.exe
+            artifacts/mac-arm64/count_down_tool_mac_arm64.zip
+            artifacts/mac-x86_64/count_down_tool_mac_x86_64.zip
+            artifacts/win-exe/count_down_tool.exe
           draft: false
           prerelease: false
           # 同 tag 重推时覆盖附件，避免 already_exists

@@ -98,15 +98,15 @@
 ### 发布 / macOS 架构
 
 - CI 分架构构建并发布：
-    - **arm64**（Apple Silicon / M 芯片）：`Count_Down_Tool_mac_arm64.zip`（`macos-14`）
-    - **x86_64**（Intel）：`Count_Down_Tool_mac_x86_64.zip`（`macos-13`）
+    - **arm64**（Apple Silicon / M 芯片）：`count_down_tool_mac_arm64.zip`（`macos-14`）
+    - **x86_64**（Intel）：`count_down_tool_mac_x86_64.zip`（`macos-15-intel`）
 - 使用 `--target-arch` 与对应 runner 原生构建（暂不做 universal2）
 
 ## 1.3.4
 
 ### 发布 / macOS
 
-- CI 改为产出 **`Count Down Tool.app`**（zip），不再发布裸二进制
+- CI 改为产出 **`count_down_tool.app`**（zip），不再发布裸二进制
 - 构建后 `chmod +x` + ad-hoc `codesign`，降低「无法打开/已损坏」概率
 - Release 说明补充首次打开与 `xattr -cr` 去隔离属性步骤
 
