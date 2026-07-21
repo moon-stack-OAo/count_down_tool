@@ -59,6 +59,16 @@ def init_tray_icon(app, icon_path):
             pystray.MenuItem("透明模式",
                              lambda icon=None, item=None: tray_toggle_transparent(app),
                              checked=lambda _: app._transparent_mode),
+            pystray.MenuItem(
+                "恢复默认大小",
+                lambda icon=None, item=None: tray_reset_mini_size(app),
+                enabled=lambda _: bool(app._is_mini),
+            ),
+            # 系统托盘无法上色，改为打开带真实色块的面板
+            pystray.MenuItem(
+                "字体颜色…",
+                lambda icon=None, item=None: tray_show_mini_text_picker(app),
+            ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("开机自启",
                              lambda icon=None, item=None: tray_toggle_autostart(app),
@@ -175,6 +185,26 @@ def tray_toggle_transparent(app, icon=None, item=None):
     def _do():
         app._toggle_transparent_mode()
         refresh_tray_menu(app)
+
+    app.master.after(0, _do)
+
+
+def tray_reset_mini_size(app, icon=None, item=None):
+    def _do():
+        from ui.mini_window import reset_mini_size
+
+        if app._is_mini:
+            reset_mini_size(app)
+        refresh_tray_menu(app)
+
+    app.master.after(0, _do)
+
+
+def tray_show_mini_text_picker(app, icon=None, item=None):
+    def _do():
+        from ui.mini_text_picker import show_mini_text_picker
+
+        show_mini_text_picker(app)
 
     app.master.after(0, _do)
 

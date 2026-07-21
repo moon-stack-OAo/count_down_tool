@@ -41,8 +41,7 @@ def create_mini_window(app):
         return
 
     mini = tk.Toplevel(app.master)
-    # Mini 统一无边框小组件外观。macOS 系统右键在无边框上不稳定，靠 ⋯ 按钮 +
-    # Control-点击 / Button-2/3 作为菜单入口（见 bind_mini_context_menu）。
+    # Mini 无边框小组件；设置/透明/字色等统一走系统托盘，不提供右键菜单。
     mini.title("")
     mini.overrideredirect(True)
     mini.attributes("-topmost", True)
@@ -70,7 +69,10 @@ def create_mini_window(app):
                 mini.configure(bg=bg)
     else:
         try:
-            if system == "Darwin":
+            if system == "Windows":
+                # 显式清色键，避免个别环境下重建后仍抠色
+                mini.attributes("-transparentcolor", "")
+            elif system == "Darwin":
                 mini.attributes("-transparent", False)
             mini.attributes("-alpha", 1.0)
         except tk.TclError:
@@ -128,16 +130,6 @@ def create_mini_window(app):
     btn_frame = tk.Frame(content_frame, bg=bg)
     btn_frame.pack(side=tk.RIGHT)
 
-    # 菜单按钮：macOS 触控板右键不稳定时的可靠入口
-    menu_btn = tk.Label(
-        btn_frame, text="⋯", font=app._font("label", 12, bold=True),
-        bg=bg, fg=app.COLORS["text_dim"], cursor="hand2",
-    )
-    menu_btn.pack(side=tk.LEFT)
-    menu_btn.bind("<Button-1>", lambda e: show_mini_context_menu(app, e))
-    menu_btn.bind("<Enter>", lambda e: menu_btn.config(fg=app.COLORS["accent"]))
-    menu_btn.bind("<Leave>", lambda e: menu_btn.config(fg=app.COLORS["text_dim"]))
-
     expand_btn = tk.Label(
         btn_frame, text="↗", font=app._font("label", 10),
         bg=bg, fg=app.COLORS["accent_glow"], cursor="hand2",
@@ -157,7 +149,7 @@ def create_mini_window(app):
     app.mini_main_frame = main_frame
     app.mini_content_frame = content_frame
     app.mini_btn_frame = btn_frame
-    app.mini_menu_btn = menu_btn
+    app.mini_menu_btn = None
     app.mini_expand_btn = expand_btn
     app.mini_close_btn = close_btn
     app._mini_layout_scale = None
@@ -177,16 +169,13 @@ def create_mini_window(app):
         widget.bind("<Motion>", lambda e: mini_on_hover(app, e))
         widget.bind("<Leave>", lambda e: mini_on_leave(app, e))
 
-    bind_mini_context_menu(app, *drag_widgets, menu_btn, expand_btn, close_btn)
-
-    # 确保 macOS 上 Toplevel 获得焦点，右键/菜单可弹出
     try:
         mini.lift()
         mini.focus_force()
     except tk.TclError:
         pass
 
-    # Mini 快捷键（与完整窗一致；需焦点在 Mini 上）
+    # Mini 快捷键（需焦点在 Mini 上）；设置项请用托盘菜单
     mini.bind("<Escape>", lambda e: mini_close(app))
     mini.bind("<m>", lambda e: app._switch_to_full())
     mini.bind("<M>", lambda e: app._switch_to_full())
@@ -216,33 +205,6 @@ def create_mini_window(app):
         mini.after(50, _force_mini_size)
 
     sync_mini_state(app)
-
-
-def bind_mini_context_menu(app, *widgets):
-    """绑定 Mini 右键/副键菜单。
-
-    macOS：触控板副键常为 Button-2；Control+点击为 Control-Button-1。
-    无边框窗体上右键常失效，故同时提供 ⋯ 按钮。
-    """
-    sequences = ("<Button-2>", "<Button-3>", "<Control-Button-1>")
-    for w in widgets:
-        if w is None:
-            continue
-        for seq in sequences:
-            w.bind(seq, lambda e, a=app: show_mini_context_menu(a, e))
-
-
-def show_mini_context_menu(app, event):
-    """Mini 右键菜单（委托共享构建，重建后绑定仍有效）。"""
-    from ui.context_menus import popup_mini_menu
-
-    try:
-        if app.mini_window:
-            app.mini_window.lift()
-            app.mini_window.focus_force()
-    except tk.TclError:
-        pass
-    popup_mini_menu(app, event)
 
 
 def destroy_mini_window(app, capture_size=True):
@@ -304,7 +266,6 @@ def apply_mini_content_scale(app, width=None, height=None, force=False):
     system = platform.system()
     base_pad_x, base_pad_y = (8, 5) if system == "Darwin" else (6, 4)
     base_gap = 5 if system == "Darwin" else 4
-    base_menu = 18 if system == "Darwin" else 12
     base_btn = 16 if system == "Darwin" else 10
 
     def _sz(base, floor=7):
@@ -315,7 +276,6 @@ def apply_mini_content_scale(app, width=None, height=None, force=False):
     gap = _sz(base_gap, 2)
     time_sz = _sz(app.FONTS["mini_time"][1], 8)
     count_sz = _sz(app.FONTS["mini_countdown"][1], 10)
-    menu_sz = _sz(base_menu, 8)
     btn_sz = _sz(base_btn, 8)
 
     try:
@@ -332,9 +292,6 @@ def apply_mini_content_scale(app, width=None, height=None, force=False):
             )
         if getattr(app, "mini_btn_frame", None):
             app.mini_btn_frame.pack_configure(padx=(gap, 0))
-        if getattr(app, "mini_menu_btn", None):
-            app.mini_menu_btn.config(font=app._font("label", menu_sz, bold=True))
-            app.mini_menu_btn.pack_configure(padx=(0, gap))
         if getattr(app, "mini_expand_btn", None):
             app.mini_expand_btn.config(font=app._font("label", btn_sz))
             app.mini_expand_btn.pack_configure(padx=(0, gap))

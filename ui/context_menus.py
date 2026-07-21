@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""右键上下文菜单：Mini / 完整窗共享构建（主线程弹出）。"""
+"""完整窗右键菜单 + Mini 字色工具（供托盘复用）。"""
 
 import platform
 import tkinter as tk
@@ -8,10 +8,7 @@ from tkinter import messagebox
 from core.countdown_core import (
     APP_NAME,
     MINI_TEXT_COLOR_KEYS,
-    MINI_TEXT_COLOR_LABELS,
     MINI_TEXT_DEFAULTS,
-    MINI_TEXT_ROLE_LABELS,
-    MINI_TEXT_ROLES,
     button_text_for_state,
     normalize_mini_text,
 )
@@ -85,12 +82,6 @@ def add_countdown_toggle_item(menu, app):
     )
 
 
-def add_transparent_item(menu, app):
-    """透明模式（Windows 色键；macOS systemTransparent）。✓ 表示已开启。"""
-    label = "✓ 透明模式" if app._transparent_mode else "透明模式"
-    menu.add_command(label=label, command=app._toggle_transparent_mode)
-
-
 def add_exit_item(menu, app):
     menu.add_command(label="退出", command=app._quit_app)
 
@@ -129,14 +120,14 @@ def add_theme_cascade(menu, app):
     menu.add_cascade(label="主题", menu=theme_menu)
 
 
-def _current_mini_text_key(app, role):
+def current_mini_text_key(app, role):
     """当前角色生效的色键（含默认）。"""
     cfg = normalize_mini_text(getattr(app, "_mini_text", None))
     return cfg.get(role, MINI_TEXT_DEFAULTS.get(role, "white"))
 
 
-def _set_mini_text_color(app, role, color_key):
-    """写入 Mini 字色并刷新显示。"""
+def set_mini_text_color(app, role, color_key):
+    """写入 Mini 字色并刷新显示（托盘/配置共用）。"""
     cfg = dict(normalize_mini_text(getattr(app, "_mini_text", None)))
     if color_key not in MINI_TEXT_COLOR_KEYS:
         return
@@ -152,62 +143,13 @@ def _set_mini_text_color(app, role, color_key):
     sync_mini_state(app)
 
 
-def _reset_mini_text_colors(app):
+def reset_mini_text_colors(app):
     """恢复 Mini 字色为默认。"""
     app._mini_text = {}
     app._save_config()
     from ui.mini_window import sync_mini_state
 
     sync_mini_state(app)
-
-
-def add_mini_text_color_cascade(menu, app):
-    """Mini 字体颜色：按角色选主题色键。"""
-    root = _styled_menu(app, menu)
-    for role in MINI_TEXT_ROLES:
-        role_menu = _styled_menu(app, root)
-        current = _current_mini_text_key(app, role)
-        for key in MINI_TEXT_COLOR_KEYS:
-            mark = "✓ " if key == current else ""
-            label = MINI_TEXT_COLOR_LABELS.get(key, key)
-            role_menu.add_command(
-                label=f"{mark}{label}",
-                command=lambda r=role, k=key: _set_mini_text_color(app, r, k),
-            )
-        root.add_cascade(
-            label=MINI_TEXT_ROLE_LABELS.get(role, role),
-            menu=role_menu,
-        )
-    root.add_separator()
-    root.add_command(label="恢复默认", command=lambda: _reset_mini_text_colors(app))
-    menu.add_cascade(label="字体颜色", menu=root)
-
-
-def _fill_mini_menu(menu, app):
-    """按最新状态填充 Mini 菜单（postcommand / 弹出前调用）。"""
-    from ui.mini_window import mini_close, reset_mini_size
-
-    try:
-        menu.delete(0, tk.END)
-    except tk.TclError:
-        return
-    menu.add_command(label="展开完整模式", command=app._switch_to_full)
-    add_countdown_toggle_item(menu, app)
-    pick_state = tk.DISABLED if app._inputs_locked() else tk.NORMAL
-    menu.add_command(
-        label="选择时间",
-        command=app._show_time_picker,
-        state=pick_state,
-    )
-    menu.add_separator()
-    add_transparent_item(menu, app)
-    add_mini_text_color_cascade(menu, app)
-    menu.add_command(label="恢复默认大小", command=lambda: reset_mini_size(app))
-    # Mini 已有 × 关闭；隐藏到托盘走托盘/× 即可，右键不再重复
-    if not app._has_tray():
-        menu.add_command(label="关闭", command=lambda: mini_close(app))
-    menu.add_separator()
-    add_exit_item(menu, app)
 
 
 def _fill_full_menu(menu, app):
@@ -245,13 +187,6 @@ def _ensure_ctx_menu(app, attr, parent, filler):
         pass
     filler(menu, app)
     return menu
-
-
-def popup_mini_menu(app, event):
-    """Mini 右键/⋯ 菜单：每次显示前按 app._state 重建文案与启用态。"""
-    parent = app.mini_window or app.master
-    menu = _ensure_ctx_menu(app, "_mini_ctx_menu", parent, _fill_mini_menu)
-    _popup(menu, event)
 
 
 def popup_full_menu(app, event):

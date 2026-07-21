@@ -106,6 +106,7 @@ echo "Building application..."
     --hidden-import ui.time_picker \
     --hidden-import ui.full_window \
     --hidden-import ui.context_menus \
+    --hidden-import ui.mini_text_picker \
     --hidden-import services \
     --hidden-import services.tray \
     --hidden-import services.windows_native \
