@@ -94,8 +94,9 @@ scripts\build_exe.bat
 输出（版本取自 `core.countdown_core.__version__`）：
 
 ```text
-dist/count_down_tool-<version>-win64.exe
-# 例：dist/count_down_tool-1.3.17-win64.exe
+dist/count_down_tool.exe                         # 固定名，本地可直接运行
+dist/count_down_tool-<version>-win64.zip         # 分发用，解压后仍为 count_down_tool.exe
+# 例：dist/count_down_tool-1.3.17-win64.zip
 ```
 
 ### macOS
@@ -120,11 +121,11 @@ dist/count_down_tool-<version>-mac-x86_64.zip  # Intel
 
 **GitHub Release 请按芯片选择（文件名含版本号）：**
 
-| 文件 | 适用 |
-|------|------|
-| `count_down_tool-<version>-win64.exe` | 64 位 Windows |
-| `count_down_tool-<version>-mac-arm64.zip` | Apple Silicon（M1/M2/M3/M4…） |
-| `count_down_tool-<version>-mac-x86_64.zip` | Intel Mac |
+| 文件 | 适用 | 解压后 |
+|------|------|--------|
+| `count_down_tool-<version>-win64.zip` | 64 位 Windows | `count_down_tool.exe` |
+| `count_down_tool-<version>-mac-arm64.zip` | Apple Silicon（M1/M2/M3/M4…） | `count_down_tool.app` |
+| `count_down_tool-<version>-mac-x86_64.zip` | Intel Mac | `count_down_tool.app` |
 
 「关于本机」可查看芯片类型。解压后将 `count_down_tool.app` 拖到「应用程序」。
 

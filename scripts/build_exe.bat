@@ -24,7 +24,7 @@ echo.
 
 cd /d "%TOOL_DIR%"
 
-rem 从 core.countdown_core.__version__ 读取版本，产物带版本号
+rem 版本号写入 zip 名；exe 固定为 count_down_tool.exe（与 mac .app 一致）
 set "VERSION="
 for /f "usebackq delims=" %%V in (`"%PYTHON%" -c "from core.countdown_core import __version__; print(__version__)"`) do set "VERSION=%%V"
 if not defined VERSION (
@@ -32,9 +32,10 @@ if not defined VERSION (
     pause
     exit /b 1
 )
-set "OUT_EXE=count_down_tool-%VERSION%-win64.exe"
+set "OUT_ZIP=count_down_tool-%VERSION%-win64.zip"
 echo   Version: %VERSION%
-echo   Output:  dist\%OUT_EXE%
+echo   Exe:     dist\count_down_tool.exe
+echo   Zip:     dist\%OUT_ZIP%
 echo.
 
 "%PYTHON%" -m PyInstaller --onefile --windowed --icon="%ICON_FILE%" --name "count_down_tool" --add-data "%ICON_FILE%;assets" --hidden-import core --hidden-import core.countdown_core --hidden-import core.themes --hidden-import services.autostart --hidden-import app --hidden-import app.countdown --hidden-import app.config_store --hidden-import app.window_chrome --hidden-import app.theme --hidden-import app.mode --hidden-import ui --hidden-import ui.widgets --hidden-import ui.mini_window --hidden-import ui.time_picker --hidden-import ui.full_window --hidden-import ui.context_menus --hidden-import ui.mini_text_picker --hidden-import services --hidden-import services.tray --hidden-import services.windows_native --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder --distpath "%TOOL_DIR%\dist" --workpath "%TOOL_DIR%\build" --specpath "%TOOL_DIR%" "%TOOL_DIR%\count_down_tool.py"
@@ -42,10 +43,18 @@ echo.
 echo.
 echo ========================================
 if exist "%TOOL_DIR%\dist\count_down_tool.exe" (
-    if exist "%TOOL_DIR%\dist\%OUT_EXE%" del /q "%TOOL_DIR%\dist\%OUT_EXE%"
-    ren "%TOOL_DIR%\dist\count_down_tool.exe" "%OUT_EXE%"
+    if exist "%TOOL_DIR%\dist\%OUT_ZIP%" del /q "%TOOL_DIR%\dist\%OUT_ZIP%"
+    rem PowerShell Compress-Archive：zip 内为固定名 count_down_tool.exe
+    powershell -NoProfile -Command "Compress-Archive -LiteralPath '%TOOL_DIR%\dist\count_down_tool.exe' -DestinationPath '%TOOL_DIR%\dist\%OUT_ZIP%' -Force"
+    if not exist "%TOOL_DIR%\dist\%OUT_ZIP%" (
+        echo   [ERROR] Failed to create zip
+        echo ========================================
+        pause
+        exit /b 1
+    )
     echo   Build successful!
-    echo   File: %TOOL_DIR%\dist\%OUT_EXE%
+    echo   Exe: %TOOL_DIR%\dist\count_down_tool.exe
+    echo   Zip: %TOOL_DIR%\dist\%OUT_ZIP%
     echo ========================================
     echo.
     echo   Cleaning build files...
