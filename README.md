@@ -2,7 +2,7 @@
 
 一个基于 Python Tkinter 的现代化深色主题桌面倒计时工具，支持完整模式和 Mini 桌面小组件模式。
 
-**当前版本：1.3.9**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.3.15**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 功能特性
 
@@ -71,7 +71,7 @@ python count_down_tool.py
 ```bash
 # 推荐：项目 venv 安装 Pillow 后执行（Pillow + iconutil）
 # 可选回退：brew install imagemagick
-./convert_icon.sh
+./scripts/convert_icon.sh
 ```
 
 ## 打包构建
@@ -79,7 +79,7 @@ python count_down_tool.py
 ### Windows
 
 ```cmd
-build_exe.bat
+scripts\build_exe.bat
 ```
 
 输出：`dist/count_down_tool.exe`
@@ -90,11 +90,11 @@ build_exe.bat
 
 ```bash
 # 一键打包（含图标转换、依赖安装）
-./build_mac_all.sh
+./scripts/build_mac_all.sh
 
 # 或分步执行
-./build_mac.sh              # 仅打包（--windowed，尽量产出 .app）
-./create_dmg.sh             # 创建 DMG：优先打包 .app，否则打包可执行文件
+./scripts/build_mac.sh      # 仅打包（--windowed，尽量产出 .app）
+./scripts/create_dmg.sh     # 创建 DMG：优先打包 .app，否则打包可执行文件
 ```
 
 本地输出可能是 `dist/count_down_tool.app` 和/或 `dist/count_down_tool`。
@@ -122,10 +122,19 @@ open "/Applications/Count Down Tool.app"
 
 ```
 count_down_tool/
-├── count_down_tool.py       # 入口 + CountdownApp 协调层
-├── countdown_core.py        # 纯逻辑（路径/时间/配置，无 tkinter）
-├── themes.py                # 预设主题
-├── autostart.py             # 开机自启（Windows 快捷方式）
+├── count_down_tool.py       # 入口 + CountdownApp 薄协调层
+├── requirements.txt
+├── config.example.json
+├── README.md / CHANGELOG.md
+├── core/                    # 纯逻辑（无 tkinter）
+│   ├── countdown_core.py    # 路径/时间/配置/状态机
+│   └── themes.py            # 预设主题
+├── app/
+│   ├── countdown.py         # 倒计时控制器（状态/tick/结束提醒）
+│   ├── config_store.py      # 配置 load/save 与 Mini 尺寸/字色
+│   ├── window_chrome.py     # 完整窗居中/置前/任务栏/圆角/拖动
+│   ├── theme.py             # 主题切换与主界面重建
+│   └── mode.py              # 完整/Mini/托盘模式切换
 ├── ui/
 │   ├── widgets.py           # RoundedFrame 等通用控件
 │   ├── full_window.py       # 完整模式布局
@@ -134,18 +143,20 @@ count_down_tool/
 │   └── time_picker.py       # 时间选择器
 ├── services/
 │   ├── tray.py              # 托盘菜单与 icon 线程
-│   └── windows_native.py    # 圆角/任务栏/透明/单实例
-├── tests/
-│   ├── test_countdown_core.py
-│   └── test_themes.py
-├── requirements.txt         # 依赖
-├── count_down_tool.ico      # 应用图标
-├── build_exe.bat            # Windows 打包脚本
-├── build_mac.sh             # macOS 打包脚本
-├── build_mac_all.sh         # macOS 一键打包脚本
-├── convert_icon.sh          # 图标格式转换（ico → icns）
-├── create_dmg.sh            # DMG 安装包创建脚本
-└── README.md
+│   ├── windows_native.py    # 圆角/任务栏/透明/单实例
+│   └── autostart.py         # 开机自启（Windows 快捷方式）
+├── assets/
+│   └── count_down_tool.ico  # 应用图标
+├── scripts/
+│   ├── build_exe.bat        # Windows 打包
+│   ├── build_mac.sh         # macOS 打包
+│   ├── build_mac_all.sh     # macOS 一键打包
+│   ├── convert_icon.sh      # ico → icns
+│   └── create_dmg.sh        # DMG 安装包
+└── tests/
+    ├── test_countdown_core.py
+    ├── test_themes.py
+    └── test_context_menus.py
 ```
 
 ## 运行测试
@@ -155,7 +166,7 @@ count_down_tool/
 .venv\Scripts\python.exe -m unittest discover -s tests -v
 
 # 语法检查
-.venv\Scripts\python.exe -m py_compile count_down_tool.py countdown_core.py themes.py autostart.py ui/widgets.py ui/mini_window.py ui/time_picker.py ui/full_window.py services/tray.py services/windows_native.py
+.venv\Scripts\python.exe -m py_compile count_down_tool.py core/countdown_core.py core/themes.py services/autostart.py app/*.py ui/*.py services/*.py
 ```
 
 纯逻辑与状态机测试在 `tests/test_countdown_core.py`；主题与自启在 `tests/test_themes.py`（无 GUI）。
@@ -164,7 +175,7 @@ count_down_tool/
 
 - 单实例：同时只允许运行一个程序实例（Windows 互斥量 / 其他平台锁文件 + PID 弱锁）
 - 用户配置：Mini 位置、透明模式、上次窗口模式、主题、开机自启等（见上文）
-- 业务纯逻辑在 `countdown_core.py` / `themes.py` / `autostart.py`；UI 与系统能力在 `ui/`、`services/`；主程序为协调层
+- 业务纯逻辑在 `core/`；UI 与系统能力在 `ui/`、`services/`；主程序为协调层
 
 ## 技术栈
 

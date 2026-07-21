@@ -5,7 +5,8 @@
 
 export LANG=en_US.UTF-8
 
-TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TOOL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # 优先项目内 .venv，再回退上级
 if [ -x "$TOOL_DIR/.venv/bin/python3" ]; then
@@ -47,18 +48,18 @@ echo -e "${GREEN}✓${NC} 依赖已安装"
 
 echo ""
 echo -e "${YELLOW}[3/5]${NC} 处理图标..."
-if [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
+if [ -f "$TOOL_DIR/assets/count_down_tool.icns" ] || [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
     echo -e "${GREEN}✓${NC} 图标文件已存在: count_down_tool.icns"
-elif [ -f "$TOOL_DIR/count_down_tool.ico" ]; then
+elif [ -f "$TOOL_DIR/assets/count_down_tool.ico" ]; then
     echo "尝试转换图标..."
-    if [ -x "$TOOL_DIR/convert_icon.sh" ] || [ -f "$TOOL_DIR/convert_icon.sh" ]; then
-        bash "$TOOL_DIR/convert_icon.sh" || true
+    if [ -x "$SCRIPT_DIR/convert_icon.sh" ] || [ -f "$SCRIPT_DIR/convert_icon.sh" ]; then
+        bash "$SCRIPT_DIR/convert_icon.sh" || true
     fi
-    if [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
+    if [ -f "$TOOL_DIR/assets/count_down_tool.icns" ] || [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
         echo -e "${GREEN}✓${NC} 图标转换成功"
     else
         echo -e "${YELLOW}!${NC} 图标转换失败，将使用默认图标"
-        echo "  可手动执行: ./convert_icon.sh（需 Pillow + iconutil）"
+        echo "  可手动执行: ./scripts/convert_icon.sh（需 Pillow + iconutil）"
     fi
 else
     echo -e "${YELLOW}!${NC} 未找到图标文件，将使用默认图标"
@@ -74,13 +75,15 @@ echo -e "${YELLOW}[5/5]${NC} 开始打包..."
 cd "$TOOL_DIR" || exit 1
 
 ICON_OPTION=""
-if [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
+if [ -f "$TOOL_DIR/assets/count_down_tool.icns" ]; then
+    ICON_OPTION="--icon=$TOOL_DIR/assets/count_down_tool.icns"
+elif [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
     ICON_OPTION="--icon=$TOOL_DIR/count_down_tool.icns"
 fi
 
 ADD_DATA_OPTION=""
-if [ -f "$TOOL_DIR/count_down_tool.ico" ]; then
-    ADD_DATA_OPTION="--add-data=$TOOL_DIR/count_down_tool.ico:."
+if [ -f "$TOOL_DIR/assets/count_down_tool.ico" ]; then
+    ADD_DATA_OPTION="--add-data=$TOOL_DIR/assets/count_down_tool.ico:assets"
 fi
 
 "$PYTHON" -m PyInstaller \
@@ -89,9 +92,16 @@ fi
     --name "count_down_tool" \
     $ICON_OPTION \
     $ADD_DATA_OPTION \
-    --hidden-import countdown_core \
-    --hidden-import themes \
-    --hidden-import autostart \
+    --hidden-import core \
+    --hidden-import core.countdown_core \
+    --hidden-import core.themes \
+    --hidden-import services.autostart \
+    --hidden-import app \
+    --hidden-import app.countdown \
+    --hidden-import app.config_store \
+    --hidden-import app.window_chrome \
+    --hidden-import app.theme \
+    --hidden-import app.mode \
     --hidden-import ui \
     --hidden-import ui.widgets \
     --hidden-import ui.mini_window \
@@ -136,7 +146,7 @@ if [ -d "$APP_BUNDLE" ] || [ -f "$APP_BIN" ]; then
     echo -e "${GREEN}全部完成!${NC}"
     echo ""
     echo "可选：创建 DMG 安装包"
-    echo "  ./create_dmg.sh"
+    echo "  ./scripts/create_dmg.sh"
     echo ""
     if [ -d "$APP_BUNDLE" ]; then
         echo "运行应用:"

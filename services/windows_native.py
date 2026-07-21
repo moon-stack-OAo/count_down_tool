@@ -6,7 +6,7 @@ import logging
 import os
 import platform
 
-from countdown_core import APP_NAME, APP_NAME_EN, try_acquire_weak_lock, user_config_dir
+from core.countdown_core import APP_NAME, APP_NAME_EN, try_acquire_weak_lock, user_config_dir
 
 logger = logging.getLogger("count_down_tool")
 

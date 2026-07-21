@@ -5,8 +5,7 @@ import platform
 import tkinter as tk
 from tkinter import messagebox
 
-from autostart import is_autostart_enabled, set_autostart
-from countdown_core import (
+from core.countdown_core import (
     APP_NAME,
     MINI_TEXT_COLOR_KEYS,
     MINI_TEXT_COLOR_LABELS,
@@ -16,7 +15,8 @@ from countdown_core import (
     button_text_for_state,
     normalize_mini_text,
 )
-from themes import list_themes
+from core.themes import list_themes
+from services.autostart import is_autostart_enabled, set_autostart
 
 
 def tray_window_menu_label(is_mini: bool) -> str:

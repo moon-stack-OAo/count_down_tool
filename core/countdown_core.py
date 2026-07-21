@@ -10,7 +10,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple, Union
 
-__version__ = "1.3.9"
+__version__ = "1.3.15"
 APP_NAME = "倒计时工具"
 APP_NAME_EN = "Count Down Tool"
 
@@ -96,21 +96,26 @@ def toggle_action_for_state(state: str) -> str:
     return ACTION_START
 
 
+def _project_root() -> str:
+    """项目根目录（core/ 的上一级）。"""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 def resource_path(
     name: str,
     frozen: Optional[bool] = None,
     meipass: Optional[str] = None,
     file_dir: Optional[str] = None,
 ) -> str:
-    """解析资源路径；打包后优先使用 PyInstaller 的 _MEIPASS。"""
+    """解析资源路径；开发态基于项目根，打包后优先使用 PyInstaller 的 _MEIPASS。"""
     if frozen is None:
         frozen = bool(getattr(sys, "frozen", False))
     if frozen:
         base = meipass if meipass is not None else getattr(sys, "_MEIPASS", None)
         if not base:
-            base = file_dir if file_dir is not None else os.path.dirname(os.path.abspath(__file__))
+            base = file_dir if file_dir is not None else _project_root()
     else:
-        base = file_dir if file_dir is not None else os.path.dirname(os.path.abspath(__file__))
+        base = file_dir if file_dir is not None else _project_root()
     return os.path.join(base, name)
 
 

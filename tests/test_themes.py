@@ -10,15 +10,15 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from countdown_core import merge_config
-from themes import (
+from core.countdown_core import merge_config
+from core.themes import (
     DEFAULT_THEME_ID,
     THEMES,
     is_valid_theme_id,
     list_themes,
     resolve_theme,
 )
-import autostart
+from services import autostart
 
 
 class TestThemes(unittest.TestCase):

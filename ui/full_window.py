@@ -4,7 +4,7 @@
 import tkinter as tk
 from tkinter import ttk
 
-from countdown_core import APP_NAME
+from core.countdown_core import APP_NAME
 from ui.context_menus import bind_full_context_menu, bind_full_context_menu_tree
 from ui.widgets import RoundedFrame, init_circle_button, update_circle_button
 

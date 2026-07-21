@@ -6,9 +6,9 @@ import os
 import threading
 from tkinter import messagebox
 
-from autostart import is_autostart_enabled, set_autostart
-from countdown_core import APP_NAME, button_text_for_state
-from themes import list_themes
+from core.countdown_core import APP_NAME, button_text_for_state
+from core.themes import list_themes
+from services.autostart import is_autostart_enabled, set_autostart
 from ui.context_menus import tray_mini_menu_label, tray_window_menu_label
 
 logger = logging.getLogger("count_down_tool")

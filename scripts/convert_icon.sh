@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 图标转换脚本：count_down_tool.ico → count_down_tool.icns
+# 图标转换脚本：assets/count_down_tool.ico → assets/count_down_tool.icns
 # 推荐路径：Pillow 导出多尺寸 PNG + macOS iconutil
 # 依赖（构建机，非运行时）：
 #   - Python + Pillow（优先使用项目 .venv）
@@ -9,9 +9,10 @@
 
 export LANG=en_US.UTF-8
 
-TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
-ICO_FILE="$TOOL_DIR/count_down_tool.ico"
-ICNS_FILE="$TOOL_DIR/count_down_tool.icns"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TOOL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ICO_FILE="$TOOL_DIR/assets/count_down_tool.ico"
+ICNS_FILE="$TOOL_DIR/assets/count_down_tool.icns"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -139,7 +140,7 @@ if [ "$SUCCESS" = true ] && [ -f "$ICNS_FILE" ]; then
     echo -e "${GREEN}Conversion successful!${NC}"
     echo "Output: $ICNS_FILE"
     echo ""
-    echo "You can now run build_mac.sh to build the application with the icon."
+    echo "You can now run scripts/build_mac.sh to build the application with the icon."
 else
     echo ""
     echo -e "${YELLOW}[WARNING]${NC} Automatic conversion failed."
@@ -149,6 +150,6 @@ else
     echo "  2) macOS 自带 iconutil"
     echo "  或安装 ImageMagick: brew install imagemagick"
     echo ""
-    echo "也可使用在线工具将 count_down_tool.ico 转为 .icns 后放到本目录。"
+    echo "也可使用在线工具将 assets/count_down_tool.ico 转为 .icns 后放到 assets/ 目录。"
     exit 1
 fi

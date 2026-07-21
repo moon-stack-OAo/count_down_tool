@@ -7,7 +7,7 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox
 
-from countdown_core import (
+from core.countdown_core import (
     STATE_FINISHED,
     STATE_RUNNING,
     mini_content_scale,

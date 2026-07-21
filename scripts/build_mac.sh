@@ -4,7 +4,8 @@
 
 export LANG=en_US.UTF-8
 
-TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TOOL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # 优先项目内 .venv，再回退上级
 if [ -x "$TOOL_DIR/.venv/bin/python3" ]; then
@@ -64,18 +65,21 @@ if [ -f "count_down_tool.spec" ]; then
 fi
 
 ICON_OPTION=""
-if [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
+if [ -f "$TOOL_DIR/assets/count_down_tool.icns" ]; then
+    echo "Found icon file: assets/count_down_tool.icns"
+    ICON_OPTION="--icon=$TOOL_DIR/assets/count_down_tool.icns"
+elif [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
     echo "Found icon file: count_down_tool.icns"
     ICON_OPTION="--icon=$TOOL_DIR/count_down_tool.icns"
 else
     echo -e "${YELLOW}[WARNING]${NC} Icon file not found: count_down_tool.icns"
-    echo "Building without custom icon. Run convert_icon.sh to create one."
+    echo "Building without custom icon. Run scripts/convert_icon.sh to create one."
 fi
 
-# macOS 上 --add-data 使用冒号分隔
+# macOS 上 --add-data 使用冒号分隔；目标目录 assets 与 resource_path 一致
 ADD_DATA_OPTION=""
-if [ -f "$TOOL_DIR/count_down_tool.ico" ]; then
-    ADD_DATA_OPTION="--add-data=$TOOL_DIR/count_down_tool.ico:."
+if [ -f "$TOOL_DIR/assets/count_down_tool.ico" ]; then
+    ADD_DATA_OPTION="--add-data=$TOOL_DIR/assets/count_down_tool.ico:assets"
 fi
 
 echo ""
@@ -86,9 +90,16 @@ echo "Building application..."
     --name "count_down_tool" \
     $ICON_OPTION \
     $ADD_DATA_OPTION \
-    --hidden-import countdown_core \
-    --hidden-import themes \
-    --hidden-import autostart \
+    --hidden-import core \
+    --hidden-import core.countdown_core \
+    --hidden-import core.themes \
+    --hidden-import services.autostart \
+    --hidden-import app \
+    --hidden-import app.countdown \
+    --hidden-import app.config_store \
+    --hidden-import app.window_chrome \
+    --hidden-import app.theme \
+    --hidden-import app.mode \
     --hidden-import ui \
     --hidden-import ui.widgets \
     --hidden-import ui.mini_window \

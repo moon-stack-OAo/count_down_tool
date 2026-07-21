@@ -13,7 +13,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from countdown_core import (
+from core.countdown_core import (
     ACTION_FINISH,
     ACTION_PAUSE,
     ACTION_RESET,
@@ -506,7 +506,7 @@ class TestWeakLockPid(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "w.lock")
             write_lock_pid(path, 2_000_000_000)  # 死 pid
-            with mock.patch("countdown_core.is_process_alive", return_value=False):
+            with mock.patch("core.countdown_core.is_process_alive", return_value=False):
                 self.assertTrue(try_acquire_weak_lock(path, pid=222))
             self.assertEqual(read_lock_pid(path), 222)
 
@@ -514,7 +514,7 @@ class TestWeakLockPid(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "w.lock")
             write_lock_pid(path, 999)
-            with mock.patch("countdown_core.is_process_alive", return_value=True):
+            with mock.patch("core.countdown_core.is_process_alive", return_value=True):
                 self.assertFalse(try_acquire_weak_lock(path, pid=333))
             self.assertEqual(read_lock_pid(path), 999)
 

@@ -5,7 +5,7 @@ import logging
 import platform
 import tkinter as tk
 
-from countdown_core import ACTION_RESUME, STATE_PAUSED, STATE_RUNNING
+from core.countdown_core import ACTION_RESUME, STATE_PAUSED, STATE_RUNNING
 from ui.widgets import RoundedFrame, init_circle_button, update_circle_button
 
 logger = logging.getLogger("count_down_tool")

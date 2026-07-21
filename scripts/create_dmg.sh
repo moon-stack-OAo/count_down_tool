@@ -1,12 +1,13 @@
 #!/bin/bash
 
 # 创建 DMG 安装包脚本
-# 需要先运行 build_mac.sh / build_mac_all.sh 完成打包
+# 需要先运行 scripts/build_mac.sh / scripts/build_mac_all.sh 完成打包
 # 优先打包 .app；若仅有可执行文件则打包二进制（兼容现状）
 
 export LANG=en_US.UTF-8
 
-TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TOOL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="count_down_tool"
 DMG_NAME="count_down_tool_mac.dmg"
 VOLUME_NAME="Count Down Tool"
@@ -39,7 +40,7 @@ else
     echo -e "${RED}[ERROR]${NC} 未找到打包产物:"
     echo "  - $APP_BUNDLE"
     echo "  - $APP_BIN"
-    echo "请先运行 build_mac_all.sh 或 build_mac.sh 进行打包。"
+    echo "请先运行 scripts/build_mac_all.sh 或 scripts/build_mac.sh 进行打包。"
     exit 1
 fi
 
@@ -77,7 +78,9 @@ macOS 可能会提示安全警告，请在 系统设置 > 隐私与安全性 中
 EOF
 
 VOLICON_OPTION=()
-if [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
+if [ -f "$TOOL_DIR/assets/count_down_tool.icns" ]; then
+    VOLICON_OPTION=(--volicon "$TOOL_DIR/assets/count_down_tool.icns")
+elif [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
     VOLICON_OPTION=(--volicon "$TOOL_DIR/count_down_tool.icns")
 fi
 

@@ -16,7 +16,8 @@ APP_SHORTCUT_NAME = "Count Down Tool.lnk"
 
 
 def _project_dir() -> str:
-    return os.path.dirname(os.path.abspath(__file__))
+    """项目根目录（services/ 的上一级）。"""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _prefer_pythonw(executable: str) -> str:

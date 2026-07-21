@@ -12,6 +12,13 @@
 
 - **托盘恢复完整窗不置顶**：最小化到托盘后再打开时，用短暂 topmost + AttachThreadInput 强制置前并激活
 
+### 重构
+
+- **结构**：拆分倒计时控制器（`app/countdown.py`）与配置胶水（`app/config_store.py`）；`CountdownApp` 变为薄协调层
+- **结构（续）**：再拆窗口 chrome（`app/window_chrome.py`）、主题应用（`app/theme.py`）、模式切换（`app/mode.py`）
+- **目录整理**：`countdown_core` / `themes` → `core/`；`autostart` → `services/`；图标 → `assets/`；打包脚本 → `scripts/`；统一
+  `from core.*` / `from services.*` import；`resource_path` 开发态基于项目根
+
 ## 1.3.14
 
 ### 功能
@@ -82,7 +89,8 @@
 
 ### 修复
 
-- **托盘菜单不同步**：Windows 上 pystray 缓存原生菜单；启动默认/切换 Mini 后调用 `update_menu()`，正确显示「退出 Mini 模式」/「展开主窗口」
+- **托盘菜单不同步**：Windows 上 pystray 缓存原生菜单；启动默认/切换 Mini 后调用 `update_menu()`，正确显示「退出 Mini
+  模式」/「展开主窗口」
 - Mini 关闭到托盘时同步 `_is_mini` 与托盘文案
 
 ## 1.3.5
@@ -90,8 +98,8 @@
 ### 发布 / macOS 架构
 
 - CI 分架构构建并发布：
-  - **arm64**（Apple Silicon / M 芯片）：`Count_Down_Tool_mac_arm64.zip`（`macos-14`）
-  - **x86_64**（Intel）：`Count_Down_Tool_mac_x86_64.zip`（`macos-13`）
+    - **arm64**（Apple Silicon / M 芯片）：`Count_Down_Tool_mac_arm64.zip`（`macos-14`）
+    - **x86_64**（Intel）：`Count_Down_Tool_mac_x86_64.zip`（`macos-13`）
 - 使用 `--target-arch` 与对应 runner 原生构建（暂不做 universal2）
 
 ## 1.3.4
