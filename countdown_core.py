@@ -356,6 +356,105 @@ def merge_mini_size(
     return result
 
 
+# Mini 字色：允许的主题色键（适合前景）
+MINI_TEXT_COLOR_KEYS = (
+    "text",
+    "text_dim",
+    "text_muted",
+    "accent",
+    "accent_glow",
+    "white",
+    "success",
+    "warning",
+    "error",
+)
+
+# Mini 字色角色 → 默认主题键
+MINI_TEXT_DEFAULTS = {
+    "clock": "text_dim",
+    "countdown_running": "white",
+    "countdown_paused": "text_dim",
+    "countdown_finished": "success",
+}
+
+MINI_TEXT_ROLES = tuple(MINI_TEXT_DEFAULTS.keys())
+
+# 菜单显示名（中文）
+MINI_TEXT_ROLE_LABELS = {
+    "clock": "当前时间",
+    "countdown_running": "倒计时·运行中",
+    "countdown_paused": "倒计时·暂停",
+    "countdown_finished": "倒计时·结束",
+}
+
+MINI_TEXT_COLOR_LABELS = {
+    "text": "正文",
+    "text_dim": "次要",
+    "text_muted": "弱化",
+    "accent": "强调",
+    "accent_glow": "强调亮",
+    "white": "白色",
+    "success": "成功",
+    "warning": "警告",
+    "error": "错误",
+}
+
+
+def normalize_mini_text(raw: Any) -> Dict[str, str]:
+    """校验 mini_text：只保留合法角色与色键，返回干净 dict（可为空）。"""
+    if not isinstance(raw, dict):
+        return {}
+    result: Dict[str, str] = {}
+    allowed = set(MINI_TEXT_COLOR_KEYS)
+    for role in MINI_TEXT_ROLES:
+        val = raw.get(role)
+        if isinstance(val, str) and val in allowed:
+            result[role] = val
+    return result
+
+
+def merge_mini_text(
+    config: Optional[Dict[str, Any]],
+    mini_text: Optional[Dict[str, str]],
+) -> Dict[str, Any]:
+    """合并 mini_text 到配置副本。
+
+    mini_text 为 None 或 {} 时删除配置键（恢复默认）。
+    """
+    result: Dict[str, Any] = dict(config) if isinstance(config, dict) else {}
+    cleaned = normalize_mini_text(mini_text) if mini_text else {}
+    if cleaned:
+        result["mini_text"] = cleaned
+    else:
+        result.pop("mini_text", None)
+    return result
+
+
+def resolve_mini_text_color(
+    colors: Optional[Dict[str, Any]],
+    mini_text: Optional[Dict[str, str]],
+    role: str,
+) -> str:
+    """按角色从当前主题色板解析最终 hex。
+
+    优先 mini_text[role] 合法键；否则 MINI_TEXT_DEFAULTS；
+    再从 colors 取色；键缺失时回退 white / #FFFFFF。
+    """
+    palette = colors if isinstance(colors, dict) else {}
+    cfg = normalize_mini_text(mini_text) if mini_text else {}
+    default_key = MINI_TEXT_DEFAULTS.get(role, "white")
+    key = cfg.get(role, default_key)
+    if key not in MINI_TEXT_COLOR_KEYS:
+        key = default_key
+    hex_val = palette.get(key)
+    if isinstance(hex_val, str) and hex_val:
+        return hex_val
+    fallback = palette.get("white")
+    if isinstance(fallback, str) and fallback:
+        return fallback
+    return "#FFFFFF"
+
+
 def merge_config(
     config: Optional[Dict[str, Any]],
     **updates: Any,

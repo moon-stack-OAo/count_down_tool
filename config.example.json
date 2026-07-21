@@ -5,5 +5,11 @@
   "last_mode": "full",
   "autostart": false,
   "theme_id": "slate_cyan",
-  "theme_custom": {}
+  "theme_custom": {},
+  "mini_text": {
+    "clock": "text_dim",
+    "countdown_running": "white",
+    "countdown_paused": "text_dim",
+    "countdown_finished": "success"
+  }
 }

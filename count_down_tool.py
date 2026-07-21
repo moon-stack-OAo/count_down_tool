@@ -34,10 +34,13 @@ from countdown_core import (
     merge_config,
     merge_mini_position,
     merge_mini_size,
+    merge_mini_text,
     normalize_mini_size,
+    normalize_mini_text,
     next_second_delay_ms,
     next_state,
     progress_ratio,
+    resolve_mini_text_color,
     resource_path,
     save_config_dict,
     target_from_duration,
@@ -49,6 +52,8 @@ from services.tray import HAS_PYSTRAY, init_tray_icon, refresh_tray_menu, stop_t
 from services.windows_native import (
     acquire_single_instance,
     bring_existing_to_front,
+    force_window_to_front,
+    get_work_area,
     set_taskbar_visible,
     set_window_rounded_corners,
 )
@@ -164,6 +169,7 @@ class CountdownApp:
 
         self._mini_pos = None  # 保存 Mini 窗口位置
         self._mini_size = None  # 保存 Mini 窗口尺寸 (w, h)
+        self._mini_text = {}  # Mini 字色：主题色键，非 hex
         self._resize_data = None  # Mini 边缘缩放状态
         self._config_file = user_config_path()
         self._load_config()
@@ -174,9 +180,9 @@ class CountdownApp:
         self._on_time_changed()
         self.update_clock()
         self._init_tray_icon()
-        self._center_window()
         self._set_window_rounded_corners()
         self._set_taskbar_visible()
+        self._center_window_later()
         # 启动模式：last_mode=mini 进 Mini；无配置时非 Darwin 保持旧行为进 Mini
         if platform.system() != "Darwin":
             has_last = "last_mode" in getattr(self, "_loaded_keys", set())
@@ -249,6 +255,7 @@ class CountdownApp:
             custom = config.get("theme_custom")
             self._theme_custom = custom if isinstance(custom, dict) else None
             self.COLORS = resolve_theme(self._theme_id, self._theme_custom)
+            self._mini_text = normalize_mini_text(config.get("mini_text"))
             # 开机自启：以系统真实状态为准，并回写配置保持一致
             real_autostart = is_autostart_enabled()
             self._autostart = real_autostart
@@ -262,6 +269,7 @@ class CountdownApp:
             logger.exception("读取配置失败")
             self._mini_pos = None
             self._mini_size = None
+            self._mini_text = {}
             self.COLORS = resolve_theme(self._theme_id, self._theme_custom)
 
     def default_mini_size(self):
@@ -302,6 +310,7 @@ class CountdownApp:
             config = load_config_dict(self._config_file)
             config = merge_mini_position(config, self._mini_pos)
             config = merge_mini_size(config, self._mini_size)
+            config = merge_mini_text(config, self._mini_text)
             mode = "mini" if self._is_mini else "full"
             config = merge_config(
                 config,
@@ -315,6 +324,10 @@ class CountdownApp:
             save_config_dict(self._config_file, config)
         except Exception:
             logger.exception("保存配置失败")
+
+    def mini_text_fg(self, role: str) -> str:
+        """Mini 字色：从当前主题色板按角色解析 hex（不缓存）。"""
+        return resolve_mini_text_color(self.COLORS, self._mini_text, role)
 
     def _apply_theme(self, theme_id: str):
         """切换预设主题并重建主界面（保留业务状态）。"""
@@ -535,15 +548,44 @@ class CountdownApp:
         self.master.geometry(f"+{x}+{y}")
 
     def _center_window(self):
-        """窗口居中显示"""
-        self.master.update_idletasks()
-        width = self.master.winfo_width()
-        height = self.master.winfo_height()
-        screen_w = self.master.winfo_screenwidth()
-        screen_h = self.master.winfo_screenheight()
-        x = (screen_w - width) // 2
-        y = (screen_h - height) // 2
-        self.master.geometry(f"{width}x{height}+{x}+{y}")
+        """完整窗在当前显示器工作区内居中（排除任务栏；兼容 DPI）。"""
+        try:
+            self.master.update_idletasks()
+        except tk.TclError:
+            return
+        width = self.WINDOW_WIDTH
+        height = self.WINDOW_HEIGHT
+        try:
+            rw = self.master.winfo_reqwidth()
+            rh = self.master.winfo_reqheight()
+            if rw > 1 and rh > 1:
+                width, height = rw, rh
+        except tk.TclError:
+            pass
+
+        work = get_work_area(self.master)
+        if work:
+            ox, oy, aw, ah = work
+            x = ox + max(0, (aw - width) // 2)
+            y = oy + max(0, (ah - height) // 2)
+        else:
+            sw = self.master.winfo_screenwidth()
+            sh = self.master.winfo_screenheight()
+            x = max(0, (sw - width) // 2)
+            y = max(0, (sh - height) // 2)
+        try:
+            self.master.geometry(f"{self.WINDOW_WIDTH}x{self.WINDOW_HEIGHT}+{int(x)}+{int(y)}")
+        except tk.TclError:
+            pass
+
+    def _center_window_later(self):
+        """deiconify / 样式刷新后再居中一次，避免位置被系统改掉。"""
+        self._center_window()
+        try:
+            self.master.after_idle(self._center_window)
+            self.master.after(50, self._center_window)
+        except tk.TclError:
+            pass
 
     def _set_window_rounded_corners(self):
         set_window_rounded_corners(self.master, self.CORNER_RADIUS)
@@ -559,13 +601,23 @@ class CountdownApp:
         init_tray_icon(self, _ICON_PATH)
 
     def _show_full_mode(self):
-        """显示完整模式窗口"""
+        """显示完整模式窗口（托盘单击/菜单恢复）。"""
         if self._is_mini:
             self._switch_to_full()
+            return
         self.master.deiconify()
-        self.master.lift()
-        self.master.focus_force()
         self._set_taskbar_visible()
+        self._bring_full_to_front()
+        self._center_window_later()
+
+    def _bring_full_to_front(self):
+        """完整窗置顶激活；托盘回调场景下 Tk 的 lift 常被系统忽略。"""
+        force_window_to_front(self.master)
+        try:
+            # 延迟再置前一次，覆盖 deiconify 后的异步焦点争夺
+            self.master.after(50, lambda: force_window_to_front(self.master))
+        except tk.TclError:
+            pass
 
     def _has_tray(self):
         return bool(HAS_PYSTRAY and self.tray_icon)
@@ -631,9 +683,10 @@ class CountdownApp:
         self._last_mode = "full"
         self._destroy_mini_window()
         self.master.deiconify()
-        self.master.lift()
         # withdraw/deiconify 后需重新声明任务栏/Alt+Tab 可见
         self._set_taskbar_visible()
+        self._bring_full_to_front()
+        self._center_window_later()
         self._save_config()
         refresh_tray_menu(self)
 

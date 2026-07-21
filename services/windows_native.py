@@ -201,6 +201,80 @@ def set_window_rounded_corners_fallback(master, corner_radius):
         logger.warning("GDI 圆角设置失败", exc_info=True)
 
 
+def get_work_area(window=None):
+    """返回当前显示器工作区 (x, y, width, height)，排除任务栏。
+
+    Windows：优先窗口所在监视器，否则主监视器。
+    其它平台返回 None，由调用方回退 Tk 屏幕尺寸。
+    """
+    if platform.system() != "Windows":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", wintypes.LONG),
+                ("top", wintypes.LONG),
+                ("right", wintypes.LONG),
+                ("bottom", wintypes.LONG),
+            ]
+
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("rcMonitor", RECT),
+                ("rcWork", RECT),
+                ("dwFlags", wintypes.DWORD),
+            ]
+
+        user32 = ctypes.windll.user32
+        hwnd = 0
+        if window is not None:
+            try:
+                frame = window.wm_frame()
+                hwnd = int(frame, 16) if frame else int(window.winfo_id())
+            except Exception:
+                hwnd = 0
+
+        MONITOR_DEFAULTTONEAREST = 2
+        MONITOR_DEFAULTTOPRIMARY = 1
+        hmon = user32.MonitorFromWindow(
+            hwnd, MONITOR_DEFAULTTONEAREST if hwnd else MONITOR_DEFAULTTOPRIMARY
+        )
+        if not hmon:
+            return None
+        mi = MONITORINFO()
+        mi.cbSize = ctypes.sizeof(MONITORINFO)
+        if not user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+            return None
+        r = mi.rcWork
+        return (
+            int(r.left),
+            int(r.top),
+            int(r.right - r.left),
+            int(r.bottom - r.top),
+        )
+    except Exception:
+        logger.debug("获取工作区失败", exc_info=True)
+        return None
+
+
+def _tk_hwnd(window):
+    """解析 Tk 顶层窗口 HWND（优先 wm_frame）。"""
+    try:
+        frame = window.wm_frame()
+        if frame:
+            return int(frame, 16)
+    except Exception:
+        pass
+    try:
+        return int(window.winfo_id())
+    except Exception:
+        return 0
+
+
 def set_taskbar_visible(master):
     """设置窗口在任务栏和 Alt+Tab 中可见。"""
     if platform.system() != "Windows":
@@ -209,7 +283,9 @@ def set_taskbar_visible(master):
         import ctypes
         from ctypes import wintypes
 
-        hwnd = int(master.frame(), 16)
+        hwnd = _tk_hwnd(master)
+        if not hwnd:
+            return
         GWL_EXSTYLE = -20
         WS_EX_APPWINDOW = 0x00040000
         WS_EX_TOOLWINDOW = 0x00000080
@@ -237,6 +313,69 @@ def set_taskbar_visible(master):
             pass
     except Exception:
         logger.warning("任务栏可见性设置失败", exc_info=True)
+
+
+def force_window_to_front(window):
+    """将 Tk 窗口强制置前并激活（托盘恢复场景）。
+
+    Windows 会限制跨进程 SetForegroundWindow；先短暂 topmost + AttachThreadInput 再激活。
+    非 Windows 仅 lift / focus_force。
+    """
+    if window is None:
+        return
+    try:
+        window.lift()
+        window.focus_force()
+    except Exception:
+        pass
+    if platform.system() != "Windows":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        hwnd = _tk_hwnd(window)
+        if not hwnd:
+            return
+
+        try:
+            window.update_idletasks()
+        except Exception:
+            pass
+
+        # 短暂置顶，突破 Z 序限制后再取消，避免常驻 topmost
+        try:
+            window.attributes("-topmost", True)
+            window.attributes("-topmost", False)
+            window.lift()
+        except Exception:
+            pass
+
+        SW_SHOW = 5
+        SW_RESTORE = 9
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, SW_RESTORE)
+        else:
+            user32.ShowWindow(hwnd, SW_SHOW)
+
+        fg = user32.GetForegroundWindow()
+        cur_tid = kernel32.GetCurrentThreadId()
+        fg_tid = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+        attached = False
+        if fg_tid and fg_tid != cur_tid:
+            attached = bool(user32.AttachThreadInput(cur_tid, fg_tid, True))
+        try:
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            user32.SetActiveWindow(hwnd)
+            user32.SetFocus(hwnd)
+        finally:
+            if attached:
+                user32.AttachThreadInput(cur_tid, fg_tid, False)
+    except Exception:
+        logger.debug("强制窗口置前失败", exc_info=True)
 
 
 def set_tool_window(window):

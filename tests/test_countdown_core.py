@@ -37,14 +37,17 @@ from countdown_core import (
     merge_config,
     merge_mini_position,
     merge_mini_size,
+    merge_mini_text,
     mini_content_scale,
     next_second_delay_ms,
     next_state,
     normalize_mini_size,
+    normalize_mini_text,
     parse_mini_geometry,
     parse_mini_size,
     progress_ratio,
     read_lock_pid,
+    resolve_mini_text_color,
     resource_path,
     save_config_dict,
     target_from_duration,
@@ -52,6 +55,7 @@ from countdown_core import (
     try_acquire_weak_lock,
     validate_hms,
     write_lock_pid,
+    MINI_TEXT_DEFAULTS,
 )
 
 
@@ -307,6 +311,88 @@ class TestConfigMergeLoadSave(unittest.TestCase):
             with open(path, "w", encoding="utf-8") as f:
                 f.write("not-json")
             self.assertEqual(load_config_dict(path), {})
+
+
+class TestMiniText(unittest.TestCase):
+    def test_normalize_keeps_valid(self):
+        raw = {
+            "clock": "accent",
+            "countdown_running": "white",
+            "countdown_paused": "text_dim",
+            "countdown_finished": "success",
+        }
+        self.assertEqual(normalize_mini_text(raw), raw)
+
+    def test_normalize_drops_invalid(self):
+        raw = {
+            "clock": "not_a_key",
+            "countdown_running": 123,
+            "countdown_paused": "text_dim",
+            "unknown_role": "white",
+            "countdown_finished": None,
+        }
+        self.assertEqual(
+            normalize_mini_text(raw),
+            {"countdown_paused": "text_dim"},
+        )
+
+    def test_normalize_non_dict(self):
+        self.assertEqual(normalize_mini_text(None), {})
+        self.assertEqual(normalize_mini_text("x"), {})
+        self.assertEqual(normalize_mini_text([]), {})
+
+    def test_merge_writes_and_pops(self):
+        cfg = {"theme_id": "slate_cyan", "mini_text": {"clock": "accent"}}
+        merged = merge_mini_text(cfg, {"clock": "warning"})
+        self.assertEqual(merged["mini_text"], {"clock": "warning"})
+        self.assertEqual(merged["theme_id"], "slate_cyan")
+        self.assertEqual(cfg["mini_text"], {"clock": "accent"})
+
+        cleared = merge_mini_text(merged, {})
+        self.assertNotIn("mini_text", cleared)
+        cleared2 = merge_mini_text(merged, None)
+        self.assertNotIn("mini_text", cleared2)
+
+    def test_merge_strips_invalid_keys(self):
+        merged = merge_mini_text({}, {"clock": "bg", "countdown_running": "white"})
+        self.assertEqual(merged["mini_text"], {"countdown_running": "white"})
+
+    def test_resolve_defaults(self):
+        colors = {
+            "text_dim": "#111",
+            "white": "#FFF",
+            "success": "#0F0",
+            "accent": "#0AF",
+        }
+        self.assertEqual(
+            resolve_mini_text_color(colors, None, "clock"),
+            colors[MINI_TEXT_DEFAULTS["clock"]],
+        )
+        self.assertEqual(
+            resolve_mini_text_color(colors, {}, "countdown_running"),
+            colors["white"],
+        )
+        self.assertEqual(
+            resolve_mini_text_color(colors, {}, "countdown_finished"),
+            colors["success"],
+        )
+
+    def test_resolve_custom_and_theme_switch(self):
+        mini_text = {"clock": "accent"}
+        c1 = {"accent": "#AAA", "text_dim": "#111", "white": "#FFF"}
+        c2 = {"accent": "#BBB", "text_dim": "#222", "white": "#EEE"}
+        self.assertEqual(resolve_mini_text_color(c1, mini_text, "clock"), "#AAA")
+        self.assertEqual(resolve_mini_text_color(c2, mini_text, "clock"), "#BBB")
+
+    def test_resolve_missing_palette_fallback(self):
+        self.assertEqual(
+            resolve_mini_text_color({}, None, "clock"),
+            "#FFFFFF",
+        )
+        self.assertEqual(
+            resolve_mini_text_color({"white": "#EEE"}, {"clock": "accent"}, "clock"),
+            "#EEE",
+        )
 
 
 class TestParseMiniGeometry(unittest.TestCase):

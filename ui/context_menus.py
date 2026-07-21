@@ -6,7 +6,16 @@ import tkinter as tk
 from tkinter import messagebox
 
 from autostart import is_autostart_enabled, set_autostart
-from countdown_core import APP_NAME, button_text_for_state
+from countdown_core import (
+    APP_NAME,
+    MINI_TEXT_COLOR_KEYS,
+    MINI_TEXT_COLOR_LABELS,
+    MINI_TEXT_DEFAULTS,
+    MINI_TEXT_ROLE_LABELS,
+    MINI_TEXT_ROLES,
+    button_text_for_state,
+    normalize_mini_text,
+)
 from themes import list_themes
 
 
@@ -120,6 +129,60 @@ def add_theme_cascade(menu, app):
     menu.add_cascade(label="主题", menu=theme_menu)
 
 
+def _current_mini_text_key(app, role):
+    """当前角色生效的色键（含默认）。"""
+    cfg = normalize_mini_text(getattr(app, "_mini_text", None))
+    return cfg.get(role, MINI_TEXT_DEFAULTS.get(role, "white"))
+
+
+def _set_mini_text_color(app, role, color_key):
+    """写入 Mini 字色并刷新显示。"""
+    cfg = dict(normalize_mini_text(getattr(app, "_mini_text", None)))
+    if color_key not in MINI_TEXT_COLOR_KEYS:
+        return
+    default_key = MINI_TEXT_DEFAULTS.get(role)
+    if color_key == default_key:
+        cfg.pop(role, None)
+    else:
+        cfg[role] = color_key
+    app._mini_text = cfg
+    app._save_config()
+    from ui.mini_window import sync_mini_state
+
+    sync_mini_state(app)
+
+
+def _reset_mini_text_colors(app):
+    """恢复 Mini 字色为默认。"""
+    app._mini_text = {}
+    app._save_config()
+    from ui.mini_window import sync_mini_state
+
+    sync_mini_state(app)
+
+
+def add_mini_text_color_cascade(menu, app):
+    """Mini 字体颜色：按角色选主题色键。"""
+    root = _styled_menu(app, menu)
+    for role in MINI_TEXT_ROLES:
+        role_menu = _styled_menu(app, root)
+        current = _current_mini_text_key(app, role)
+        for key in MINI_TEXT_COLOR_KEYS:
+            mark = "✓ " if key == current else ""
+            label = MINI_TEXT_COLOR_LABELS.get(key, key)
+            role_menu.add_command(
+                label=f"{mark}{label}",
+                command=lambda r=role, k=key: _set_mini_text_color(app, r, k),
+            )
+        root.add_cascade(
+            label=MINI_TEXT_ROLE_LABELS.get(role, role),
+            menu=role_menu,
+        )
+    root.add_separator()
+    root.add_command(label="恢复默认", command=lambda: _reset_mini_text_colors(app))
+    menu.add_cascade(label="字体颜色", menu=root)
+
+
 def _fill_mini_menu(menu, app):
     """按最新状态填充 Mini 菜单（postcommand / 弹出前调用）。"""
     from ui.mini_window import mini_close, reset_mini_size
@@ -138,6 +201,7 @@ def _fill_mini_menu(menu, app):
     )
     menu.add_separator()
     add_transparent_item(menu, app)
+    add_mini_text_color_cascade(menu, app)
     menu.add_command(label="恢复默认大小", command=lambda: reset_mini_size(app))
     # Mini 已有 × 关闭；隐藏到托盘走托盘/× 即可，右键不再重复
     if not app._has_tray():

@@ -107,7 +107,7 @@ def create_mini_window(app):
     app.mini_time_label = tk.Label(
         content_frame, text=datetime.now().strftime("%H:%M"),
         font=app.FONTS["mini_time"],
-        bg=bg, fg=app.COLORS["text_dim"],
+        bg=bg, fg=app.mini_text_fg("clock"),
     )
     app.mini_time_label.pack(side=tk.LEFT)
 
@@ -121,7 +121,7 @@ def create_mini_window(app):
     app.mini_countdown_label = tk.Label(
         content_frame, text=app.countdown_text,
         font=app.FONTS["mini_countdown"],
-        bg=bg, fg=app.COLORS["white"],
+        bg=bg, fg=app.mini_text_fg("countdown_running"),
     )
     app.mini_countdown_label.pack(side=tk.LEFT, expand=True)
 
@@ -575,8 +575,14 @@ def sync_mini_state(app):
     if app.mini_window and app.mini_countdown_label:
         app.mini_countdown_label.config(text=app.countdown_text)
         if app._state == STATE_RUNNING:
-            app.mini_countdown_label.config(fg=app.COLORS["white"])
+            role = "countdown_running"
         elif app._state == STATE_FINISHED:
-            app.mini_countdown_label.config(fg=app.COLORS["success"])
+            role = "countdown_finished"
         else:
-            app.mini_countdown_label.config(fg=app.COLORS["text_dim"])
+            role = "countdown_paused"
+        app.mini_countdown_label.config(fg=app.mini_text_fg(role))
+    if app.mini_window and getattr(app, "mini_time_label", None):
+        try:
+            app.mini_time_label.config(fg=app.mini_text_fg("clock"))
+        except tk.TclError:
+            pass

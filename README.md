@@ -49,7 +49,7 @@ python count_down_tool.py
 
 - 默认出现在桌面右下角迷你悬浮窗（可由配置 `last_mode` 控制）
 - 左键拖动调整位置；拖动边缘/四角调整大小（位置与尺寸写入用户配置目录）
-- 右键菜单（macOS 亦支持触控板副键 / Control+点击；亦可点 **⋯**）：展开完整模式 / 开始·暂停·继续 / 透明模式 / 隐藏到托盘 / 退出
+- 右键菜单（macOS 亦支持触控板副键 / Control+点击；亦可点 **⋯**）：展开完整模式 / 开始·暂停·继续 / 选择时间 / 透明模式 / **字体颜色**（当前时间与倒计时三态，从主题色键选取）/ 恢复默认大小 / 退出
 - 快捷键：`Esc` 隐藏/关闭，`M` 回完整模式，`T` 切换透明（Windows 色键抠底；macOS/Linux 半透明）
 - 展开按钮回到完整模式；关闭按钮有托盘时隐藏到托盘，无托盘时回到完整模式
 - 真正退出请使用托盘或右键菜单「退出」
@@ -63,7 +63,7 @@ python count_down_tool.py
 ### 配置与资源
 
 - 用户配置：`%APPDATA%/count_down_tool/config.json`（Windows）或 `~/.config/count_down_tool/config.json`
-- 字段示例见 `config.example.json`：`mini_position`、`mini_size`、`transparent_mode`、`last_mode`、`autostart`、`theme_id`、`theme_custom`
+- 字段示例见 `config.example.json`：`mini_position`、`mini_size`、`transparent_mode`、`last_mode`、`autostart`、`theme_id`、`theme_custom`、`mini_text`（Mini 当前时间/倒计时三态字色，值为主题色键）
 - 打包后图标等资源从程序包内加载
 
 ### 转换图标（macOS）
