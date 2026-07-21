@@ -41,8 +41,29 @@ class TestRefreshTrayMenuImport(unittest.TestCase):
 
         class _App:
             tray_icon = None
+            _status_menu_active = False
 
         refresh_tray_menu(_App())  # 不应抛异常
+
+
+class TestHasTray(unittest.TestCase):
+    def test_status_menu_counts_as_tray(self):
+        from app.mode import has_tray
+
+        class _App:
+            tray_icon = None
+            _status_menu_active = True
+
+        self.assertTrue(has_tray(_App()))
+
+    def test_no_status_no_icon(self):
+        from app.mode import has_tray
+
+        class _App:
+            tray_icon = None
+            _status_menu_active = False
+
+        self.assertFalse(has_tray(_App()))
 
 
 if __name__ == "__main__":

@@ -122,6 +122,7 @@ fi
     --hidden-import ui.mini_text_picker \
     --hidden-import services \
     --hidden-import services.tray \
+    --hidden-import services.mac_menu \
     --hidden-import services.windows_native \
     --hidden-import pystray \
     --hidden-import pystray._darwin \
@@ -143,6 +144,7 @@ if [ -d "$APP_BUNDLE" ] || [ -f "$APP_BIN" ]; then
     if [ -d "$APP_BUNDLE" ]; then
         echo "App: $APP_BUNDLE"
         find "$APP_BUNDLE" -type f \( -name "count_down_tool" -o -path "*/MacOS/*" \) -exec chmod +x {} \; 2>/dev/null || true
+        "$PYTHON" "$SCRIPT_DIR/set_macos_bundle_version.py" "$APP_BUNDLE" "$VERSION" || true
         if command -v codesign &> /dev/null; then
             codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
         fi

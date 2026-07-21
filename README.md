@@ -2,25 +2,26 @@
 
 ![Python](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
-![Windows](https://img.shields.io/badge/Windows%20(v1.3.17)-0078D6?logo=windows&logoColor=white)
-![macOS](https://img.shields.io/badge/macOS%20(v1.3.17)-000000?logo=apple&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.3.17-brightgreen.svg)
+![Windows](https://img.shields.io/badge/Windows%20(v1.3.18)-0078D6?logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS%20(v1.3.18)-000000?logo=apple&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.3.18-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 一个基于 Python Tkinter 的现代化深色主题桌面倒计时工具，支持完整模式和 Mini 桌面小组件模式。
 
-**当前版本：1.3.17**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.3.18**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 功能特性
 
 - **倒计时**：自定义到期时间（时/分/秒），实时显示剩余时间与进度条
 - **运行锁定**：倒计时进行中/暂停时锁定到期时间与快捷预设，避免目标与剩余不一致
-- **Mini 桌面小组件**：右下角迷你悬浮窗，始终置顶，可拖动；边缘/四角可缩放并记住大小，文字与按钮随窗口缩放；右键可展开/开始暂停/透明/恢复默认大小/隐藏/退出
-- **系统托盘**：支持托盘图标；文案随 Mini/完整模式变化；右键切换模式/退出；结束时托盘通知
+- **Mini 桌面小组件**：右下角迷你悬浮窗，始终置顶，可拖动；边缘/四角可缩放并记住大小，文字与按钮随窗口缩放（设置走托盘 / mac
+  菜单栏）
+- **系统托盘**（Windows）：托盘图标；文案随 Mini/完整模式变化；右键切换模式/退出；结束时托盘通知
+- **菜单栏「设置」**（macOS）：与托盘同等入口（避免 pystray 与 Tk 双循环崩溃）；Dock 点击可恢复窗口
 - **完整窗右键**：切换 Mini、倒计时控制、隐藏到托盘/退出（无托盘时含自启与主题）
 - **开机自启**（Windows）：托盘「开机自启」勾选，写入启动文件夹快捷方式
-- **主题切换**：托盘「主题」子菜单（无托盘时完整窗右键亦可），5 套预设
-- **快捷预设**：+5/+10/+15/+30 分、+1 时一键设置（从现在起相对时长，并同步到到期时刻）
+- **主题切换**：托盘/mac 菜单栏「主题」子菜单（无托盘时完整窗右键亦可），5 套预设
 - **结束提醒**：红绿闪烁 + 系统响铃 + 托盘/弹窗通知
 - **多主题 UI**：自定义圆角窗口；完整模式为「剩余时间主视觉 + 设置卡」两层结构
 - **跨平台**：支持 Windows / macOS / Linux，自动适配字体
@@ -32,7 +33,7 @@
   ```
   pip install -r requirements.txt
   ```
-  其中 `pystray` / `Pillow` 为托盘功能所需；缺失时程序仍可运行，但托盘不可用。
+  其中 `pystray` / `Pillow` 为 Windows 托盘所需；macOS 使用菜单栏，不依赖 pystray。
 
 ## 快速开始
 
@@ -56,12 +57,12 @@ python count_down_tool.py
 
 - 默认出现在桌面右下角迷你悬浮窗（可由配置 `last_mode` 控制）
 - 左键拖动调整位置；拖动边缘/四角调整大小（位置与尺寸写入用户配置目录）
-- **不提供右键菜单**；透明模式、选择时间、字体颜色、恢复默认大小等统一用**系统托盘**
+- **不提供右键菜单**；透明、选择时间、字体颜色、恢复默认大小等：Windows 用**系统托盘**，macOS 用**菜单栏「设置」**
 - 快捷键：`Esc` 隐藏/关闭，`M` 回完整模式，`T` 切换透明（Windows 色键抠底；macOS systemTransparent）
-- ↗ 展开完整模式；× 有托盘时隐藏到托盘，无托盘时回到完整模式
-- 真正退出请使用托盘「退出」
+- ↗ 展开完整模式；× 有后台入口时隐藏，否则回到完整模式
+- 真正退出：Windows 托盘「退出」/ mac 菜单栏「退出」
 
-### 托盘
+### 托盘 / mac 菜单栏
 
 - 文案：完整模式为「显示主窗口」「Mini 模式」；Mini 时为「展开主窗口」「退出 Mini 模式」
 - 选择时间 / 开始·暂停·继续 / 透明模式 / **恢复默认大小**（仅 Mini）/ **字体颜色…**（带色块预览面板）/ 开机自启 / 主题 / 退出
@@ -96,7 +97,7 @@ scripts\build_exe.bat
 ```text
 dist/count_down_tool.exe                         # 固定名，本地可直接运行
 dist/count_down_tool-<version>-win64.zip         # 分发用，解压后仍为 count_down_tool.exe
-# 例：dist/count_down_tool-1.3.17-win64.zip
+# 例：dist/count_down_tool-1.3.18-win64.zip
 ```
 
 ### macOS
@@ -121,11 +122,11 @@ dist/count_down_tool-<version>-mac-x86_64.zip  # Intel
 
 **GitHub Release 请按芯片选择（文件名含版本号）：**
 
-| 文件 | 适用 | 解压后 |
-|------|------|--------|
-| `count_down_tool-<version>-win64.zip` | 64 位 Windows | `count_down_tool.exe` |
-| `count_down_tool-<version>-mac-arm64.zip` | Apple Silicon（M1/M2/M3/M4…） | `count_down_tool.app` |
-| `count_down_tool-<version>-mac-x86_64.zip` | Intel Mac | `count_down_tool.app` |
+| 文件                                         | 适用                          | 解压后                   |
+|--------------------------------------------|-----------------------------|-----------------------|
+| `count_down_tool-<version>-win64.zip`      | 64 位 Windows                | `count_down_tool.exe` |
+| `count_down_tool-<version>-mac-arm64.zip`  | Apple Silicon（M1/M2/M3/M4…） | `count_down_tool.app` |
+| `count_down_tool-<version>-mac-x86_64.zip` | Intel Mac                   | `count_down_tool.app` |
 
 「关于本机」可查看芯片类型。解压后将 `count_down_tool.app` 拖到「应用程序」。
 
@@ -163,7 +164,8 @@ count_down_tool/
 │   ├── context_menus.py     # 托盘/右键共享菜单
 │   └── time_picker.py       # 时间选择器
 ├── services/
-│   ├── tray.py              # 托盘菜单与 icon 线程
+│   ├── tray.py              # 托盘（Win）/ 转调 mac 菜单栏
+│   ├── mac_menu.py          # macOS Tk 菜单栏「设置」
 │   ├── windows_native.py    # 圆角/任务栏/透明/单实例
 │   └── autostart.py         # 开机自启（Windows 快捷方式）
 ├── assets/

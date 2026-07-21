@@ -21,6 +21,7 @@ dist/
 build/
 *.spec
 *.dmg
+/**/logs
 
 ### Local config / OS ###
 config.json

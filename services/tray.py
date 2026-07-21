@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
-"""系统托盘：菜单构建、图标线程、回调经 master.after 回主线程。"""
+"""系统托盘：Windows 用 pystray；macOS 用 Tk 菜单栏（见 mac_menu）。
+
+回调经 master.after 回主线程。Darwin 禁止后台 NSApplication.run，避免与 Tk 冲突崩溃。
+"""
 
 import logging
 import os
+import platform
 import threading
 from tkinter import messagebox
 
@@ -23,7 +27,16 @@ except ImportError:
 
 
 def init_tray_icon(app, icon_path):
-    """创建托盘图标并启动后台线程。失败时 app.tray_icon 置 None。"""
+    """创建状态菜单入口。macOS 走菜单栏；其它平台走 pystray 后台线程。"""
+    app.tray_icon = None
+    app._status_menu_active = False
+
+    if platform.system() == "Darwin":
+        from services.mac_menu import init_mac_menubar
+
+        init_mac_menubar(app)
+        return
+
     if not HAS_PYSTRAY:
         return
     try:
@@ -78,18 +91,29 @@ def init_tray_icon(app, icon_path):
             pystray.MenuItem("退出", lambda icon=None, item=None: tray_quit(app)),
         )
         app.tray_icon = pystray.Icon(APP_NAME, image, APP_NAME, menu)
+        app._status_menu_active = True
         threading.Thread(target=app.tray_icon.run, daemon=True).start()
     except Exception:
         logger.exception("托盘图标创建失败")
         app.tray_icon = None
+        app._status_menu_active = False
 
 
 def refresh_tray_menu(app):
     """同步动态菜单文案/勾选状态。
 
-    Windows 上 pystray 会缓存原生菜单；callable 文案变更后必须调用 update_menu，
-    否则暂停/开始后仍显示旧的「开始倒计时/暂停」文案。
+    Windows 上 pystray 会缓存原生菜单；callable 文案变更后必须调用 update_menu。
+    macOS 菜单栏用 postcommand / 主动 _fill 刷新。
     """
+    if platform.system() == "Darwin":
+        try:
+            from services.mac_menu import refresh_mac_menubar
+
+            refresh_mac_menubar(app)
+        except Exception:
+            logger.debug("刷新 mac 菜单栏失败", exc_info=True)
+        return
+
     icon = getattr(app, "tray_icon", None)
     if not icon:
         return

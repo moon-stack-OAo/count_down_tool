@@ -5,11 +5,14 @@ from __future__ import annotations
 
 from tkinter import messagebox
 
-from services.tray import HAS_PYSTRAY, refresh_tray_menu
+from services.tray import refresh_tray_menu
 
 
 def has_tray(app) -> bool:
-    return bool(HAS_PYSTRAY and app.tray_icon)
+    """是否可隐藏到后台（托盘或 mac 菜单栏）。"""
+    if getattr(app, "_status_menu_active", False):
+        return True
+    return bool(getattr(app, "tray_icon", None))
 
 
 def show_full_mode(app) -> None:
@@ -29,14 +32,21 @@ def hide_to_tray(app) -> None:
         return
     if app._first_hide:
         app._first_hide = False
+        import platform
+
+        if platform.system() == "Darwin":
+            tip = (
+                "程序已隐藏到后台。\n"
+                "可通过菜单栏「设置」、Dock 图标或再次打开应用恢复窗口。"
+            )
+        else:
+            tip = (
+                "程序已最小化到系统托盘。\n"
+                "右键托盘图标可切换 Mini 模式或退出。"
+            )
         app.master.after(
             0,
-            lambda: messagebox.showinfo(
-                "提示",
-                "程序已最小化到系统托盘。\n"
-                "右键托盘图标可切换 Mini 模式或退出。",
-                parent=app.master,
-            ),
+            lambda: messagebox.showinfo("提示", tip, parent=app.master),
         )
     app.master.withdraw()
 

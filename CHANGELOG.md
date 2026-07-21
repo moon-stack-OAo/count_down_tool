@@ -1,16 +1,37 @@
 # Changelog
 
+本项目变更记录遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)
+风格，版本号尽量遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
+
+## 1.3.18
+
+### 修复
+
+- **macOS 崩溃（TstateNULL / abort）**：不再在 mac 上启用 pystray 后台 `NSApplication.run`（与 Tk 双循环冲突）；改用 **Tk 菜单栏「设置」** 提供同等入口；Dock 点击用 `tk::mac::ReopenApplication` 恢复窗口
+- 隐藏到后台时的提示文案按平台区分（mac 菜单栏 / Windows 托盘）
+
+### 构建
+
+- **写入 .app 真实版本**：打包后更新 `Info.plist` 的 `CFBundleShortVersionString` / `CFBundleVersion`（避免显示 `0.0.0`）
+
 ## 1.3.17
 
 ### 构建
 
-- **产物文件名带版本号**：分发均为 zip——`count_down_tool-<version>-win64.zip` / `…-mac-arm64.zip` / `…-mac-x86_64.zip`；解压后固定为 `count_down_tool.exe` / `count_down_tool.app`；CI 优先用 tag，本地用 `__version__`
+- **产物文件名带版本号**：分发均为 zip——`count_down_tool-<version>-win64.zip` / `…-mac-arm64.zip` / `…-mac-x86_64.zip`
+  ；解压后固定为 `count_down_tool.exe` / `count_down_tool.app`；CI 优先用 tag，本地用 `__version__`
+
+### 文档
+
+- 新增 MIT `LICENSE`（Copyright 2026 Moon）
+- README 增加 badges（Python 3.11、平台、Windows/macOS 版本、License）；环境要求改为 Python 3.11
 
 ## 1.3.16
 
 ### 变更
 
 - **Mini 取消右键/⋯ 菜单**：设置统一走系统托盘（透明、字体颜色、恢复默认大小等）；Mini 仅保留 ↗ / × 与拖动缩放
+- **废止 Mini 右键入口**：此前 1.3.13–1.3.15 中「Mini 右键…」相关能力改为托盘（或色块面板）；读史时请以本版为准
 - **字体颜色带色块**：托盘「字体颜色…」打开预览面板，用当前主题真实颜色区分选项（系统托盘无法上色）
 - 托盘增加「恢复默认大小」（仅 Mini 时可用）
 
@@ -19,7 +40,7 @@
 ### 功能
 
 - **Mini 字体颜色自定义**：配置 `mini_text`，按主题色键设置当前时间与倒计时三态（运行/暂停/结束）字色；换主题后仍用同一键取色
-- Mini 右键「字体颜色」子菜单：分角色选色、✓ 标记当前项、「恢复默认」
+- Mini 右键「字体颜色」子菜单（**1.3.16 起改走托盘色块面板**）：分角色选色、✓ 标记当前项、「恢复默认」
 - **完整模式自动居中**：启动、从 Mini/托盘展开时按工作区（排除任务栏）居中，并在显示后再校正一次
 
 ### 修复
@@ -44,19 +65,19 @@
 - **Mini 不进 Alt+Tab / 任务栏**（Windows）：标为工具窗（`WS_EX_TOOLWINDOW`），避免与完整窗一样出现在切换列表
 - **完整窗保留 Alt+Tab / 任务栏**：`WS_EX_APPWINDOW`；从 Mini / 托盘恢复时重新应用，避免 `withdraw` 后丢失
 - **恢复默认大小无效**：销毁时不再把当前尺寸写回；配置中 `mini_size` 在恢复默认时正确清除
-- **Mini 右键去掉「隐藏到托盘」**：已有 ×，避免菜单重复；无托盘时仍保留「关闭」
-- **Mini 右键增加「选择时间」**：与托盘一致，调用同一时间选择器
-- **倒计时中禁用「选择时间」**：仅 running 时托盘/Mini 右键置灰；暂停后可改时间并按新目标重新计时
+- **Mini 右键去掉「隐藏到托盘」**（1.3.16 起无 Mini 右键）：已有 ×，避免菜单重复；无托盘时仍保留「关闭」
+- **Mini 右键增加「选择时间」**（1.3.16 起改仅托盘）：与托盘一致，调用同一时间选择器
+- **倒计时中禁用「选择时间」**：仅 running 时置灰；暂停后可改时间并按新目标重新计时
 - **时间选择器无法操作**：改为 ▲▼ 调时（不用 Spinbox）；挂到可见 Mini 父窗；去掉 grab/transient 到隐藏主窗
 - **时间选择器样式**：主题圆角卡片、圆形步进按钮、目标预览条；窗口按内容自适应，避免裁切
-- **Mini/托盘菜单状态不刷新**：右键用 postcommand 每次重建；托盘暂停/开始后强制 update_menu；预设进 running 也刷托盘
+- **Mini/托盘菜单状态不刷新**（Mini 右键 1.3.16 已废止）：当时右键用 postcommand 每次重建；托盘暂停/开始后强制 update_menu；预设进 running 也刷托盘
 
 ## 1.3.13
 
 ### 功能
 
 - **Mini 可调大小**（Windows / macOS）：拖动边缘或四角缩放；尺寸写入 `mini_size` 持久化
-- 右键菜单「恢复默认大小」；平台默认尺寸与上下限仍按系统区分
+- 右键菜单「恢复默认大小」（**1.3.16 起改托盘**）；平台默认尺寸与上下限仍按系统区分
 
 ## 1.3.12
 

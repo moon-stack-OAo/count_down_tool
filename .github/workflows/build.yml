@@ -92,6 +92,7 @@ jobs:
             --hidden-import ui.mini_text_picker \
             --hidden-import services \
             --hidden-import services.tray \
+            --hidden-import services.mac_menu \
             --hidden-import services.windows_native \
             --hidden-import pystray \
             --hidden-import pystray._darwin \
@@ -117,6 +118,8 @@ jobs:
             lipo -info "$BIN" || true
           fi
           find "$APP" -type f \( -name "count_down_tool" -o -path "*/MacOS/*" \) -exec chmod +x {} \;
+          python scripts/set_macos_bundle_version.py "$APP" "$VERSION"
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist" || true
           codesign --force --deep --sign - "$APP" || true
           codesign -dv --verbose=2 "$APP" || true
           cd dist

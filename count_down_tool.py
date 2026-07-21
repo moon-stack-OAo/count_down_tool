@@ -445,10 +445,12 @@ def main():
         return
 
     missing = []
-    try:
-        import pystray  # noqa: F401
-    except ImportError:
-        missing.append("pystray")
+    # macOS 用菜单栏，不依赖 pystray（避免与 Tk 双循环崩溃）
+    if platform.system() != "Darwin":
+        try:
+            import pystray  # noqa: F401
+        except ImportError:
+            missing.append("pystray")
     try:
         from PIL import Image  # noqa: F401
     except ImportError:
@@ -457,7 +459,7 @@ def main():
     if missing:
         print(f"警告: 缺少可选依赖: {', '.join(missing)}")
         print(f"pip install {' '.join(missing)}")
-        print("程序仍可运行，但托盘功能不可用。\n")
+        print("程序仍可运行，但托盘功能可能不可用。\n")
 
     root = tk.Tk()
     CountdownApp(root)
