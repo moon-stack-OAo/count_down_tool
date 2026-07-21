@@ -1,5 +1,12 @@
 # 倒计时工具 (Count Down Tool)
 
+![Python](https://img.shields.io/badge/python-3.11-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
+![Windows](https://img.shields.io/badge/Windows%20(v1.3.16)-0078D6?logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS%20(v1.3.16)-000000?logo=apple&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.3.16-brightgreen.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+
 一个基于 Python Tkinter 的现代化深色主题桌面倒计时工具，支持完整模式和 Mini 桌面小组件模式。
 
 **当前版本：1.3.16**（变更见 [CHANGELOG.md](CHANGELOG.md)）
@@ -20,7 +27,7 @@
 
 ## 环境要求
 
-- Python 3.7+
+- Python 3.11（与 CI / 官方构建环境一致；更低版本未保证）
 - 依赖（见 `requirements.txt`）：
   ```
   pip install -r requirements.txt
@@ -178,6 +185,7 @@ count_down_tool/
 - 单实例：同时只允许运行一个程序实例（Windows 互斥量 / 其他平台锁文件 + PID 弱锁）
 - 用户配置：Mini 位置、透明模式、上次窗口模式、主题、开机自启等（见上文）
 - 业务纯逻辑在 `core/`；UI 与系统能力在 `ui/`、`services/`；主程序为协调层
+- 协议：MIT，见 [LICENSE](LICENSE)
 
 ## 技术栈
 
