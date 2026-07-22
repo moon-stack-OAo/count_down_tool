@@ -35,6 +35,40 @@ _RESIZE_CURSORS = {
 }
 
 
+def _apply_mini_borderless(mini, system):
+    """无边框 + 常驻置顶。
+
+    macOS Aqua 下单独 overrideredirect(True) 会破坏 -topmost，
+    需 True→False 双调；并在 map 后反复确认 topmost。
+    """
+    try:
+        if system == "Darwin":
+            # True 后立刻 False：无边框且保留 WM 置顶能力（常见 Tk/mac 技巧）
+            mini.overrideredirect(True)
+            mini.overrideredirect(False)
+        else:
+            mini.overrideredirect(True)
+    except tk.TclError:
+        try:
+            mini.overrideredirect(True)
+        except tk.TclError:
+            pass
+    _ensure_mini_topmost(mini)
+
+
+def _ensure_mini_topmost(mini):
+    """强制 Mini 保持最前（mac 焦点丢失后 topmost 常被清掉）。"""
+    if mini is None:
+        return
+    try:
+        if not mini.winfo_exists():
+            return
+        mini.attributes("-topmost", True)
+        mini.lift()
+    except tk.TclError:
+        pass
+
+
 def create_mini_window(app):
     """创建 Mini 窗口并挂到 app 上。"""
     if app.mini_window:
@@ -43,9 +77,8 @@ def create_mini_window(app):
     mini = tk.Toplevel(app.master)
     # Mini 无边框小组件；设置/透明/字色等统一走系统托盘，不提供右键菜单。
     mini.title("")
-    mini.overrideredirect(True)
-    mini.attributes("-topmost", True)
     system = platform.system()
+    _apply_mini_borderless(mini, system)
     # macOS 透明：-transparent + systemTransparent（底板透明、文字不透明）
     # Windows 透明：-transparentcolor 色键抠底
     if app._transparent_mode and system == "Darwin":
@@ -77,6 +110,8 @@ def create_mini_window(app):
             mini.attributes("-alpha", 1.0)
         except tk.TclError:
             pass
+    # 透明属性变更后 mac 上可能丢 topmost，再设一次
+    _ensure_mini_topmost(mini)
 
     win_w, win_h = app.resolved_mini_size()
     min_w, min_h, max_w, max_h = app._mini_size_limits()
@@ -174,6 +209,7 @@ def create_mini_window(app):
         mini.focus_force()
     except tk.TclError:
         pass
+    _ensure_mini_topmost(mini)
 
     # Mini 快捷键（需焦点在 Mini 上）；设置项请用托盘菜单
     mini.bind("<Escape>", lambda e: mini_close(app))
@@ -200,9 +236,30 @@ def create_mini_window(app):
         except tk.TclError:
             pass
 
+    def _on_map(_event=None, win=mini):
+        _ensure_mini_topmost(win)
+
     if system == "Darwin":
         mini.after_idle(_force_mini_size)
         mini.after(50, _force_mini_size)
+        # 显示/焦点变化后 mac 常清掉 topmost，map 时重设
+        mini.bind("<Map>", _on_map)
+        mini.after_idle(lambda w=mini: _ensure_mini_topmost(w))
+        mini.after(50, lambda w=mini: _ensure_mini_topmost(w))
+        mini.after(200, lambda w=mini: _ensure_mini_topmost(w))
+        # 周期性保活：切换其它 App 后仍保持浮层
+        def _keep_topmost(win=mini, app_ref=app):
+            try:
+                if getattr(app_ref, "mini_window", None) is not win:
+                    return
+                if not win.winfo_exists():
+                    return
+                _ensure_mini_topmost(win)
+                win.after(1500, _keep_topmost)
+            except tk.TclError:
+                pass
+
+        mini.after(1500, _keep_topmost)
 
     sync_mini_state(app)
 
