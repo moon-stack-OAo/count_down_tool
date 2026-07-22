@@ -1,14 +1,16 @@
 @echo off
 chcp 65001 >nul
+setlocal EnableExtensions
 title Count Down Tool Builder
 
-rem 脚本位于 scripts/，项目根为上一级
+rem Script is under scripts/; project root is parent directory
 set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 for %%I in ("%SCRIPT_DIR%\..") do set "TOOL_DIR=%%~fI"
 set "VENV_DIR=%TOOL_DIR%\.venv"
 set "PYTHON=%VENV_DIR%\Scripts\python.exe"
 set "ICON_FILE=%TOOL_DIR%\assets\count_down_tool.ico"
+set "VER_FILE=%TEMP%\count_down_tool_version.txt"
 
 if not exist "%PYTHON%" (
     echo [ERROR] Python not found at: %PYTHON%
@@ -24,9 +26,16 @@ echo.
 
 cd /d "%TOOL_DIR%"
 
-rem 版本号写入 zip 名；exe 固定为 count_down_tool.exe（与 mac .app 一致）
+rem Read version into zip name; exe stays count_down_tool.exe (same as mac .app)
 set "VERSION="
-for /f "usebackq delims=" %%V in (`"%PYTHON%" -c "from core.countdown_core import __version__; print(__version__)"`) do set "VERSION=%%V"
+"%PYTHON%" -c "from core.countdown_core import __version__; print(__version__, end='')" > "%VER_FILE%"
+if errorlevel 1 (
+    echo [ERROR] Failed to read __version__ from core.countdown_core
+    pause
+    exit /b 1
+)
+set /p VERSION=<"%VER_FILE%"
+del /q "%VER_FILE%" 2>nul
 if not defined VERSION (
     echo [ERROR] Failed to read __version__ from core.countdown_core
     pause
@@ -44,7 +53,7 @@ echo.
 echo ========================================
 if exist "%TOOL_DIR%\dist\count_down_tool.exe" (
     if exist "%TOOL_DIR%\dist\%OUT_ZIP%" del /q "%TOOL_DIR%\dist\%OUT_ZIP%"
-    rem PowerShell Compress-Archive：zip 内为固定名 count_down_tool.exe
+    rem PowerShell Compress-Archive: zip contains fixed name count_down_tool.exe
     powershell -NoProfile -Command "Compress-Archive -LiteralPath '%TOOL_DIR%\dist\count_down_tool.exe' -DestinationPath '%TOOL_DIR%\dist\%OUT_ZIP%' -Force"
     if not exist "%TOOL_DIR%\dist\%OUT_ZIP%" (
         echo   [ERROR] Failed to create zip
@@ -67,4 +76,5 @@ if exist "%TOOL_DIR%\dist\count_down_tool.exe" (
     echo ========================================
 )
 
+endlocal
 pause
