@@ -3,11 +3,18 @@
 本项目变更记录遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)
 风格，版本号尽量遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 功能
+
+- **时间选择器支持直接输入**：时分秒除 ▲▼ / 滚轮步进外，可键盘输入；仅允许数字并限制范围（时 0–23，分/秒 0–59）；失焦或确认时格式化为两位
+
 ## 1.3.18
 
 ### 修复
 
-- **macOS 崩溃（TstateNULL / abort）**：不再在 mac 上启用 pystray 后台 `NSApplication.run`（与 Tk 双循环冲突）；改用 **Tk 菜单栏「设置」** 提供同等入口；Dock 点击用 `tk::mac::ReopenApplication` 恢复窗口
+- **macOS 崩溃（TstateNULL / abort）**：不再在 mac 上启用 pystray 后台 `NSApplication.run`（与 Tk 双循环冲突）；改用 **Tk
+  菜单栏「设置」** 提供同等入口；Dock 点击用 `tk::mac::ReopenApplication` 恢复窗口
 - 隐藏到后台时的提示文案按平台区分（mac 菜单栏 / Windows 托盘）
 
 ### 构建
@@ -70,7 +77,8 @@
 - **倒计时中禁用「选择时间」**：仅 running 时置灰；暂停后可改时间并按新目标重新计时
 - **时间选择器无法操作**：改为 ▲▼ 调时（不用 Spinbox）；挂到可见 Mini 父窗；去掉 grab/transient 到隐藏主窗
 - **时间选择器样式**：主题圆角卡片、圆形步进按钮、目标预览条；窗口按内容自适应，避免裁切
-- **Mini/托盘菜单状态不刷新**（Mini 右键 1.3.16 已废止）：当时右键用 postcommand 每次重建；托盘暂停/开始后强制 update_menu；预设进 running 也刷托盘
+- **Mini/托盘菜单状态不刷新**（Mini 右键 1.3.16 已废止）：当时右键用 postcommand 每次重建；托盘暂停/开始后强制
+  update_menu；预设进 running 也刷托盘
 
 ## 1.3.13
 
