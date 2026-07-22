@@ -35,17 +35,32 @@ _RESIZE_CURSORS = {
 }
 
 
-def _apply_mini_borderless(mini, system):
-    """无边框 + 常驻置顶。
+def _apply_mac_chrome(mini):
+    """macOS：无标题栏/系统边框，仍由 WM 管理，-topmost 可用。
 
-    macOS Aqua 下单独 overrideredirect(True) 会破坏 -topmost，
-    需 True→False 双调；并在 map 后反复确认 topmost。
+    1.3.19 曾用 overrideredirect True→False 保置顶，但会带回系统边框。
+    优先 ::tk::unsupported::MacWindowStyle plain none；失败再 overrideredirect(True)。
     """
     try:
+        mini.update_idletasks()
+        mini.tk.call(
+            "::tk::unsupported::MacWindowStyle", "style", mini._w, "plain", "none",
+        )
+        return True
+    except tk.TclError:
+        logger.debug("MacWindowStyle plain none 失败，回退 overrideredirect", exc_info=True)
+    try:
+        mini.overrideredirect(True)
+        return True
+    except tk.TclError:
+        return False
+
+
+def _apply_mini_borderless(mini, system):
+    """无边框 + 常驻置顶。"""
+    try:
         if system == "Darwin":
-            # True 后立刻 False：无边框且保留 WM 置顶能力（常见 Tk/mac 技巧）
-            mini.overrideredirect(True)
-            mini.overrideredirect(False)
+            _apply_mac_chrome(mini)
         else:
             mini.overrideredirect(True)
     except tk.TclError:
@@ -237,15 +252,17 @@ def create_mini_window(app):
             pass
 
     def _on_map(_event=None, win=mini):
+        if system == "Darwin":
+            _apply_mac_chrome(win)
         _ensure_mini_topmost(win)
 
     if system == "Darwin":
         mini.after_idle(_force_mini_size)
         mini.after(50, _force_mini_size)
-        # 显示/焦点变化后 mac 常清掉 topmost，map 时重设
+        # 显示/焦点变化后 mac 常清掉 topmost，map 时重设 chrome + topmost
         mini.bind("<Map>", _on_map)
-        mini.after_idle(lambda w=mini: _ensure_mini_topmost(w))
-        mini.after(50, lambda w=mini: _ensure_mini_topmost(w))
+        mini.after_idle(lambda w=mini: (_apply_mac_chrome(w), _ensure_mini_topmost(w)))
+        mini.after(50, lambda w=mini: (_apply_mac_chrome(w), _ensure_mini_topmost(w)))
         mini.after(200, lambda w=mini: _ensure_mini_topmost(w))
         # 周期性保活：切换其它 App 后仍保持浮层
         def _keep_topmost(win=mini, app_ref=app):

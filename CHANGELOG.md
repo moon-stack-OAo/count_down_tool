@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+## 1.3.20
+
+### 修复
+
+- **macOS Mini 置顶后出现系统边框**：1.3.19 的 `overrideredirect(True→False)` 会带回标题栏；改用 `MacWindowStyle plain none` 去边框并保留 `-topmost`，失败时再回退 `overrideredirect(True)`
+
 ## 1.3.19
 
 ### 功能
