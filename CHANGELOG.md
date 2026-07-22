@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+## 1.3.21
+
+### 修复
+
+- **macOS Mini / 透明模式仍带系统边框**：`MacWindowStyle` 必须在首次 map 前设置；创建时先 `withdraw`，设 chrome 与透明后再 `deiconify`；去掉 map 后无效的重复 style 调用
+
 ## 1.3.20
 
 ### 修复

@@ -36,24 +36,38 @@ _RESIZE_CURSORS = {
 
 
 def _apply_mac_chrome(mini):
-    """macOS：无标题栏/系统边框，仍由 WM 管理，-topmost 可用。
+    """macOS：去掉标题栏/系统边框，仍由 WM 管理以便 -topmost 可用。
 
-    1.3.19 曾用 overrideredirect True→False 保置顶，但会带回系统边框。
-    优先 ::tk::unsupported::MacWindowStyle plain none；失败再 overrideredirect(True)。
+    必须在窗口首次映射（显示）前调用；映射后改 style 无效。
+    不要在此调用 update/update_idletasks，否则会提前 map 导致 style 失效。
     """
-    try:
-        mini.update_idletasks()
-        mini.tk.call(
-            "::tk::unsupported::MacWindowStyle", "style", mini._w, "plain", "none",
-        )
-        return True
-    except tk.TclError:
-        logger.debug("MacWindowStyle plain none 失败，回退 overrideredirect", exc_info=True)
-    try:
-        mini.overrideredirect(True)
-        return True
-    except tk.TclError:
-        return False
+    path = mini._w
+    # 1) Carbon/Cocoa 兼容：plain + none ≈ 无标题栏无控件
+    # 2) 新 Tk stylemask：不带 titled 即无标题栏；noShadow 去阴影边
+    # 3) 最后才 overrideredirect（可能影响 topmost，仅作兜底）
+    attempts = (
+        lambda: mini.tk.call(
+            "::tk::unsupported::MacWindowStyle", "style", path, "plain", "none",
+        ),
+        lambda: mini.tk.call(
+            "::tk::unsupported::MacWindowStyle", "style", path, "help", "none",
+        ),
+        lambda: mini.tk.call(
+            "::tk::unsupported::MacWindowStyle",
+            "style", path, "floating", "noTitleBar",
+        ),
+        lambda: mini.attributes("-stylemask", "utility"),
+        lambda: mini.attributes("-stylemask", ""),
+        lambda: mini.overrideredirect(True),
+    )
+    for apply in attempts:
+        try:
+            apply()
+            return True
+        except tk.TclError:
+            continue
+    logger.debug("mac Mini chrome 全部失败", exc_info=True)
+    return False
 
 
 def _apply_mini_borderless(mini, system):
@@ -93,8 +107,14 @@ def create_mini_window(app):
     # Mini 无边框小组件；设置/透明/字色等统一走系统托盘，不提供右键菜单。
     mini.title("")
     system = platform.system()
+    # mac：先隐藏，在首次 map 前设 MacWindowStyle，否则系统边框去不掉
+    if system == "Darwin":
+        try:
+            mini.withdraw()
+        except tk.TclError:
+            pass
     _apply_mini_borderless(mini, system)
-    # macOS 透明：-transparent + systemTransparent（底板透明、文字不透明）
+    # macOS 透明：-transparent + systemTransparent（底板透明、文字不透明、去阴影）
     # Windows 透明：-transparentcolor 色键抠底
     if app._transparent_mode and system == "Darwin":
         bg = "systemTransparent"
@@ -219,13 +239,6 @@ def create_mini_window(app):
         widget.bind("<Motion>", lambda e: mini_on_hover(app, e))
         widget.bind("<Leave>", lambda e: mini_on_leave(app, e))
 
-    try:
-        mini.lift()
-        mini.focus_force()
-    except tk.TclError:
-        pass
-    _ensure_mini_topmost(mini)
-
     # Mini 快捷键（需焦点在 Mini 上）；设置项请用托盘菜单
     mini.bind("<Escape>", lambda e: mini_close(app))
     mini.bind("<m>", lambda e: app._switch_to_full())
@@ -252,17 +265,19 @@ def create_mini_window(app):
             pass
 
     def _on_map(_event=None, win=mini):
-        if system == "Darwin":
-            _apply_mac_chrome(win)
+        # style 只能在首次 map 前生效，此处只保 topmost
         _ensure_mini_topmost(win)
 
     if system == "Darwin":
+        mini.bind("<Map>", _on_map)
+        try:
+            mini.deiconify()
+        except tk.TclError:
+            pass
         mini.after_idle(_force_mini_size)
         mini.after(50, _force_mini_size)
-        # 显示/焦点变化后 mac 常清掉 topmost，map 时重设 chrome + topmost
-        mini.bind("<Map>", _on_map)
-        mini.after_idle(lambda w=mini: (_apply_mac_chrome(w), _ensure_mini_topmost(w)))
-        mini.after(50, lambda w=mini: (_apply_mac_chrome(w), _ensure_mini_topmost(w)))
+        mini.after_idle(lambda w=mini: _ensure_mini_topmost(w))
+        mini.after(50, lambda w=mini: _ensure_mini_topmost(w))
         mini.after(200, lambda w=mini: _ensure_mini_topmost(w))
         # 周期性保活：切换其它 App 后仍保持浮层
         def _keep_topmost(win=mini, app_ref=app):
@@ -277,6 +292,13 @@ def create_mini_window(app):
                 pass
 
         mini.after(1500, _keep_topmost)
+    else:
+        try:
+            mini.lift()
+            mini.focus_force()
+        except tk.TclError:
+            pass
+        _ensure_mini_topmost(mini)
 
     sync_mini_state(app)
 
