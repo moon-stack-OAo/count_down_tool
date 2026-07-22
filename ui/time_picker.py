@@ -105,7 +105,7 @@ def _fit_picker_window(picker, shell, min_w, min_h):
 
 
 def show_time_picker(app):
-    """弹出时间选择器（圆形 ▲▼ 调时，主题卡片布局）。"""
+    """弹出时间选择器（可输入 + 圆形 ▲▼ 调时，主题卡片布局）。"""
     parent = _picker_parent(app)
     picker = tk.Toplevel(parent)
     picker.title("选择时间")
@@ -142,7 +142,7 @@ def show_time_picker(app):
     ).pack(anchor="w")
     tk.Label(
         header,
-        text="点击上下按钮调整，确认后开始计时",
+        text="可直接输入或点上下按钮调整，确认后开始计时",
         font=app._font("label", 9),
         bg=c["bg"],
         fg=c["text_muted"],
@@ -213,28 +213,99 @@ def show_time_picker(app):
     def _unit(parent_fr, var, maximum, unit_label):
         col = tk.Frame(parent_fr, bg=c["glass"])
         col.pack(side=tk.LEFT, padx=10)
+        text_var = tk.StringVar(value=f"{int(var.get()):02d}")
+        editing = {"active": False}
+
+        def _clamp_int(raw):
+            try:
+                n = int(str(raw).strip())
+            except (TypeError, ValueError):
+                return 0
+            return max(0, min(maximum, n))
 
         def bump(delta):
-            cur = int(var.get())
+            editing["active"] = False
+            cur = _clamp_int(var.get())
             var.set((cur + delta) % (maximum + 1))
+            text_var.set(f"{int(var.get()):02d}")
+            _sync_preview()
+
+        def commit_entry(_e=None):
+            editing["active"] = False
+            n = _clamp_int(text_var.get())
+            var.set(n)
+            text_var.set(f"{n:02d}")
+            _sync_preview()
+
+        def on_key(_e=None):
+            editing["active"] = True
+            raw = text_var.get().strip()
+            if raw == "":
+                return
+            if not raw.isdigit():
+                cleaned = "".join(ch for ch in raw if ch.isdigit())[:2]
+                text_var.set(cleaned)
+                raw = cleaned
+            if len(raw) > 2:
+                text_var.set(raw[:2])
+                raw = raw[:2]
+            if raw.isdigit():
+                n = int(raw)
+                if n > maximum:
+                    n = maximum
+                    text_var.set(str(n))
+                var.set(n)
+                _sync_preview()
+
+        def validate_key(new_value):
+            if new_value == "":
+                return True
+            if not new_value.isdigit():
+                return False
+            if len(new_value) > 2:
+                return False
+            return int(new_value) <= maximum or len(new_value) < 2
 
         _step_btn(col, lambda: bump(1), "▲")
 
-        val_wrap = tk.Frame(col, bg=c["input_bg"], padx=12, pady=6)
+        val_wrap = tk.Frame(col, bg=c["input_bg"], padx=8, pady=4)
         val_wrap.pack(pady=4)
-        val = tk.Label(
+        vcmd = (picker.register(validate_key), "%P")
+        entry = tk.Entry(
             val_wrap,
-            text=f"{int(var.get()):02d}",
+            textvariable=text_var,
             font=mono,
             bg=c["input_bg"],
             fg=c["text"],
+            insertbackground=c["text"],
+            relief=tk.FLAT,
+            justify=tk.CENTER,
             width=3,
+            bd=0,
+            highlightthickness=0,
+            validate="key",
+            validatecommand=vcmd,
         )
-        val.pack()
+        entry.pack()
+
+        def on_return(_e=None):
+            commit_entry()
+            confirm()
+            return "break"
+
+        entry.bind("<FocusOut>", commit_entry)
+        entry.bind("<Return>", on_return)
+        entry.bind("<KeyRelease>", on_key)
+        entry.bind("<MouseWheel>", lambda e: bump(1 if e.delta > 0 else -1))
+        # Linux 滚轮
+        entry.bind("<Button-4>", lambda e: bump(1))
+        entry.bind("<Button-5>", lambda e: bump(-1))
 
         def on_write(*_):
+            if editing["active"]:
+                return
             try:
-                val.config(text=f"{int(var.get()):02d}")
+                text_var.set(f"{int(var.get()):02d}")
                 _sync_preview()
             except (tk.TclError, ValueError, TypeError):
                 pass
@@ -295,9 +366,17 @@ def show_time_picker(app):
 
     def confirm():
         try:
-            hh, mm, ss = int(h_var.get()), int(m_var.get()), int(s_var.get())
-            if not (0 <= hh <= 23 and 0 <= mm <= 59 and 0 <= ss <= 59):
-                return
+            # 失焦提交：确保 Entry 中未确认的输入生效
+            try:
+                picker.focus_set()
+            except tk.TclError:
+                pass
+            hh = max(0, min(23, int(h_var.get())))
+            mm = max(0, min(59, int(m_var.get())))
+            ss = max(0, min(59, int(s_var.get())))
+            h_var.set(hh)
+            m_var.set(mm)
+            s_var.set(ss)
             app.hour_var.set(f"{hh:02d}")
             app.minute_var.set(f"{mm:02d}")
             app.second_var.set(f"{ss:02d}")
@@ -321,7 +400,7 @@ def show_time_picker(app):
                 app._sync_mini_state()
             else:
                 app.toggle_countdown()
-        except ValueError:
+        except (ValueError, TypeError, tk.TclError):
             logger.debug("时间选择器输入无效", exc_info=True)
 
     def cancel():
