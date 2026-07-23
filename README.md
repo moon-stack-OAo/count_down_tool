@@ -2,14 +2,14 @@
 
 ![Python](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
-![Windows](https://img.shields.io/badge/Windows%20(v1.3.21)-0078D6?logo=windows&logoColor=white)
-![macOS](https://img.shields.io/badge/macOS%20(v1.3.21)-000000?logo=apple&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.3.21-brightgreen.svg)
+![Windows](https://img.shields.io/badge/Windows%20(v1.3.22)-0078D6?logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS%20(v1.3.22)-000000?logo=apple&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.3.22-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 一个基于 Python Tkinter 的现代化深色主题桌面倒计时工具，支持完整模式和 Mini 桌面小组件模式。
 
-**当前版本：1.3.21**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.3.22**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 功能特性
 
