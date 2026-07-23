@@ -116,10 +116,11 @@ class CountdownApp:
         self._alarm_timer_id = None
         self._bell_count = 0
 
-        # 结束音效：muted / sound_id(system|soft|chime|alert|custom) / sound_path
+        # 结束音效：muted / sound_id / sound_path / sound_history
         self._sound_muted = False
         self._sound_id = "soft"
         self._sound_path = ""
+        self._sound_history = []
 
         self.FONTS = self._get_fonts()
         self._ctrl = CountdownController(self)

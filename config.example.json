@@ -14,5 +14,11 @@
   },
   "sound_muted": false,
   "sound_id": "soft",
-  "sound_path": ""
+  "sound_path": "",
+  "sound_history": [
+    {
+      "path": "C:/Users/You/AppData/Roaming/count_down_tool/sounds/demo_abcdef123456.mp3",
+      "name": "demo.mp3"
+    }
+  ]
 }

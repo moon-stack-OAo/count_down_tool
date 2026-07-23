@@ -22,7 +22,7 @@
 - **完整窗右键**：切换 Mini、倒计时控制、隐藏到托盘/退出（无托盘时含自启与主题）
 - **开机自启**（Windows）：托盘「开机自启」勾选，写入启动文件夹快捷方式
 - **主题切换**：托盘/mac 菜单栏「主题」子菜单（无托盘时完整窗右键亦可），5 套预设
-- **结束提醒**：红绿闪烁 + 可自定义结束音效（预设/本地文件完整播 1 次；支持网易云 `.ncm`；系统铃 3 次；可静音）+ 托盘/弹窗通知
+- **结束提醒**：红绿闪烁 + 可自定义结束音效（预设/本地文件完整播 1 次；支持网易云 `.ncm`；系统铃 3 次；可静音；菜单可试听/停止试听）+ 托盘/弹窗通知
 - **多主题 UI**：自定义圆角窗口；完整模式为「剩余时间主视觉 + 设置卡」两层结构
 - **跨平台**：支持 Windows / macOS / Linux，自动适配字体
 
@@ -74,7 +74,9 @@ python count_down_tool.py
 - 用户配置：`%APPDATA%/count_down_tool/config.json`（Windows）或 `~/.config/count_down_tool/config.json`
 - 字段示例见 `config.example.json`：`mini_position`、`mini_size`、`transparent_mode`、`last_mode`、`autostart`、`theme_id`、
   `theme_custom`、`mini_text`（Mini 当前时间/倒计时三态字色，值为主题色键）、
-  `sound_muted` / `sound_id`（system|soft|chime|alert|custom）/ `sound_path`（自定义音频绝对路径）
+  `sound_muted` / `sound_id`（system|soft|chime|alert|custom）/ `sound_path`（自定义音效路径，导入后指向用户库副本）/
+  `sound_history`（历史自定义列表 `[{path,name}]`，最多 12 条）
+- 自定义音效导入目录：`%APPDATA%/count_down_tool/sounds/`（Windows）或 `~/.config/count_down_tool/sounds/`
 - 打包后图标与 `assets/sounds` 预设音效从程序包内加载
 
 ### 转换图标（macOS）

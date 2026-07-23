@@ -479,7 +479,8 @@ def merge_config(
     - theme_custom: Optional[dict]（仅 non-None 时写入；可传 {} 清空自定义色）
     - sound_muted: Optional[bool]
     - sound_id: Optional[str]  # system | soft | chime | alert | custom
-    - sound_path: Optional[str]  # 自定义音效绝对路径
+    - sound_path: Optional[str]  # 自定义音效绝对路径（用户 sounds 目录副本）
+    - sound_history: Optional[list]  # [{path, name}, ...] 历史自定义音效
     """
     result: Dict[str, Any] = dict(config) if isinstance(config, dict) else {}
     for key, value in updates.items():

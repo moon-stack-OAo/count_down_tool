@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import platform
 from typing import Tuple
 
@@ -88,7 +89,12 @@ def load_config(app) -> None:
         app._theme_custom = custom if isinstance(custom, dict) else None
         app.COLORS = resolve_theme(app._theme_id, app._theme_custom)
         app._mini_text = normalize_mini_text(config.get("mini_text"))
-        from services.sound import normalize_sound_id, normalize_sound_path
+        from services.sound import (
+            normalize_sound_id,
+            normalize_sound_path,
+            prune_sound_history,
+            touch_sound_history,
+        )
 
         if "sound_muted" in config:
             app._sound_muted = bool(config.get("sound_muted"))
@@ -96,6 +102,11 @@ def load_config(app) -> None:
         if isinstance(sid, str) and sid:
             app._sound_id = normalize_sound_id(sid)
         app._sound_path = normalize_sound_path(config.get("sound_path", ""))
+        history = prune_sound_history(config.get("sound_history"))
+        # 当前自定义路径并入历史（兼容旧配置仅有 sound_path）
+        if app._sound_path and os.path.isfile(app._sound_path):
+            history = touch_sound_history(history, app._sound_path)
+        app._sound_history = history
         real_autostart = is_autostart_enabled()
         app._autostart = real_autostart
         if config.get("autostart") is not None and bool(config.get("autostart")) != real_autostart:
@@ -113,16 +124,20 @@ def load_config(app) -> None:
         app._sound_muted = False
         app._sound_id = "soft"
         app._sound_path = ""
+        app._sound_history = []
 
 
 def save_config(app) -> None:
     """将 app 字段写回配置文件。"""
     try:
+        from services.sound import normalize_sound_history
+
         config = load_config_dict(app._config_file)
         config = merge_mini_position(config, app._mini_pos)
         config = merge_mini_size(config, app._mini_size)
         config = merge_mini_text(config, app._mini_text)
         mode = "mini" if app._is_mini else "full"
+        history = normalize_sound_history(getattr(app, "_sound_history", []))
         config = merge_config(
             config,
             transparent_mode=bool(app._transparent_mode),
@@ -132,6 +147,7 @@ def save_config(app) -> None:
             sound_muted=bool(getattr(app, "_sound_muted", False)),
             sound_id=str(getattr(app, "_sound_id", "soft") or "soft"),
             sound_path=str(getattr(app, "_sound_path", "") or ""),
+            sound_history=history,
         )
         if app._theme_custom is not None:
             config = merge_config(config, theme_custom=app._theme_custom)

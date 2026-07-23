@@ -150,8 +150,8 @@ def make_tray_theme_checked(app, theme_id):
 
 
 def _build_sound_menu(app):
-    """结束音效子菜单：预设 / 自定义 / 试听。"""
-    from services.sound import SOUND_ID_CUSTOM, SOUND_PRESETS
+    """结束音效子菜单：预设 / 自定义 / 历史 / 试听。"""
+    from services.sound import SOUND_ID_CUSTOM, SOUND_PRESETS, prune_sound_history
 
     items = []
     for sid, name in SOUND_PRESETS:
@@ -165,15 +165,43 @@ def _build_sound_menu(app):
     items.append(pystray.Menu.SEPARATOR)
     items.append(
         pystray.MenuItem(
-            "自定义文件…",
+            "导入文件…",
             lambda icon=None, item=None: tray_pick_custom_sound(app),
-            checked=lambda _: getattr(app, "_sound_id", "") == SOUND_ID_CUSTOM,
         )
     )
+
+    history = prune_sound_history(getattr(app, "_sound_history", []))
+    current_path = str(getattr(app, "_sound_path", "") or "")
+    current_custom = getattr(app, "_sound_id", "") == SOUND_ID_CUSTOM
+    if history:
+        items.append(pystray.Menu.SEPARATOR)
+        for entry in history:
+            path = entry.get("path") or ""
+            label = entry.get("name") or os.path.basename(path) or "音效"
+            # 截断过长文件名
+            if len(label) > 28:
+                label = label[:25] + "…"
+            items.append(
+                pystray.MenuItem(
+                    label,
+                    make_tray_history_sound_handler(app, path),
+                    checked=make_tray_history_sound_checked(
+                        app, path, current_custom, current_path
+                    ),
+                )
+            )
+
+    items.append(pystray.Menu.SEPARATOR)
     items.append(
         pystray.MenuItem(
             "试听",
             lambda icon=None, item=None: tray_preview_sound(app),
+        )
+    )
+    items.append(
+        pystray.MenuItem(
+            "停止试听",
+            lambda icon=None, item=None: tray_stop_preview_sound(app),
         )
     )
     return pystray.Menu(*items)
@@ -195,6 +223,53 @@ def make_tray_sound_checked(app, sound_id):
     return lambda item=None: getattr(app, "_sound_id", "soft") == sound_id
 
 
+def make_tray_history_sound_handler(app, path: str):
+    def _handler(icon=None, item=None):
+        def _do():
+            from services.sound import SOUND_ID_CUSTOM, touch_sound_history
+
+            if not path or not os.path.isfile(path):
+                messagebox.showerror(
+                    APP_NAME,
+                    "该历史音效文件已不存在。",
+                    parent=app.master,
+                )
+                app._sound_history = [
+                    h
+                    for h in getattr(app, "_sound_history", [])
+                    if (h.get("path") if isinstance(h, dict) else h) != path
+                ]
+                app._save_config()
+                refresh_tray_menu(app)
+                return
+            app._sound_id = SOUND_ID_CUSTOM
+            app._sound_path = path
+            app._sound_history = touch_sound_history(
+                getattr(app, "_sound_history", []), path
+            )
+            app._save_config()
+            refresh_tray_menu(app)
+
+        app.master.after(0, _do)
+
+    return _handler
+
+
+def make_tray_history_sound_checked(app, path, current_custom, current_path):
+    def _checked(item=None):
+        if getattr(app, "_sound_id", "") != "custom":
+            return False
+        cur = str(getattr(app, "_sound_path", "") or "")
+        try:
+            return os.path.normcase(os.path.abspath(cur)) == os.path.normcase(
+                os.path.abspath(path)
+            )
+        except OSError:
+            return cur == path
+
+    return _checked
+
+
 def tray_toggle_sound_mute(app, icon=None, item=None):
     def _do():
         app._sound_muted = not bool(getattr(app, "_sound_muted", False))
@@ -208,11 +283,17 @@ def tray_pick_custom_sound(app, icon=None, item=None):
     def _do():
         from tkinter import filedialog
 
-        from services.sound import AUDIO_FILETYPES, SOUND_ID_CUSTOM, is_audio_file
+        from services.sound import (
+            AUDIO_FILETYPES,
+            SOUND_ID_CUSTOM,
+            import_custom_sound,
+            is_audio_file,
+            touch_sound_history,
+        )
 
         path = filedialog.askopenfilename(
             parent=app.master,
-            title="选择结束音效",
+            title="导入结束音效（将复制到本地库）",
             filetypes=AUDIO_FILETYPES,
         )
         if not path:
@@ -224,8 +305,20 @@ def tray_pick_custom_sound(app, icon=None, item=None):
                 parent=app.master,
             )
             return
+        result = import_custom_sound(path)
+        if not result:
+            messagebox.showerror(
+                APP_NAME,
+                "导入失败。\n请确认文件可读；若为 ncm 请确认可正常解密。",
+                parent=app.master,
+            )
+            return
+        stored, name = result
         app._sound_id = SOUND_ID_CUSTOM
-        app._sound_path = path
+        app._sound_path = stored
+        app._sound_history = touch_sound_history(
+            getattr(app, "_sound_history", []), stored, name
+        )
         app._save_config()
         refresh_tray_menu(app)
 
@@ -243,6 +336,15 @@ def tray_preview_sound(app, icon=None, item=None):
             sound_id=str(getattr(app, "_sound_id", "soft") or "soft"),
             custom_path=str(getattr(app, "_sound_path", "") or ""),
         )
+
+    app.master.after(0, _do)
+
+
+def tray_stop_preview_sound(app, icon=None, item=None):
+    def _do():
+        from services.sound import stop_playback
+
+        stop_playback()
 
     app.master.after(0, _do)
 

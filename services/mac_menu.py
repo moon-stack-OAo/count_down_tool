@@ -9,6 +9,7 @@ pystray 在 Darwin 上会在后台线程跑 NSApplication.run，与 Tk 主循环
 from __future__ import annotations
 
 import logging
+import os
 import platform
 import tkinter as tk
 from tkinter import messagebox
@@ -121,9 +122,10 @@ def _fill_settings(menu: tk.Menu, app) -> None:
     menu.add_command(label=mute_label, command=lambda: _toggle_sound_mute(app))
 
     sound_menu = tk.Menu(menu, tearoff=0)
-    from services.sound import SOUND_ID_CUSTOM, SOUND_PRESETS
+    from services.sound import SOUND_ID_CUSTOM, SOUND_PRESETS, prune_sound_history
 
     current_sid = getattr(app, "_sound_id", "soft")
+    current_path = str(getattr(app, "_sound_path", "") or "")
     for sid, name in SOUND_PRESETS:
         mark = "✓ " if current_sid == sid else ""
         sound_menu.add_command(
@@ -131,18 +133,35 @@ def _fill_settings(menu: tk.Menu, app) -> None:
             command=lambda s=sid: _set_sound_id(app, s),
         )
     sound_menu.add_separator()
-    custom_mark = "✓ " if current_sid == SOUND_ID_CUSTOM else ""
-    custom_name = "自定义文件…"
-    path = str(getattr(app, "_sound_path", "") or "")
-    if path and current_sid == SOUND_ID_CUSTOM:
-        base = path.replace("\\", "/").rsplit("/", 1)[-1]
-        if base:
-            custom_name = f"自定义：{base}"
     sound_menu.add_command(
-        label=f"{custom_mark}{custom_name}",
+        label="导入文件…",
         command=lambda: _pick_custom_sound(app),
     )
+    history = prune_sound_history(getattr(app, "_sound_history", []))
+    if history:
+        sound_menu.add_separator()
+        for entry in history:
+            path = entry.get("path") or ""
+            label = entry.get("name") or path.replace("\\", "/").rsplit("/", 1)[-1] or "音效"
+            if len(label) > 28:
+                label = label[:25] + "…"
+            mark = ""
+            if current_sid == SOUND_ID_CUSTOM and path:
+                try:
+                    if os.path.normcase(os.path.abspath(current_path)) == os.path.normcase(
+                        os.path.abspath(path)
+                    ):
+                        mark = "✓ "
+                except OSError:
+                    if current_path == path:
+                        mark = "✓ "
+            sound_menu.add_command(
+                label=f"{mark}{label}",
+                command=lambda p=path: _select_history_sound(app, p),
+            )
+    sound_menu.add_separator()
     sound_menu.add_command(label="试听", command=lambda: _preview_sound(app))
+    sound_menu.add_command(label="停止试听", command=lambda: _stop_preview_sound(app))
     menu.add_cascade(label="结束音效", menu=sound_menu)
 
     menu.add_separator()
@@ -201,16 +220,47 @@ def _toggle_sound_mute(app) -> None:
 def _set_sound_id(app, sound_id: str) -> None:
     app._sound_id = sound_id
     app._save_config()
+    refresh_mac_menubar(app)
+
+
+def _select_history_sound(app, path: str) -> None:
+    from services.sound import SOUND_ID_CUSTOM, touch_sound_history
+
+    if not path or not os.path.isfile(path):
+        messagebox.showerror(
+            APP_NAME,
+            "该历史音效文件已不存在。",
+            parent=app.master,
+        )
+        app._sound_history = [
+            h
+            for h in getattr(app, "_sound_history", [])
+            if (h.get("path") if isinstance(h, dict) else h) != path
+        ]
+        app._save_config()
+        refresh_mac_menubar(app)
+        return
+    app._sound_id = SOUND_ID_CUSTOM
+    app._sound_path = path
+    app._sound_history = touch_sound_history(getattr(app, "_sound_history", []), path)
+    app._save_config()
+    refresh_mac_menubar(app)
 
 
 def _pick_custom_sound(app) -> None:
     from tkinter import filedialog
 
-    from services.sound import AUDIO_FILETYPES, SOUND_ID_CUSTOM, is_audio_file
+    from services.sound import (
+        AUDIO_FILETYPES,
+        SOUND_ID_CUSTOM,
+        import_custom_sound,
+        is_audio_file,
+        touch_sound_history,
+    )
 
     path = filedialog.askopenfilename(
         parent=app.master,
-        title="选择结束音效",
+        title="导入结束音效（将复制到本地库）",
         filetypes=AUDIO_FILETYPES,
     )
     if not path:
@@ -222,9 +272,22 @@ def _pick_custom_sound(app) -> None:
             parent=app.master,
         )
         return
+    result = import_custom_sound(path)
+    if not result:
+        messagebox.showerror(
+            APP_NAME,
+            "导入失败。\n请确认文件可读；若为 ncm 请确认可正常解密。",
+            parent=app.master,
+        )
+        return
+    stored, name = result
     app._sound_id = SOUND_ID_CUSTOM
-    app._sound_path = path
+    app._sound_path = stored
+    app._sound_history = touch_sound_history(
+        getattr(app, "_sound_history", []), stored, name
+    )
     app._save_config()
+    refresh_mac_menubar(app)
 
 
 def _preview_sound(app) -> None:
@@ -236,6 +299,12 @@ def _preview_sound(app) -> None:
         sound_id=str(getattr(app, "_sound_id", "soft") or "soft"),
         custom_path=str(getattr(app, "_sound_path", "") or ""),
     )
+
+
+def _stop_preview_sound(app) -> None:
+    from services.sound import stop_playback
+
+    stop_playback()
 
 
 def refresh_mac_menubar(app) -> None:
