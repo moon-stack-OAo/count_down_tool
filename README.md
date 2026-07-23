@@ -2,14 +2,14 @@
 
 ![Python](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
-![Windows](https://img.shields.io/badge/Windows%20(v1.3.21)-0078D6?logo=windows&logoColor=white)
-![macOS](https://img.shields.io/badge/macOS%20(v1.3.21)-000000?logo=apple&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.3.21-brightgreen.svg)
+![Windows](https://img.shields.io/badge/Windows%20(v1.3.22)-0078D6?logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS%20(v1.3.22)-000000?logo=apple&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.3.22-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 一个基于 Python Tkinter 的现代化深色主题桌面倒计时工具，支持完整模式和 Mini 桌面小组件模式。
 
-**当前版本：1.3.21**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.3.22**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 功能特性
 
@@ -22,7 +22,7 @@
 - **完整窗右键**：切换 Mini、倒计时控制、隐藏到托盘/退出（无托盘时含自启与主题）
 - **开机自启**（Windows）：托盘「开机自启」勾选，写入启动文件夹快捷方式
 - **主题切换**：托盘/mac 菜单栏「主题」子菜单（无托盘时完整窗右键亦可），5 套预设
-- **结束提醒**：红绿闪烁 + 系统响铃 + 托盘/弹窗通知
+- **结束提醒**：红绿闪烁 + 可自定义结束音效（预设/本地文件完整播 1 次；系统铃 3 次；可静音）+ 托盘/弹窗通知
 - **多主题 UI**：自定义圆角窗口；完整模式为「剩余时间主视觉 + 设置卡」两层结构
 - **跨平台**：支持 Windows / macOS / Linux，自动适配字体
 
@@ -73,8 +73,9 @@ python count_down_tool.py
 
 - 用户配置：`%APPDATA%/count_down_tool/config.json`（Windows）或 `~/.config/count_down_tool/config.json`
 - 字段示例见 `config.example.json`：`mini_position`、`mini_size`、`transparent_mode`、`last_mode`、`autostart`、`theme_id`、
-  `theme_custom`、`mini_text`（Mini 当前时间/倒计时三态字色，值为主题色键）
-- 打包后图标等资源从程序包内加载
+  `theme_custom`、`mini_text`（Mini 当前时间/倒计时三态字色，值为主题色键）、
+  `sound_muted` / `sound_id`（system|soft|chime|alert|custom）/ `sound_path`（自定义音频绝对路径）
+- 打包后图标与 `assets/sounds` 预设音效从程序包内加载
 
 ### 转换图标（macOS）
 

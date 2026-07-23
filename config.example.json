@@ -11,5 +11,8 @@
     "countdown_running": "white",
     "countdown_paused": "text_dim",
     "countdown_finished": "success"
-  }
+  },
+  "sound_muted": false,
+  "sound_id": "soft",
+  "sound_path": ""
 }

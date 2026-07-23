@@ -92,6 +92,9 @@ ADD_DATA_OPTION=""
 if [ -f "$TOOL_DIR/assets/count_down_tool.ico" ]; then
     ADD_DATA_OPTION="--add-data=$TOOL_DIR/assets/count_down_tool.ico:assets"
 fi
+if [ -d "$TOOL_DIR/assets/sounds" ]; then
+    ADD_DATA_OPTION="$ADD_DATA_OPTION --add-data=$TOOL_DIR/assets/sounds:assets/sounds"
+fi
 
 echo ""
 echo "Building application..."
@@ -121,6 +124,7 @@ echo "Building application..."
     --hidden-import services \
     --hidden-import services.tray \
     --hidden-import services.mac_menu \
+    --hidden-import services.sound \
     --hidden-import services.windows_native \
     --hidden-import pystray \
     --hidden-import pystray._darwin \

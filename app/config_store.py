@@ -88,6 +88,14 @@ def load_config(app) -> None:
         app._theme_custom = custom if isinstance(custom, dict) else None
         app.COLORS = resolve_theme(app._theme_id, app._theme_custom)
         app._mini_text = normalize_mini_text(config.get("mini_text"))
+        from services.sound import normalize_sound_id, normalize_sound_path
+
+        if "sound_muted" in config:
+            app._sound_muted = bool(config.get("sound_muted"))
+        sid = config.get("sound_id")
+        if isinstance(sid, str) and sid:
+            app._sound_id = normalize_sound_id(sid)
+        app._sound_path = normalize_sound_path(config.get("sound_path", ""))
         real_autostart = is_autostart_enabled()
         app._autostart = real_autostart
         if config.get("autostart") is not None and bool(config.get("autostart")) != real_autostart:
@@ -102,6 +110,9 @@ def load_config(app) -> None:
         app._mini_size = None
         app._mini_text = {}
         app.COLORS = resolve_theme(app._theme_id, app._theme_custom)
+        app._sound_muted = False
+        app._sound_id = "soft"
+        app._sound_path = ""
 
 
 def save_config(app) -> None:
@@ -118,6 +129,9 @@ def save_config(app) -> None:
             last_mode=mode,
             theme_id=app._theme_id,
             autostart=bool(app._autostart),
+            sound_muted=bool(getattr(app, "_sound_muted", False)),
+            sound_id=str(getattr(app, "_sound_id", "soft") or "soft"),
+            sound_path=str(getattr(app, "_sound_path", "") or ""),
         )
         if app._theme_custom is not None:
             config = merge_config(config, theme_custom=app._theme_custom)

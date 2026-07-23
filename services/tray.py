@@ -83,6 +83,13 @@ def init_tray_icon(app, icon_path):
                 lambda icon=None, item=None: tray_show_mini_text_picker(app),
             ),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "结束静音",
+                lambda icon=None, item=None: tray_toggle_sound_mute(app),
+                checked=lambda _: bool(getattr(app, "_sound_muted", False)),
+            ),
+            pystray.MenuItem("结束音效", _build_sound_menu(app)),
+            pystray.Menu.SEPARATOR,
             pystray.MenuItem("开机自启",
                              lambda icon=None, item=None: tray_toggle_autostart(app),
                              checked=lambda _: app._autostart),
@@ -140,6 +147,108 @@ def make_tray_theme_handler(app, theme_id):
 
 def make_tray_theme_checked(app, theme_id):
     return lambda item=None: app._theme_id == theme_id
+
+
+def _build_sound_menu(app):
+    """结束音效子菜单：预设 / 自定义 / 试听。"""
+    from services.sound import SOUND_ID_CUSTOM, SOUND_PRESETS
+
+    items = []
+    for sid, name in SOUND_PRESETS:
+        items.append(
+            pystray.MenuItem(
+                name,
+                make_tray_sound_handler(app, sid),
+                checked=make_tray_sound_checked(app, sid),
+            )
+        )
+    items.append(pystray.Menu.SEPARATOR)
+    items.append(
+        pystray.MenuItem(
+            "自定义文件…",
+            lambda icon=None, item=None: tray_pick_custom_sound(app),
+            checked=lambda _: getattr(app, "_sound_id", "") == SOUND_ID_CUSTOM,
+        )
+    )
+    items.append(
+        pystray.MenuItem(
+            "试听",
+            lambda icon=None, item=None: tray_preview_sound(app),
+        )
+    )
+    return pystray.Menu(*items)
+
+
+def make_tray_sound_handler(app, sound_id):
+    def _handler(icon=None, item=None):
+        def _do():
+            app._sound_id = sound_id
+            app._save_config()
+            refresh_tray_menu(app)
+
+        app.master.after(0, _do)
+
+    return _handler
+
+
+def make_tray_sound_checked(app, sound_id):
+    return lambda item=None: getattr(app, "_sound_id", "soft") == sound_id
+
+
+def tray_toggle_sound_mute(app, icon=None, item=None):
+    def _do():
+        app._sound_muted = not bool(getattr(app, "_sound_muted", False))
+        app._save_config()
+        refresh_tray_menu(app)
+
+    app.master.after(0, _do)
+
+
+def tray_pick_custom_sound(app, icon=None, item=None):
+    def _do():
+        from tkinter import filedialog
+
+        from services.sound import SOUND_ID_CUSTOM, is_audio_file
+
+        path = filedialog.askopenfilename(
+            parent=app.master,
+            title="选择结束音效",
+            filetypes=[
+                ("音频文件", "*.wav *.wave *.mp3 *.aiff *.aif *.m4a *.aac *.ogg *.flac"),
+                ("WAV", "*.wav *.wave"),
+                ("所有文件", "*.*"),
+            ],
+        )
+        if not path:
+            return
+        if not is_audio_file(path):
+            messagebox.showerror(
+                APP_NAME,
+                "不支持的音频格式。\n请选择 wav / mp3 / aiff / m4a 等常见格式。",
+                parent=app.master,
+            )
+            return
+        app._sound_id = SOUND_ID_CUSTOM
+        app._sound_path = path
+        app._save_config()
+        refresh_tray_menu(app)
+
+    app.master.after(0, _do)
+
+
+def tray_preview_sound(app, icon=None, item=None):
+    def _do():
+        from services.sound import play_finish_sound_async
+
+        # 试听忽略静音开关，便于确认所选音效
+        play_finish_sound_async(
+            app.master,
+            muted=False,
+            sound_id=str(getattr(app, "_sound_id", "soft") or "soft"),
+            custom_path=str(getattr(app, "_sound_path", "") or ""),
+        )
+
+    app.master.after(0, _do)
 
 
 def tray_toggle_autostart(app, icon=None, item=None):

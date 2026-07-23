@@ -154,11 +154,12 @@ def create_mini_window(app):
     screen_h = mini.winfo_screenheight()
 
     if app._mini_pos:
-        x, y = app._mini_pos
+        x, y = int(app._mini_pos[0]), int(app._mini_pos[1])
     else:
         x = screen_w - win_w - app.MINI_MARGIN_RIGHT
         y = screen_h - win_h - app.MINI_MARGIN_BOTTOM
-    mini.geometry(f"{win_w}x{win_h}+{x}+{y}")
+    # overrideredirect / 透明色键后，单次 geometry 常被忽略并落到 0,0
+    _place_mini(mini, win_w, win_h, x, y)
     try:
         mini.minsize(min_w, min_h)
         mini.maxsize(max_w, max_h)
@@ -251,22 +252,19 @@ def create_mini_window(app):
         w.bind("<m>", lambda e: app._switch_to_full())
         w.bind("<M>", lambda e: app._switch_to_full())
 
-    # macOS：布局后再强制不低于用户/默认尺寸，避免被压成极小窗
-    def _force_mini_size(event=None, w=win_w, h=win_h, win=mini):
+    # 布局后再强制尺寸/位置：overrideredirect 与透明属性后系统常重置到 0,0
+    def _force_mini_place(event=None, w=win_w, h=win_h, px=x, py=y, win=mini):
         try:
             if not win.winfo_exists():
                 return
-            if win.winfo_width() < w - 2 or win.winfo_height() < h - 2:
-                geo = win.geometry()
-                parts = geo.split("+")
-                pos = f"+{parts[1]}+{parts[2]}" if len(parts) == 3 else ""
-                win.geometry(f"{w}x{h}{pos}")
+            _place_mini(win, w, h, px, py)
         except tk.TclError:
             pass
 
     def _on_map(_event=None, win=mini):
-        # style 只能在首次 map 前生效，此处只保 topmost
+        # style 只能在首次 map 前生效，此处只保 topmost；并再钉一次位置
         _ensure_mini_topmost(win)
+        _force_mini_place()
 
     if system == "Darwin":
         mini.bind("<Map>", _on_map)
@@ -274,8 +272,9 @@ def create_mini_window(app):
             mini.deiconify()
         except tk.TclError:
             pass
-        mini.after_idle(_force_mini_size)
-        mini.after(50, _force_mini_size)
+        mini.after_idle(_force_mini_place)
+        mini.after(50, _force_mini_place)
+        mini.after(200, _force_mini_place)
         mini.after_idle(lambda w=mini: _ensure_mini_topmost(w))
         mini.after(50, lambda w=mini: _ensure_mini_topmost(w))
         mini.after(200, lambda w=mini: _ensure_mini_topmost(w))
@@ -299,6 +298,10 @@ def create_mini_window(app):
         except tk.TclError:
             pass
         _ensure_mini_topmost(mini)
+        # Windows：透明色键/无边框后位置常丢，idle 与短延迟再钉
+        mini.after_idle(_force_mini_place)
+        mini.after(50, _force_mini_place)
+        mini.after(200, _force_mini_place)
 
     sync_mini_state(app)
 
@@ -313,10 +316,7 @@ def destroy_mini_window(app, capture_size=True):
             if capture_size:
                 _capture_mini_geometry(app)
             else:
-                geo = app.mini_window.geometry()
-                pos = parse_mini_geometry(geo)
-                if pos is not None:
-                    app._mini_pos = pos
+                _remember_mini_pos(app)
             app._save_config()
         except Exception:
             logger.warning("保存 Mini 窗口几何失败", exc_info=True)
@@ -399,6 +399,8 @@ def apply_mini_content_scale(app, width=None, height=None, force=False):
 
 def recreate_mini_window(app):
     """重建 mini 窗口（切换透明模式时）。"""
+    # 先钉住当前位置，避免 destroy 时 geometry 读成 +0+0
+    _remember_mini_pos(app)
     destroy_mini_window(app)
     create_mini_window(app)
 
@@ -574,14 +576,53 @@ def mini_on_release(app, event=None):
             pass
 
 
+def _place_mini(win, w, h, x, y):
+    """设置 Mini 尺寸与位置（geometry 字符串兼容负坐标）。"""
+    try:
+        win.geometry(f"{int(w)}x{int(h)}+{int(x)}+{int(y)}")
+    except tk.TclError:
+        pass
+
+
+def _remember_mini_pos(app):
+    """用 winfo 优先记住位置；geometry 回退。忽略明显错误的 1x1@0,0 瞬态值。"""
+    win = getattr(app, "mini_window", None)
+    if not win:
+        return
+    try:
+        if not win.winfo_exists():
+            return
+        try:
+            win.update_idletasks()
+        except tk.TclError:
+            pass
+        x, y = int(win.winfo_x()), int(win.winfo_y())
+        ww, wh = int(win.winfo_width()), int(win.winfo_height())
+        # 未映射/瞬态：winfo 常为 1x1 +0+0，勿覆盖已有位置
+        if (x, y) == (0, 0) and ww <= 1 and wh <= 1 and app._mini_pos:
+            return
+        if ww > 1 and wh > 1:
+            app._mini_pos = (x, y)
+            return
+        geo = win.geometry()
+        pos = parse_mini_geometry(geo)
+        if pos is not None and pos != (0, 0):
+            app._mini_pos = pos
+        elif pos is not None and not app._mini_pos:
+            app._mini_pos = pos
+    except tk.TclError:
+        pass
+
+
 def _capture_mini_geometry(app):
     """从当前 Mini 窗口读取位置与尺寸到 app 状态。"""
     if not app.mini_window:
         return
-    geo = app.mini_window.geometry()
-    pos = parse_mini_geometry(geo)
-    if pos is not None:
-        app._mini_pos = pos
+    _remember_mini_pos(app)
+    try:
+        geo = app.mini_window.geometry()
+    except tk.TclError:
+        return
     size = parse_mini_size(geo)
     if size is not None:
         min_w, min_h, max_w, max_h = app._mini_size_limits()

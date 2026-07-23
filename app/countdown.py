@@ -354,15 +354,16 @@ class CountdownController:
             logger.debug("messagebox 通知失败", exc_info=True)
 
     def ring_bell(self):
-        """响铃 2~3 次，间隔约 400ms。"""
+        """结束提示音：文件类完整播 1 次；系统铃循环 3 次；静音跳过。"""
         app = self.app
-        try:
-            app.master.bell()
-        except Exception:
-            logger.debug("bell 失败", exc_info=True)
-        app._bell_count += 1
-        if app._bell_count < 3:
-            app.master.after(400, self.ring_bell)
+        from services.sound import play_finish_sound_async
+
+        play_finish_sound_async(
+            app.master,
+            muted=bool(getattr(app, "_sound_muted", False)),
+            sound_id=str(getattr(app, "_sound_id", "soft") or "soft"),
+            custom_path=str(getattr(app, "_sound_path", "") or ""),
+        )
 
     def flash_visual(self):
         app = self.app

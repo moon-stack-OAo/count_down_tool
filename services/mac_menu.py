@@ -117,6 +117,36 @@ def _fill_settings(menu: tk.Menu, app) -> None:
     )
     menu.add_separator()
 
+    mute_label = "✓ 结束静音" if getattr(app, "_sound_muted", False) else "结束静音"
+    menu.add_command(label=mute_label, command=lambda: _toggle_sound_mute(app))
+
+    sound_menu = tk.Menu(menu, tearoff=0)
+    from services.sound import SOUND_ID_CUSTOM, SOUND_PRESETS
+
+    current_sid = getattr(app, "_sound_id", "soft")
+    for sid, name in SOUND_PRESETS:
+        mark = "✓ " if current_sid == sid else ""
+        sound_menu.add_command(
+            label=f"{mark}{name}",
+            command=lambda s=sid: _set_sound_id(app, s),
+        )
+    sound_menu.add_separator()
+    custom_mark = "✓ " if current_sid == SOUND_ID_CUSTOM else ""
+    custom_name = "自定义文件…"
+    path = str(getattr(app, "_sound_path", "") or "")
+    if path and current_sid == SOUND_ID_CUSTOM:
+        base = path.replace("\\", "/").rsplit("/", 1)[-1]
+        if base:
+            custom_name = f"自定义：{base}"
+    sound_menu.add_command(
+        label=f"{custom_mark}{custom_name}",
+        command=lambda: _pick_custom_sound(app),
+    )
+    sound_menu.add_command(label="试听", command=lambda: _preview_sound(app))
+    menu.add_cascade(label="结束音效", menu=sound_menu)
+
+    menu.add_separator()
+
     # 开机自启在 mac 上当前实现可能有限，仍保留入口与 Windows 一致
     auto_label = "开机自启"
     if app._autostart:
@@ -161,6 +191,55 @@ def _toggle_autostart(app) -> None:
         return
     app._autostart = target
     app._save_config()
+
+
+def _toggle_sound_mute(app) -> None:
+    app._sound_muted = not bool(getattr(app, "_sound_muted", False))
+    app._save_config()
+
+
+def _set_sound_id(app, sound_id: str) -> None:
+    app._sound_id = sound_id
+    app._save_config()
+
+
+def _pick_custom_sound(app) -> None:
+    from tkinter import filedialog
+
+    from services.sound import SOUND_ID_CUSTOM, is_audio_file
+
+    path = filedialog.askopenfilename(
+        parent=app.master,
+        title="选择结束音效",
+        filetypes=[
+            ("音频文件", "*.wav *.wave *.mp3 *.aiff *.aif *.m4a *.aac *.ogg *.flac"),
+            ("WAV", "*.wav *.wave"),
+            ("所有文件", "*.*"),
+        ],
+    )
+    if not path:
+        return
+    if not is_audio_file(path):
+        messagebox.showerror(
+            APP_NAME,
+            "不支持的音频格式。\n请选择 wav / mp3 / aiff / m4a 等常见格式。",
+            parent=app.master,
+        )
+        return
+    app._sound_id = SOUND_ID_CUSTOM
+    app._sound_path = path
+    app._save_config()
+
+
+def _preview_sound(app) -> None:
+    from services.sound import play_finish_sound_async
+
+    play_finish_sound_async(
+        app.master,
+        muted=False,
+        sound_id=str(getattr(app, "_sound_id", "soft") or "soft"),
+        custom_path=str(getattr(app, "_sound_path", "") or ""),
+    )
 
 
 def refresh_mac_menubar(app) -> None:

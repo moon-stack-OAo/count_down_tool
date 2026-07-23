@@ -402,6 +402,12 @@ class TestParseMiniGeometry(unittest.TestCase):
     def test_pos_only(self):
         self.assertEqual(parse_mini_geometry("+10+20"), (10, 20))
 
+    def test_negative_coords(self):
+        self.assertEqual(parse_mini_geometry("220x48-100+200"), (-100, 200))
+        self.assertEqual(parse_mini_geometry("220x48+100-50"), (100, -50))
+        self.assertEqual(parse_mini_geometry("220x48-10-20"), (-10, -20))
+        self.assertEqual(parse_mini_geometry("+10-20"), (10, -20))
+
     def test_invalid(self):
         self.assertIsNone(parse_mini_geometry(""))
         self.assertIsNone(parse_mini_geometry("220x48"))

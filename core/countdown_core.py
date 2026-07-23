@@ -6,11 +6,12 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import sys
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple, Union
 
-__version__ = "1.3.21"
+__version__ = "1.3.22"
 APP_NAME = "倒计时工具"
 APP_NAME_EN = "Count Down Tool"
 
@@ -244,14 +245,17 @@ def format_target_label(
 
 
 def parse_mini_geometry(geo: str) -> Optional[Tuple[int, int]]:
-    """从 Tk geometry `WxH+X+Y` 或 `+X+Y` 解析位置。"""
+    """从 Tk geometry `WxH±X±Y` 或 `±X±Y` 解析位置。
+
+    支持负坐标（如 ``220x48-100+200``、``+10-20``），不能仅用 ``split('+')``。
+    """
     if not geo or not isinstance(geo, str):
         return None
     try:
-        parts = geo.split("+")
-        if len(parts) == 3:
-            return int(parts[1]), int(parts[2])
-        return None
+        m = re.search(r"([+-]\d+)([+-]\d+)\s*$", geo.strip())
+        if not m:
+            return None
+        return int(m.group(1)), int(m.group(2))
     except (TypeError, ValueError):
         return None
 
@@ -473,6 +477,9 @@ def merge_config(
     - autostart: Optional[bool]
     - theme_id: Optional[str]
     - theme_custom: Optional[dict]（仅 non-None 时写入；可传 {} 清空自定义色）
+    - sound_muted: Optional[bool]
+    - sound_id: Optional[str]  # system | soft | chime | alert | custom
+    - sound_path: Optional[str]  # 自定义音效绝对路径
     """
     result: Dict[str, Any] = dict(config) if isinstance(config, dict) else {}
     for key, value in updates.items():
