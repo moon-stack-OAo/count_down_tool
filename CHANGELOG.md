@@ -15,7 +15,8 @@
 
 ### 修复
 
-- **Windows 自定义/ ncm 试听无声**：非 WAV 不再依赖 `startfile`；优先 winmm MCI 播 mp3 等，失败再回退 MediaPlayer / startfile
+- **Windows 自定义/ ncm 试听无声**：非 WAV 不再依赖 `startfile`；优先 winmm MCI 播 mp3 等，失败再回退 MediaPlayer /
+  startfile
 - **试听可停止**：结束音效菜单「停止试听」；未播放时置灰；再次试听先停上一路
 - **导入 MP3 后「停止试听」掐不断**：MCI 设备线程亲和，open/play/stop 统一走专用工作线程
 - **停止试听置灰 / 连点叠播**：异步播放 generation 取消 + pending 状态；旧任务结束不得清掉新试听 pending
@@ -38,24 +39,28 @@
 
 ### 修复
 
-- **macOS Mini / 透明模式仍带系统边框**：`MacWindowStyle` 必须在首次 map 前设置；创建时先 `withdraw`，设 chrome 与透明后再 `deiconify`；去掉 map 后无效的重复 style 调用
+- **macOS Mini / 透明模式仍带系统边框**：`MacWindowStyle` 必须在首次 map 前设置；创建时先 `withdraw`，设 chrome 与透明后再
+  `deiconify`；去掉 map 后无效的重复 style 调用
 - **透明模式切换后 Mini 跳到左上角**：重建窗口前记住位置，map/idle 后多次重钉 geometry；`parse_mini_geometry` 支持负坐标
 
 ## 1.3.20
 
 ### 修复
 
-- **macOS Mini 置顶后出现系统边框**：1.3.19 的 `overrideredirect(True→False)` 会带回标题栏；改用 `MacWindowStyle plain none` 去边框并保留 `-topmost`，失败时再回退 `overrideredirect(True)`
+- **macOS Mini 置顶后出现系统边框**：1.3.19 的 `overrideredirect(True→False)` 会带回标题栏；改用
+  `MacWindowStyle plain none` 去边框并保留 `-topmost`，失败时再回退 `overrideredirect(True)`
 
 ## 1.3.19
 
 ### 功能
 
-- **时间选择器支持直接输入**：完整窗与 Mini 时间选择器可直接键入数字，输入过程实时校验；失焦/回车自动规范化为 HH:MM:SS；非法输入回退为进入前的有效时间
+- **时间选择器支持直接输入**：完整窗与 Mini 时间选择器可直接键入数字，输入过程实时校验；失焦/回车自动规范化为 HH:MM:
+  SS；非法输入回退为进入前的有效时间
 
 ### 修复
 
-- **macOS Mini 无法置顶**：Aqua 下 `overrideredirect(True)` 会破坏 `-topmost`；改为 True→False 双调无边框，并在 map / 定时任务中反复确认 topmost
+- **macOS Mini 无法置顶**：Aqua 下 `overrideredirect(True)` 会破坏 `-topmost`；改为 True→False 双调无边框，并在 map /
+  定时任务中反复确认 topmost
 
 ## 1.3.18
 
