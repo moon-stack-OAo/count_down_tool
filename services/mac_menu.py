@@ -161,7 +161,13 @@ def _fill_settings(menu: tk.Menu, app) -> None:
             )
     sound_menu.add_separator()
     sound_menu.add_command(label="试听", command=lambda: _preview_sound(app))
-    sound_menu.add_command(label="停止试听", command=lambda: _stop_preview_sound(app))
+    from services.sound import is_sound_playing
+
+    sound_menu.add_command(
+        label="停止试听",
+        command=lambda: _stop_preview_sound(app),
+        state=tk.NORMAL if is_sound_playing() else tk.DISABLED,
+    )
     menu.add_cascade(label="结束音效", menu=sound_menu)
 
     menu.add_separator()

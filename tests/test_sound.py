@@ -240,6 +240,16 @@ class TestStopPlayback(unittest.TestCase):
 
         stop_playback()  # 无播放时也应安全
 
+    def test_is_sound_playing_until(self):
+        from services import sound as sound_mod
+
+        sound_mod.stop_playback()
+        self.assertFalse(sound_mod.is_sound_playing())
+        sound_mod._mark_playing_until(2.0)
+        self.assertTrue(sound_mod.is_sound_playing())
+        sound_mod.stop_playback()
+        self.assertFalse(sound_mod.is_sound_playing())
+
 
 if __name__ == "__main__":
     unittest.main()

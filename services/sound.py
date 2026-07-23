@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.countdown_core import resource_path, user_config_dir
@@ -304,29 +305,75 @@ _WIN_MCI_ALIAS = "cdt_finish_sound"
 _win_mci_lock = threading.Lock()
 _play_proc_lock = threading.Lock()
 _play_procs: List[subprocess.Popen] = []
-_playing = False
+# 无进程句柄时的截止时间（monotonic），用于 winsound / 系统铃等
+_play_until = 0.0
+_use_mci = False
+
+
+def _estimate_audio_seconds(path: str) -> float:
+    """粗估时长（秒），用于菜单「停止」可点状态；失败则给保守上限。"""
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".wav", ".wave"):
+        try:
+            import wave
+
+            with wave.open(path, "rb") as w:
+                rate = float(w.getframerate() or 1)
+                return max(0.3, w.getnframes() / rate + 0.2)
+        except Exception:
+            pass
+    return 180.0
+
+
+def _mci_is_playing() -> bool:
+    """查询 MCI 是否仍在 play。"""
+    if platform.system() != "Windows":
+        return False
+    try:
+        import ctypes
+
+        buf = ctypes.create_unicode_buffer(256)
+        err = int(
+            ctypes.windll.winmm.mciSendStringW(  # type: ignore[attr-defined]
+                f"status {_WIN_MCI_ALIAS} mode", buf, 255, 0
+            )
+        )
+        if err != 0:
+            return False
+        return (buf.value or "").strip().lower() == "playing"
+    except Exception:
+        return False
 
 
 def is_sound_playing() -> bool:
-    """是否可能仍在播放（用于菜单；进程已退出则视为否）。"""
-    global _playing
+    """是否仍在播放（菜单置灰用；进程结束 / 截止时间到 / MCI 停则视为否）。"""
+    global _play_until, _use_mci
+    now = time.monotonic()
     with _play_proc_lock:
-        alive = False
-        for p in list(_play_procs):
-            if p.poll() is None:
-                alive = True
-                break
-        if not alive and _playing and platform.system() == "Windows":
-            # MCI/winsound 无进程句柄，仅靠标志位
-            return True
-        if not alive:
-            _playing = False
-        return _playing or alive
+        alive = any(p.poll() is None for p in list(_play_procs))
+        # 清理已退出进程
+        if _play_procs:
+            _play_procs[:] = [p for p in _play_procs if p.poll() is None]
+        until = _play_until
+        use_mci = _use_mci
+
+    if alive:
+        return True
+    if use_mci and _mci_is_playing():
+        return True
+    if now < until:
+        return True
+
+    with _play_proc_lock:
+        if not any(p.poll() is None for p in _play_procs):
+            _play_until = 0.0
+            _use_mci = False
+    return False
 
 
 def stop_playback() -> None:
     """停止当前试听/结束音效（winsound / MCI / 外部播放进程 / 系统铃）。"""
-    global _playing
+    global _play_until, _use_mci
     cancel_system_bell()
     system = platform.system()
     if system == "Windows":
@@ -349,7 +396,8 @@ def stop_playback() -> None:
     with _play_proc_lock:
         procs = list(_play_procs)
         _play_procs.clear()
-        _playing = False
+        _play_until = 0.0
+        _use_mci = False
 
     for p in procs:
         try:
@@ -383,16 +431,22 @@ def play_file(path: str) -> bool:
 
 
 def _track_proc(proc: subprocess.Popen) -> None:
-    global _playing
     with _play_proc_lock:
         _play_procs.append(proc)
-        _playing = True
 
 
-def _mark_playing() -> None:
-    global _playing
+def _mark_playing_until(seconds: float) -> None:
+    """标记一段时间内视为播放中（无进程句柄时）。"""
+    global _play_until
+    sec = max(0.3, float(seconds))
     with _play_proc_lock:
-        _playing = True
+        _play_until = max(_play_until, time.monotonic() + sec)
+
+
+def _mark_mci_playing() -> None:
+    global _use_mci
+    with _play_proc_lock:
+        _use_mci = True
 
 
 def _play_windows(path: str) -> bool:
@@ -410,7 +464,7 @@ def _play_windows(path: str) -> bool:
             import winsound
 
             winsound.PlaySound(abs_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
-            _mark_playing()
+            _mark_playing_until(_estimate_audio_seconds(abs_path))
             return True
         except Exception:
             logger.debug("winsound 播放失败", exc_info=True)
@@ -421,7 +475,7 @@ def _play_windows(path: str) -> bool:
         return True
     try:
         os.startfile(abs_path)  # type: ignore[attr-defined]
-        _mark_playing()
+        _mark_playing_until(_estimate_audio_seconds(abs_path))
         return True
     except Exception:
         logger.debug("startfile 播放失败", exc_info=True)
@@ -463,7 +517,7 @@ def _play_windows_mci(path: str) -> bool:
                 except Exception:
                     pass
                 return False
-        _mark_playing()
+        _mark_mci_playing()
         return True
     except Exception:
         logger.debug("MCI 播放异常", exc_info=True)
@@ -574,6 +628,8 @@ def ring_system_bell_times(root, times: int = _SYSTEM_BELL_TIMES) -> None:
     with _bell_lock:
         _bell_gen += 1
         gen = _bell_gen
+    # 菜单「停止试听」可点时长 ≈ 间隔 * 次数
+    _mark_playing_until(n * (_SYSTEM_BELL_INTERVAL_MS / 1000.0) + 0.4)
 
     def _ring(left: int) -> None:
         with _bell_lock:

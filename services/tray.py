@@ -202,9 +202,16 @@ def _build_sound_menu(app):
         pystray.MenuItem(
             "停止试听",
             lambda icon=None, item=None: tray_stop_preview_sound(app),
+            enabled=lambda _: _stop_preview_enabled(),
         )
     )
     return pystray.Menu(*items)
+
+
+def _stop_preview_enabled() -> bool:
+    from services.sound import is_sound_playing
+
+    return is_sound_playing()
 
 
 def make_tray_sound_handler(app, sound_id):
