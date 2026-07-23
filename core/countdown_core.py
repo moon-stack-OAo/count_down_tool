@@ -11,7 +11,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple, Union
 
-__version__ = "1.3.22"
+__version__ = "1.3.23"
 APP_NAME = "倒计时工具"
 APP_NAME_EN = "Count Down Tool"
 
