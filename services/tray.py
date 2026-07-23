@@ -208,23 +208,19 @@ def tray_pick_custom_sound(app, icon=None, item=None):
     def _do():
         from tkinter import filedialog
 
-        from services.sound import SOUND_ID_CUSTOM, is_audio_file
+        from services.sound import AUDIO_FILETYPES, SOUND_ID_CUSTOM, is_audio_file
 
         path = filedialog.askopenfilename(
             parent=app.master,
             title="选择结束音效",
-            filetypes=[
-                ("音频文件", "*.wav *.wave *.mp3 *.aiff *.aif *.m4a *.aac *.ogg *.flac"),
-                ("WAV", "*.wav *.wave"),
-                ("所有文件", "*.*"),
-            ],
+            filetypes=AUDIO_FILETYPES,
         )
         if not path:
             return
         if not is_audio_file(path):
             messagebox.showerror(
                 APP_NAME,
-                "不支持的音频格式。\n请选择 wav / mp3 / aiff / m4a 等常见格式。",
+                "不支持的音频格式。\n请选择 wav / mp3 / aiff / m4a / ncm 等常见格式。",
                 parent=app.master,
             )
             return

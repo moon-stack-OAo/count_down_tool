@@ -125,6 +125,7 @@ echo "Building application..."
     --hidden-import services.tray \
     --hidden-import services.mac_menu \
     --hidden-import services.sound \
+    --hidden-import services.ncm \
     --hidden-import services.windows_native \
     --hidden-import pystray \
     --hidden-import pystray._darwin \

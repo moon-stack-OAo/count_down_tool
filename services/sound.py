@@ -34,7 +34,26 @@ _PRESET_FILES = {
     SOUND_ID_ALERT: os.path.join("assets", "sounds", "alert.wav"),
 }
 
-_AUDIO_EXTS = (".wav", ".wave", ".mp3", ".aiff", ".aif", ".m4a", ".aac", ".ogg", ".flac")
+_AUDIO_EXTS = (
+    ".wav",
+    ".wave",
+    ".mp3",
+    ".aiff",
+    ".aif",
+    ".m4a",
+    ".aac",
+    ".ogg",
+    ".flac",
+    ".ncm",
+)
+
+# 文件选择对话框用的扩展名字符串
+AUDIO_FILETYPES = [
+    ("音频文件", "*.wav *.wave *.mp3 *.aiff *.aif *.m4a *.aac *.ogg *.flac *.ncm"),
+    ("网易云 NCM", "*.ncm"),
+    ("WAV", "*.wav *.wave"),
+    ("所有文件", "*.*"),
+]
 
 
 def normalize_sound_id(value) -> str:
@@ -84,20 +103,37 @@ def is_audio_file(path: str) -> bool:
     if not path or not os.path.isfile(path):
         return False
     ext = os.path.splitext(path)[1].lower()
+    if ext == ".ncm":
+        from services.ncm import is_ncm_file
+
+        return is_ncm_file(path)
     return ext in _AUDIO_EXTS
+
+
+def prepare_playable_path(path: str) -> Optional[str]:
+    """将路径解析为系统可直接播放的文件（.ncm 先解密到缓存）。"""
+    if not path or not os.path.isfile(path):
+        return None
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".ncm":
+        from services.ncm import resolve_ncm_play_path
+
+        return resolve_ncm_play_path(path)
+    return path
 
 
 def play_file(path: str) -> bool:
     """异步播放一次完整文件。成功启动返回 True。"""
-    if not path or not os.path.isfile(path):
+    play_path = prepare_playable_path(path)
+    if not play_path:
         return False
     system = platform.system()
     try:
         if system == "Windows":
-            return _play_windows(path)
+            return _play_windows(play_path)
         if system == "Darwin":
-            return _play_macos(path)
-        return _play_linux(path)
+            return _play_macos(play_path)
+        return _play_linux(play_path)
     except Exception:
         logger.debug("播放文件失败: %s", path, exc_info=True)
         return False
