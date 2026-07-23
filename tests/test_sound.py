@@ -220,12 +220,12 @@ class TestStopPlayback(unittest.TestCase):
     def test_play_file_stops_previous(self):
         from services import sound as sound_mod
 
-        with mock.patch.object(sound_mod, "stop_playback") as stop:
+        with mock.patch.object(sound_mod, "_halt_devices") as halt:
             with mock.patch.object(sound_mod, "prepare_playable_path", return_value=None):
                 sound_mod.play_file("x.mp3")
-                # prepare 失败时不调用 stop（路径无效）
-                stop.assert_not_called()
-        with mock.patch.object(sound_mod, "stop_playback") as stop:
+                # prepare 失败时不调用 halt（路径无效）
+                halt.assert_not_called()
+        with mock.patch.object(sound_mod, "_halt_devices") as halt:
             with mock.patch.object(
                 sound_mod, "prepare_playable_path", return_value="/tmp/a.mp3"
             ):
@@ -233,7 +233,7 @@ class TestStopPlayback(unittest.TestCase):
                     with mock.patch.object(sound_mod, "platform") as plat:
                         plat.system.return_value = "Windows"
                         sound_mod.play_file("/tmp/a.mp3")
-                        stop.assert_called_once()
+                        halt.assert_called_once()
 
     def test_stop_playback_safe(self):
         from services.sound import stop_playback
@@ -249,6 +249,97 @@ class TestStopPlayback(unittest.TestCase):
         self.assertTrue(sound_mod.is_sound_playing())
         sound_mod.stop_playback()
         self.assertFalse(sound_mod.is_sound_playing())
+
+    def test_async_cancel_skips_play(self):
+        """stop 后旧 generation 不应再开播。"""
+        from services import sound as sound_mod
+
+        sound_mod.stop_playback()
+        gen = sound_mod._bump_play_gen()
+        sound_mod.stop_playback()  # 取消 gen
+        with mock.patch.object(sound_mod, "play_file", return_value=True) as pf:
+            sound_mod.play_finish_sound(
+                None,
+                muted=False,
+                sound_id=sound_mod.SOUND_ID_SOFT,
+                play_gen=gen,
+            )
+            pf.assert_not_called()
+
+    def test_pending_marks_playing(self):
+        from services import sound as sound_mod
+
+        sound_mod.stop_playback()
+        self.assertFalse(sound_mod.is_sound_playing())
+        sound_mod._set_pending_play(2.0)
+        self.assertTrue(sound_mod.is_sound_playing())
+        sound_mod.stop_playback()
+        self.assertFalse(sound_mod.is_sound_playing())
+
+    def test_old_async_finish_does_not_clear_new_pending(self):
+        """旧 generation 结束不得清掉新试听的 pending。"""
+        from services import sound as sound_mod
+
+        sound_mod.stop_playback()
+        old = sound_mod._bump_play_gen()
+        # 模拟新一次试听
+        sound_mod._bump_play_gen()
+        sound_mod._set_pending_play(5.0)
+        self.assertTrue(sound_mod.is_sound_playing())
+        sound_mod._finish_async_pending(old)
+        self.assertTrue(sound_mod.is_sound_playing())
+
+    def test_play_file_respects_cancelled_gen(self):
+        from services import sound as sound_mod
+
+        gen = sound_mod._bump_play_gen()
+        sound_mod._bump_play_gen()  # 取消
+        with mock.patch.object(
+            sound_mod, "prepare_playable_path", return_value="/tmp/a.mp3"
+        ):
+            with mock.patch.object(sound_mod, "_halt_devices") as halt:
+                with mock.patch.object(sound_mod, "_play_windows") as play:
+                    self.assertFalse(sound_mod.play_file("/tmp/a.mp3", play_gen=gen))
+                    halt.assert_not_called()
+                    play.assert_not_called()
+
+
+class TestPurgeOrphanSounds(unittest.TestCase):
+    def test_purge_keeps_history_and_current(self):
+        from services import sound as sound_mod
+
+        with tempfile.TemporaryDirectory() as tmp:
+            keep_h = os.path.join(tmp, "hist.wav")
+            keep_c = os.path.join(tmp, "cur.wav")
+            orphan = os.path.join(tmp, "old.wav")
+            for p in (keep_h, keep_c, orphan):
+                with open(p, "wb") as f:
+                    f.write(b"x")
+            with mock.patch.object(sound_mod, "user_sounds_dir", return_value=tmp):
+                n = sound_mod.purge_orphan_sounds(
+                    [{"path": keep_h, "name": "h"}],
+                    keep_c,
+                )
+            self.assertEqual(n, 1)
+            self.assertTrue(os.path.isfile(keep_h))
+            self.assertTrue(os.path.isfile(keep_c))
+            self.assertFalse(os.path.isfile(orphan))
+
+    def test_list_user_sound_files_skips_tmp(self):
+        from services import sound as sound_mod
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ok = os.path.join(tmp, "a.mp3")
+            bad = os.path.join(tmp, "a.mp3.tmp")
+            with open(ok, "wb") as f:
+                f.write(b"1")
+            with open(bad, "wb") as f:
+                f.write(b"2")
+            with mock.patch.object(sound_mod, "user_sounds_dir", return_value=tmp):
+                files = sound_mod.list_user_sound_files()
+            bases = {os.path.basename(p) for p in files}
+            self.assertIn("a.mp3", bases)
+            self.assertNotIn("a.mp3.tmp", bases)
 
 
 if __name__ == "__main__":

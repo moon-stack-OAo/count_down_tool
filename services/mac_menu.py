@@ -160,13 +160,27 @@ def _fill_settings(menu: tk.Menu, app) -> None:
                 command=lambda p=path: _select_history_sound(app, p),
             )
     sound_menu.add_separator()
-    sound_menu.add_command(label="试听", command=lambda: _preview_sound(app))
     from services.sound import is_sound_playing
 
+    playing = is_sound_playing()
+    sound_menu.add_command(
+        label="试听",
+        command=lambda: _preview_sound(app),
+        state=tk.DISABLED if playing else tk.NORMAL,
+    )
     sound_menu.add_command(
         label="停止试听",
         command=lambda: _stop_preview_sound(app),
-        state=tk.NORMAL if is_sound_playing() else tk.DISABLED,
+        state=tk.NORMAL if playing else tk.DISABLED,
+    )
+    sound_menu.add_separator()
+    sound_menu.add_command(
+        label="清空历史记录",
+        command=lambda: _clear_sound_history(app),
+    )
+    sound_menu.add_command(
+        label="清理未使用音效…",
+        command=lambda: _purge_orphan_sounds(app),
     )
     menu.add_cascade(label="结束音效", menu=sound_menu)
 
@@ -297,20 +311,60 @@ def _pick_custom_sound(app) -> None:
 
 
 def _preview_sound(app) -> None:
-    from services.sound import play_finish_sound_async
+    from services.sound import is_sound_playing, play_finish_sound_async, stop_playback
 
+    if is_sound_playing():
+        stop_playback()
     play_finish_sound_async(
         app.master,
         muted=False,
         sound_id=str(getattr(app, "_sound_id", "soft") or "soft"),
         custom_path=str(getattr(app, "_sound_path", "") or ""),
     )
+    # 同步重建：pending 已置位，「停止试听」可点、「试听」禁用
+    refresh_mac_menubar(app)
+    try:
+        app.master.after(400, lambda: refresh_mac_menubar(app))
+        app.master.after(1500, lambda: refresh_mac_menubar(app))
+    except Exception:
+        pass
 
 
 def _stop_preview_sound(app) -> None:
     from services.sound import stop_playback
 
     stop_playback()
+    refresh_mac_menubar(app)
+
+
+def _clear_sound_history(app) -> None:
+    app._sound_history = []
+    app._save_config()
+    refresh_mac_menubar(app)
+
+
+def _purge_orphan_sounds(app) -> None:
+    from services.sound import purge_orphan_sounds, stop_playback
+
+    ok = messagebox.askyesno(
+        APP_NAME,
+        "将删除本地音效库中未出现在历史列表、且不是当前所选的文件。\n"
+        "历史记录本身不会被清空。\n\n确定清理？",
+        parent=app.master,
+    )
+    if not ok:
+        return
+    stop_playback()
+    n = purge_orphan_sounds(
+        getattr(app, "_sound_history", []),
+        str(getattr(app, "_sound_path", "") or ""),
+    )
+    messagebox.showinfo(
+        APP_NAME,
+        f"已清理 {n} 个未使用音效文件。" if n else "没有可清理的未使用音效。",
+        parent=app.master,
+    )
+    refresh_mac_menubar(app)
 
 
 def refresh_mac_menubar(app) -> None:

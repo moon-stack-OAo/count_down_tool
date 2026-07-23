@@ -88,7 +88,8 @@ def init_tray_icon(app, icon_path):
                 lambda icon=None, item=None: tray_toggle_sound_mute(app),
                 checked=lambda _: bool(getattr(app, "_sound_muted", False)),
             ),
-            pystray.MenuItem("结束音效", _build_sound_menu(app)),
+            # 动态子菜单：每次 update_menu 重建历史/enabled
+            pystray.MenuItem("结束音效", pystray.Menu(lambda: _iter_sound_menu_items(app))),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("开机自启",
                              lambda icon=None, item=None: tray_toggle_autostart(app),
@@ -149,63 +150,61 @@ def make_tray_theme_checked(app, theme_id):
     return lambda item=None: app._theme_id == theme_id
 
 
-def _build_sound_menu(app):
-    """结束音效子菜单：预设 / 自定义 / 历史 / 试听。"""
+def _iter_sound_menu_items(app):
+    """结束音效子菜单项（generator）。每次 update_menu 重新生成历史列表。"""
     from services.sound import SOUND_ID_CUSTOM, SOUND_PRESETS, prune_sound_history
 
-    items = []
     for sid, name in SOUND_PRESETS:
-        items.append(
-            pystray.MenuItem(
-                name,
-                make_tray_sound_handler(app, sid),
-                checked=make_tray_sound_checked(app, sid),
-            )
+        yield pystray.MenuItem(
+            name,
+            make_tray_sound_handler(app, sid),
+            checked=make_tray_sound_checked(app, sid),
         )
-    items.append(pystray.Menu.SEPARATOR)
-    items.append(
-        pystray.MenuItem(
-            "导入文件…",
-            lambda icon=None, item=None: tray_pick_custom_sound(app),
-        )
+    yield pystray.Menu.SEPARATOR
+    yield pystray.MenuItem(
+        "导入文件…",
+        lambda icon=None, item=None: tray_pick_custom_sound(app),
     )
 
     history = prune_sound_history(getattr(app, "_sound_history", []))
     current_path = str(getattr(app, "_sound_path", "") or "")
     current_custom = getattr(app, "_sound_id", "") == SOUND_ID_CUSTOM
     if history:
-        items.append(pystray.Menu.SEPARATOR)
+        yield pystray.Menu.SEPARATOR
         for entry in history:
             path = entry.get("path") or ""
             label = entry.get("name") or os.path.basename(path) or "音效"
-            # 截断过长文件名
             if len(label) > 28:
                 label = label[:25] + "…"
-            items.append(
-                pystray.MenuItem(
-                    label,
-                    make_tray_history_sound_handler(app, path),
-                    checked=make_tray_history_sound_checked(
-                        app, path, current_custom, current_path
-                    ),
-                )
+            yield pystray.MenuItem(
+                label,
+                make_tray_history_sound_handler(app, path),
+                checked=make_tray_history_sound_checked(
+                    app, path, current_custom, current_path
+                ),
             )
 
-    items.append(pystray.Menu.SEPARATOR)
-    items.append(
-        pystray.MenuItem(
-            "试听",
-            lambda icon=None, item=None: tray_preview_sound(app),
-        )
+    yield pystray.Menu.SEPARATOR
+    # 播放中禁用试听，避免叠播；停止项仅播放中可点（update_menu 时求值）
+    yield pystray.MenuItem(
+        "试听",
+        lambda icon=None, item=None: tray_preview_sound(app),
+        enabled=lambda _: not _stop_preview_enabled(),
     )
-    items.append(
-        pystray.MenuItem(
-            "停止试听",
-            lambda icon=None, item=None: tray_stop_preview_sound(app),
-            enabled=lambda _: _stop_preview_enabled(),
-        )
+    yield pystray.MenuItem(
+        "停止试听",
+        lambda icon=None, item=None: tray_stop_preview_sound(app),
+        enabled=lambda _: _stop_preview_enabled(),
     )
-    return pystray.Menu(*items)
+    yield pystray.Menu.SEPARATOR
+    yield pystray.MenuItem(
+        "清空历史记录",
+        lambda icon=None, item=None: tray_clear_sound_history(app),
+    )
+    yield pystray.MenuItem(
+        "清理未使用音效…",
+        lambda icon=None, item=None: tray_purge_orphan_sounds(app),
+    )
 
 
 def _stop_preview_enabled() -> bool:
@@ -333,25 +332,87 @@ def tray_pick_custom_sound(app, icon=None, item=None):
 
 
 def tray_preview_sound(app, icon=None, item=None):
-    def _do():
-        from services.sound import play_finish_sound_async
+    """试听：必须在 pystray 回调内同步启动。
 
-        # 试听忽略静音开关，便于确认所选音效
-        play_finish_sound_async(
-            app.master,
-            muted=False,
-            sound_id=str(getattr(app, "_sound_id", "soft") or "soft"),
-            custom_path=str(getattr(app, "_sound_path", "") or ""),
-        )
+    pystray 会在菜单项回调返回后立刻 update_menu；若用 after(0) 推迟，
+    菜单会按「未播放」把「停止试听」再次置灰，且听感上启动偏慢。
+    """
+    from services.sound import is_sound_playing, play_finish_sound_async, stop_playback
+
+    # 已在播则先停再播，避免叠音；菜单 enabled 也会在 refresh 后禁用「试听」
+    if is_sound_playing():
+        stop_playback()
+
+    # 试听忽略静音开关，便于确认所选音效
+    play_finish_sound_async(
+        app.master,
+        muted=False,
+        sound_id=str(getattr(app, "_sound_id", "soft") or "soft"),
+        custom_path=str(getattr(app, "_sound_path", "") or ""),
+    )
+    # 同步刷新（与 pystray 线程一致）；pending 已置位 → 停止可点、试听禁用
+    refresh_tray_menu(app)
+    root = getattr(app, "master", None)
+    if root is not None:
+        try:
+            root.after(400, lambda: refresh_tray_menu(app))
+            # 播放结束后再刷，恢复「试听」可点
+            root.after(1500, lambda: refresh_tray_menu(app))
+        except Exception:
+            pass
+
+
+def tray_stop_preview_sound(app, icon=None, item=None):
+    """停止试听：同步 stop，避免 after 推迟导致点了不停。"""
+    from services.sound import stop_playback
+
+    stop_playback()
+    refresh_tray_menu(app)
+    root = getattr(app, "master", None)
+    if root is not None:
+        try:
+            # 与 sound 内延迟 rehalt 对齐，刷新菜单状态
+            root.after(300, lambda: refresh_tray_menu(app))
+        except Exception:
+            pass
+
+
+def tray_clear_sound_history(app, icon=None, item=None):
+    """清空历史记录（保留当前 sound_path，不删磁盘文件）。"""
+
+    def _do():
+        app._sound_history = []
+        app._save_config()
+        refresh_tray_menu(app)
 
     app.master.after(0, _do)
 
 
-def tray_stop_preview_sound(app, icon=None, item=None):
-    def _do():
-        from services.sound import stop_playback
+def tray_purge_orphan_sounds(app, icon=None, item=None):
+    """清理用户 sounds 库中未在历史且非当前路径的文件。"""
 
+    def _do():
+        from services.sound import purge_orphan_sounds, stop_playback
+
+        ok = messagebox.askyesno(
+            APP_NAME,
+            "将删除本地音效库中未出现在历史列表、且不是当前所选的文件。\n"
+            "历史记录本身不会被清空。\n\n确定清理？",
+            parent=app.master,
+        )
+        if not ok:
+            return
         stop_playback()
+        n = purge_orphan_sounds(
+            getattr(app, "_sound_history", []),
+            str(getattr(app, "_sound_path", "") or ""),
+        )
+        messagebox.showinfo(
+            APP_NAME,
+            f"已清理 {n} 个未使用音效文件。" if n else "没有可清理的未使用音效。",
+            parent=app.master,
+        )
+        refresh_tray_menu(app)
 
     app.master.after(0, _do)
 
@@ -386,7 +447,7 @@ def create_fallback_icon():
     from PIL import Image, ImageDraw
     size = 64
     accent = (56, 189, 248)  # #38BDF8
-    face = (15, 20, 25)      # #0F1419
+    face = (15, 20, 25)  # #0F1419
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     draw.ellipse([4, 4, size - 4, size - 4], fill=accent)
