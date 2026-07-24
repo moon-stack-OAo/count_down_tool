@@ -84,6 +84,11 @@ def _fill_settings(menu: tk.Menu, app) -> None:
         return
 
     menu.add_command(
+        label="设置中心…",
+        command=lambda: _show_settings(app),
+    )
+    menu.add_separator()
+    menu.add_command(
         label=tray_window_menu_label(app._is_mini),
         command=app._show_full_mode,
     )
@@ -211,6 +216,12 @@ def _fill_settings(menu: tk.Menu, app) -> None:
     menu.add_command(label=auto_upd, command=lambda: _toggle_check_update_on_start(app))
     menu.add_separator()
     menu.add_command(label="退出", command=app._quit_app)
+
+
+def _show_settings(app) -> None:
+    from ui.settings_window import show_settings
+
+    show_settings(app)
 
 
 def _reset_mini_size(app) -> None:

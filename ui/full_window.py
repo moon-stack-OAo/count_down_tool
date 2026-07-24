@@ -140,6 +140,56 @@ def build_full_ui(app):
                                                 text_color=app.COLORS["text_dim"]))
     min_btn.bind("<Button-1>", lambda e: app._switch_to_mini())
 
+    # 设置按钮：pack 在 min 左侧 → 视觉从左到右 ⚙ − ×
+    settings_btn_size = 16
+    settings_btn = tk.Canvas(
+        btn_frame,
+        width=settings_btn_size * 2,
+        height=settings_btn_size * 2,
+        bg=app.COLORS["title_bar"],
+        highlightthickness=0,
+        cursor="hand2",
+    )
+    settings_btn.pack(side=tk.RIGHT, padx=(6, 0))
+    settings_btn_items = init_circle_button(
+        settings_btn,
+        settings_btn_size,
+        settings_btn_size,
+        settings_btn_size - 1,
+        fill=app.COLORS["btn_default"],
+        text="⚙",
+        text_color=app.COLORS["text_dim"],
+        font_family=font_family,
+        font_size=10,
+    )
+    settings_btn.bind(
+        "<Enter>",
+        lambda e: update_circle_button(
+            settings_btn,
+            settings_btn_items,
+            fill=app.COLORS["accent"],
+            text_color=app.COLORS["white"],
+        ),
+    )
+    settings_btn.bind(
+        "<Leave>",
+        lambda e: update_circle_button(
+            settings_btn,
+            settings_btn_items,
+            fill=app.COLORS["btn_default"],
+            text_color=app.COLORS["text_dim"],
+        ),
+    )
+    def _open_settings(_e=None):
+        if hasattr(app, "_show_settings"):
+            app._show_settings()
+        else:
+            from ui.settings_window import show_settings
+
+            show_settings(app)
+
+    settings_btn.bind("<Button-1>", _open_settings)
+
     # ===== 主内容区域 =====
     main_frame = tk.Frame(app.master, bg=c["bg"])
     main_frame.pack(fill=tk.BOTH, expand=True, padx=24, pady=(16, 20))

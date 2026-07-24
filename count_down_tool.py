@@ -70,7 +70,7 @@ class CountdownApp:
     MINI_MIN_HEIGHT_MAC = 56
     MINI_MAX_WIDTH_MAC = 1400
     MINI_MAX_HEIGHT_MAC = 360
-    TITLE_DRAG_EXCLUDE_RIGHT = 150
+    TITLE_DRAG_EXCLUDE_RIGHT = 190
     PICKER_WIDTH = 420
     PICKER_HEIGHT = 440
     CORNER_RADIUS = 20
@@ -225,6 +225,12 @@ class CountdownApp:
 
     def _apply_theme(self, theme_id: str):
         _theme.apply_theme(self, theme_id)
+
+    def _show_settings(self):
+        """打开设置中心（产品级 GUI 门面）。"""
+        from ui.settings_window import show_settings
+
+        show_settings(self)
 
     # ------------------------------------------------------------------
     # 倒计时（委托 CountdownController，保留 app.xxx 对外接口）

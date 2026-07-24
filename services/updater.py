@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import logging
 import os
-import platform
 import threading
 import webbrowser
 from datetime import date
@@ -106,76 +105,53 @@ def _on_check_done(app, result: core_update.UpdateCheckResult, manual: bool) -> 
 
 
 def _prompt_update(app, result: core_update.UpdateCheckResult, notes: str) -> None:
-    pk = result.platform_key
-    ver = result.latest_version
-    lines = [
-        f"发现新版本 {ver}（当前 {result.current_version}）",
-        "",
-        notes,
-        "",
-    ]
-    if pk == "windows":
-        if result.asset_url and core_update.is_frozen_app():
-            lines.append("是否下载并自动安装更新？（将重启应用）")
-            action = "install"
-        elif result.asset_url:
-            lines.append("开发运行中：将打开下载页。是否继续？")
-            action = "browser"
-        else:
-            lines.append("此版本暂无 Windows 安装包，是否打开发布页？")
-            action = "browser"
-    elif pk == "darwin":
-        if result.asset_url:
-            lines.append("将下载安装包到「下载」文件夹（不自动替换 App）。是否下载？")
-            action = "download_only"
-        else:
-            lines.append("此版本暂无本机架构的 macOS 包，是否打开发布页？")
-            action = "browser"
-    else:
-        lines.append("是否打开 GitHub 发布页？")
-        action = "browser"
+    """产品化更新对话框。"""
+    from ui.update_dialog import show_update_available
 
-    ok = messagebox.askyesno(APP_NAME, "\n".join(lines), parent=app.master)
-    if not ok:
-        # 询问是否忽略此版本
-        ignore = messagebox.askyesno(
-            APP_NAME,
-            f"是否忽略版本 {ver}？\n（之后启动不再提示，可在菜单「检查更新」中重新检查）",
-            parent=app.master,
-        )
-        if ignore:
+    ver = result.latest_version
+
+    def on_action(action: str) -> None:
+        if action == "later":
+            return
+        if action == "ignore":
             app._ignored_update_version = ver
             try:
                 app._save_config()
             except Exception:
                 pass
-        return
+            return
 
-    # 用户接受更新 → 清除忽略
-    if getattr(app, "_ignored_update_version", "") == ver:
-        app._ignored_update_version = ""
-        try:
-            app._save_config()
-        except Exception:
-            pass
+        # 用户接受更新 → 清除忽略
+        if getattr(app, "_ignored_update_version", "") == ver:
+            app._ignored_update_version = ""
+            try:
+                app._save_config()
+            except Exception:
+                pass
 
-    if action == "browser" or not result.asset_url:
-        webbrowser.open(result.release.html_url if result.release else core_update.GITHUB_RELEASES_PAGE)
-        return
+        if action == "browser" or not result.asset_url:
+            webbrowser.open(
+                result.release.html_url if result.release else core_update.GITHUB_RELEASES_PAGE
+            )
+            return
+        if action == "install":
+            _start_windows_install(app, result)
+        elif action == "download_only":
+            _start_mac_download(app, result)
 
-    if action == "install":
-        _start_windows_install(app, result)
-    elif action == "download_only":
-        _start_mac_download(app, result)
+    show_update_available(app, result, notes, on_action=on_action)
 
 
 def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
     if not result.asset_url:
         return
-    messagebox.showinfo(
-        APP_NAME,
-        "开始下载更新，完成后将自动重启。\n请稍候…",
-        parent=app.master,
+
+    from ui.update_dialog import close_progress, show_update_progress, update_progress
+
+    progress_win = show_update_progress(
+        app,
+        "正在下载更新",
+        "下载完成后将自动安装并重启，请稍候…",
     )
 
     def worker():
@@ -190,13 +166,23 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
                 tmp_dir,
                 result.asset_name or f"count_down_tool-{result.latest_version}-win64.zip",
             )
-            core_update.download_file(result.asset_url, zip_path)
+
+            def _progress(received: int, total: int) -> None:
+                try:
+                    app.master.after(
+                        0, lambda r=received, t=total: update_progress(progress_win, r, t)
+                    )
+                except Exception:
+                    pass
+
+            core_update.download_file(result.asset_url, zip_path, progress=_progress)
             core_update.apply_windows_update_from_zip(zip_path)
         except Exception as exc:
             logger.exception("Windows 自动更新失败")
             err = str(exc)
 
         def done():
+            close_progress(progress_win)
             if err:
                 messagebox.showerror(
                     APP_NAME,
@@ -222,6 +208,14 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
     if not result.asset_url:
         return
 
+    from ui.update_dialog import close_progress, show_update_progress, update_progress
+
+    progress_win = show_update_progress(
+        app,
+        "正在下载更新包",
+        "将保存到「下载」文件夹，完成后可手动替换 App。",
+    )
+
     def worker():
         err: Optional[str] = None
         dest = ""
@@ -229,12 +223,22 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
             folder = core_update.default_download_dir()
             name = result.asset_name or f"count_down_tool-{result.latest_version}.zip"
             dest = os.path.join(folder, name)
-            core_update.download_file(result.asset_url, dest)
+
+            def _progress(received: int, total: int) -> None:
+                try:
+                    app.master.after(
+                        0, lambda r=received, t=total: update_progress(progress_win, r, t)
+                    )
+                except Exception:
+                    pass
+
+            core_update.download_file(result.asset_url, dest, progress=_progress)
         except Exception as exc:
             logger.exception("macOS 下载更新失败")
             err = str(exc)
 
         def done():
+            close_progress(progress_win)
             if err:
                 messagebox.showerror(
                     APP_NAME,
@@ -260,7 +264,6 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
         except Exception:
             pass
 
-    messagebox.showinfo(APP_NAME, "开始下载更新包，请稍候…", parent=app.master)
     threading.Thread(target=worker, daemon=True, name="cdt-update-mac").start()
 
 

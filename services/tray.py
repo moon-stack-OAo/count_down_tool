@@ -97,6 +97,10 @@ def init_tray_icon(app, icon_path):
             pystray.MenuItem("主题", pystray.Menu(*theme_items)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
+                "设置…",
+                lambda icon=None, item=None: tray_show_settings(app),
+            ),
+            pystray.MenuItem(
                 "检查更新…",
                 lambda icon=None, item=None: tray_check_update(app),
             ),
@@ -442,6 +446,17 @@ def tray_toggle_autostart(app, icon=None, item=None):
         app._autostart = target
         app._save_config()
         refresh_tray_menu(app)
+
+    app.master.after(0, _do)
+
+
+def tray_show_settings(app, icon=None, item=None):
+    """托盘打开设置中心（回主线程）。"""
+
+    def _do():
+        from ui.settings_window import show_settings
+
+        show_settings(app)
 
     app.master.after(0, _do)
 

@@ -126,6 +126,10 @@ echo "Building application..."
     --hidden-import ui.full_window \
     --hidden-import ui.context_menus \
     --hidden-import ui.mini_text_picker \
+    --hidden-import ui.settings_window \
+    --hidden-import ui.update_dialog \
+    --hidden-import ui.design \
+    --hidden-import ui.design.tokens \
     --hidden-import services \
     --hidden-import services.tray \
     --hidden-import services.updater \

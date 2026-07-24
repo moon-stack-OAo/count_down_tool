@@ -161,6 +161,12 @@ def _fill_full_menu(menu, app):
     menu.add_command(label="切换到 Mini 模式", command=app._switch_to_mini)
     add_countdown_toggle_item(menu, app)
     menu.add_separator()
+    def _open_settings():
+        from ui.settings_window import show_settings
+
+        show_settings(app)
+
+    menu.add_command(label="设置…", command=_open_settings)
     if app._has_tray():
         menu.add_command(label="隐藏到托盘", command=app._hide_to_tray)
     else:

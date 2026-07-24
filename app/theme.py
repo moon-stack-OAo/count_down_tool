@@ -15,6 +15,13 @@ def apply_theme(app, theme_id: str) -> None:
     """切换预设主题并重建主界面（保留业务状态）。"""
     if theme_id == app._theme_id and app.COLORS:
         pass
+    # 主题切换会 destroy 子控件；设置窗是独立 Toplevel，须先关闭以免颜色过期
+    try:
+        from ui.settings_window import close_settings
+
+        close_settings(app)
+    except Exception:
+        logger.debug("关闭设置窗失败", exc_info=True)
     # 保存 UI 输入与倒计时显示
     saved_h = saved_m = saved_s = None
     try:
