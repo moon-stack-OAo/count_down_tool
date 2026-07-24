@@ -612,9 +612,13 @@ def is_sound_playing() -> bool:
 
     if alive:
         return True
-    if use_mci and _mci_is_playing():
-        return True
-    if now < until:
+    # MCI：时长窗口内直接视为播放中，避免频繁 status 查询干扰播放线程
+    if use_mci:
+        if now < until:
+            return True
+        if _mci_is_playing():
+            return True
+    elif now < until:
         return True
     if now < pending:
         return True
@@ -792,9 +796,9 @@ def _play_windows(path: str) -> bool:
     """
     Windows 播放优先级：
     1) WAV → winsound 异步
-    2) 任意媒体 → winmm MCI（mp3/flac/m4a 等，不弹窗）
-    3) PowerShell MediaPlayer（备用）
-    4) startfile（最后回退，可能弹播放器窗口）
+    2) 非 WAV → PowerShell MediaPlayer（解码质量更好，减少卡顿）
+    3) MediaPlayer 失败 → winmm MCI 回退
+    4) 再失败 → startfile（可能弹播放器窗口）
     """
     abs_path = os.path.abspath(path)
     est = _estimate_audio_seconds(abs_path)
@@ -809,9 +813,9 @@ def _play_windows(path: str) -> bool:
         except Exception:
             logger.debug("winsound 播放失败", exc_info=True)
 
-    if _play_windows_mci(abs_path, est):
-        return True
     if _play_windows_media_player(abs_path, est):
+        return True
+    if _play_windows_mci(abs_path, est):
         return True
     try:
         os.startfile(abs_path)  # type: ignore[attr-defined]
@@ -846,21 +850,31 @@ def _play_windows_mci(path: str, est_seconds: float = 0.0) -> bool:
 
 
 def _play_windows_media_player(path: str, est_seconds: float = 0.0) -> bool:
-    """后台 PowerShell + MediaPlayer 播一次（不弹窗）。"""
+    """后台 PowerShell + MediaPlayer 播一次（不弹窗）。
+
+    优先于 MCI：对 mp3/flac/m4a 等解码更稳，减少一卡一卡。
+    Open 后立刻 Play，同时轮询 NaturalDuration 以确定 Sleep 结束时间。
+    """
     try:
         ps_path = path.replace("'", "''")
         script = (
             f"$p = New-Object System.Windows.Media.MediaPlayer; "
-            f"$p.Open([uri]'{ps_path}'); "
+            f"$rp = (Resolve-Path -LiteralPath '{ps_path}').Path; "
+            f"$p.Open([Uri]::new($rp)); "
             f"$p.Volume = 1; "
             f"$p.Play(); "
-            f"Start-Sleep -Milliseconds 400; "
-            f"while ($p.NaturalDuration.HasTimeSpan -eq $false) {{ "
-            f"  Start-Sleep -Milliseconds 50 }}; "
-            f"$ms = [int]$p.NaturalDuration.TimeSpan.TotalMilliseconds; "
+            f"$sw = [Diagnostics.Stopwatch]::StartNew(); "
+            f"while (-not $p.NaturalDuration.HasTimeSpan) {{ "
+            f"  if ($sw.ElapsedMilliseconds -gt 8000) {{ break }}; "
+            f"  Start-Sleep -Milliseconds 30 "
+            f"}}; "
+            f"$ms = if ($p.NaturalDuration.HasTimeSpan) {{ "
+            f"  [int]$p.NaturalDuration.TimeSpan.TotalMilliseconds "
+            f"}} else {{ 30000 }}; "
             f"if ($ms -lt 200) {{ $ms = 200 }}; "
-            f"Start-Sleep -Milliseconds $ms; "
-            f"$p.Close()"
+            f"$left = $ms - [int]$sw.ElapsedMilliseconds; "
+            f"if ($left -gt 0) {{ Start-Sleep -Milliseconds $left }}; "
+            f"$p.Stop(); $p.Close()"
         )
         creationflags = 0
         if hasattr(subprocess, "CREATE_NO_WINDOW"):

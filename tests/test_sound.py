@@ -178,40 +178,63 @@ class TestImport(unittest.TestCase):
 
 
 class TestWindowsPlayChain(unittest.TestCase):
-    def test_mp3_prefers_mci_over_startfile(self):
+    def test_mp3_prefers_media_player_over_mci(self):
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
             f.write(b"ID3fake")
             path = f.name
         try:
-            with mock.patch("services.sound._play_windows_mci", return_value=True) as mci:
+            with mock.patch(
+                    "services.sound._play_windows_media_player", return_value=True
+            ) as mp:
                 with mock.patch(
-                        "services.sound._play_windows_media_player", return_value=False
-                ) as mp:
-                    with mock.patch("os.startfile") as sf:
-                        from services.sound import _play_windows
-
-                        self.assertTrue(_play_windows(path))
-                        mci.assert_called_once()
-                        mp.assert_not_called()
-                        sf.assert_not_called()
-        finally:
-            os.unlink(path)
-
-    def test_mp3_falls_back_media_player(self):
-        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-            f.write(b"ID3fake")
-            path = f.name
-        try:
-            with mock.patch("services.sound._play_windows_mci", return_value=False):
-                with mock.patch(
-                        "services.sound._play_windows_media_player", return_value=True
-                ) as mp:
+                        "services.sound._play_windows_mci", return_value=False
+                ) as mci:
                     with mock.patch("os.startfile") as sf:
                         from services.sound import _play_windows
 
                         self.assertTrue(_play_windows(path))
                         mp.assert_called_once()
+                        mci.assert_not_called()
                         sf.assert_not_called()
+        finally:
+            os.unlink(path)
+
+    def test_mp3_falls_back_mci_then_startfile(self):
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            f.write(b"ID3fake")
+            path = f.name
+        try:
+            with mock.patch(
+                    "services.sound._play_windows_media_player", return_value=False
+            ):
+                with mock.patch(
+                        "services.sound._play_windows_mci", return_value=True
+                ) as mci:
+                    with mock.patch("os.startfile") as sf:
+                        from services.sound import _play_windows
+
+                        self.assertTrue(_play_windows(path))
+                        mci.assert_called_once()
+                        sf.assert_not_called()
+        finally:
+            os.unlink(path)
+
+    def test_mp3_falls_back_startfile_when_all_fail(self):
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            f.write(b"ID3fake")
+            path = f.name
+        try:
+            with mock.patch(
+                    "services.sound._play_windows_media_player", return_value=False
+            ):
+                with mock.patch(
+                        "services.sound._play_windows_mci", return_value=False
+                ):
+                    with mock.patch("os.startfile") as sf:
+                        from services.sound import _play_windows
+
+                        self.assertTrue(_play_windows(path))
+                        sf.assert_called_once()
         finally:
             os.unlink(path)
 
