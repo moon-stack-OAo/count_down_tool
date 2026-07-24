@@ -185,7 +185,7 @@ class TestWindowsPlayChain(unittest.TestCase):
         try:
             with mock.patch("services.sound._play_windows_mci", return_value=True) as mci:
                 with mock.patch(
-                    "services.sound._play_windows_media_player", return_value=False
+                        "services.sound._play_windows_media_player", return_value=False
                 ) as mp:
                     with mock.patch("os.startfile") as sf:
                         from services.sound import _play_windows
@@ -204,7 +204,7 @@ class TestWindowsPlayChain(unittest.TestCase):
         try:
             with mock.patch("services.sound._play_windows_mci", return_value=False):
                 with mock.patch(
-                    "services.sound._play_windows_media_player", return_value=True
+                        "services.sound._play_windows_media_player", return_value=True
                 ) as mp:
                     with mock.patch("os.startfile") as sf:
                         from services.sound import _play_windows
@@ -227,7 +227,7 @@ class TestStopPlayback(unittest.TestCase):
                 halt.assert_not_called()
         with mock.patch.object(sound_mod, "_halt_devices") as halt:
             with mock.patch.object(
-                sound_mod, "prepare_playable_path", return_value="/tmp/a.mp3"
+                    sound_mod, "prepare_playable_path", return_value="/tmp/a.mp3"
             ):
                 with mock.patch.object(sound_mod, "_play_windows", return_value=True):
                     with mock.patch.object(sound_mod, "platform") as plat:
@@ -295,7 +295,7 @@ class TestStopPlayback(unittest.TestCase):
         gen = sound_mod._bump_play_gen()
         sound_mod._bump_play_gen()  # 取消
         with mock.patch.object(
-            sound_mod, "prepare_playable_path", return_value="/tmp/a.mp3"
+                sound_mod, "prepare_playable_path", return_value="/tmp/a.mp3"
         ):
             with mock.patch.object(sound_mod, "_halt_devices") as halt:
                 with mock.patch.object(sound_mod, "_play_windows") as play:
@@ -340,6 +340,150 @@ class TestPurgeOrphanSounds(unittest.TestCase):
             bases = {os.path.basename(p) for p in files}
             self.assertIn("a.mp3", bases)
             self.assertNotIn("a.mp3.tmp", bases)
+
+
+class TestMacOSKillAndDuration(unittest.TestCase):
+    def test_parse_afinfo_duration(self):
+        from services.sound import _parse_afinfo_duration
+
+        self.assertAlmostEqual(
+            _parse_afinfo_duration("estimated duration: 12.5 sec"),
+            12.7,
+            places=5,
+        )
+        self.assertAlmostEqual(
+            _parse_afinfo_duration("duration: 3.0 sec"),
+            3.2,
+            places=5,
+        )
+        self.assertIsNone(_parse_afinfo_duration("no duration here"))
+        self.assertIsNone(_parse_afinfo_duration(""))
+
+    def test_probe_macos_uses_afinfo(self):
+        from services import sound as sound_mod
+
+        completed = mock.Mock()
+        completed.stdout = "File:   /tmp/a.mp3\nestimated duration: 4.5 sec\n"
+        completed.stderr = ""
+        with mock.patch.object(sound_mod.subprocess, "run", return_value=completed) as run:
+            sec = sound_mod._probe_macos_audio_seconds("/tmp/a.mp3")
+        run.assert_called_once()
+        self.assertEqual(run.call_args[0][0][0], "afinfo")
+        self.assertAlmostEqual(sec, 4.7, places=5)
+
+    def test_probe_macos_falls_back_estimate(self):
+        from services import sound as sound_mod
+
+        with mock.patch.object(
+                sound_mod.subprocess, "run", side_effect=FileNotFoundError
+        ):
+            with mock.patch.object(
+                    sound_mod, "_estimate_audio_seconds", return_value=30.0
+            ) as est:
+                sec = sound_mod._probe_macos_audio_seconds("/tmp/a.mp3")
+        est.assert_called_once_with("/tmp/a.mp3")
+        self.assertEqual(sec, 30.0)
+
+    def test_kill_proc_tree_darwin_uses_killpg(self):
+        from services import sound as sound_mod
+
+        proc = mock.Mock()
+        proc.pid = 4242
+        # 第一次 poll 存活，killpg SIGTERM 后 wait 成功视为已死
+        poll_states = [None, None]
+        proc.poll.side_effect = lambda: poll_states[0] if poll_states else 0
+
+        def _wait(timeout=None):
+            poll_states[0] = 0
+            return 0
+
+        proc.wait.side_effect = _wait
+
+        with mock.patch.object(sound_mod.platform, "system", return_value="Darwin"):
+            with mock.patch.object(sound_mod.os, "getpgid", return_value=4242) as getpgid:
+                with mock.patch.object(sound_mod.os, "killpg") as killpg:
+                    sound_mod._kill_proc_tree(proc)
+        getpgid.assert_called_with(4242)
+        killpg.assert_called()
+        self.assertEqual(killpg.call_args_list[0][0][0], 4242)
+        # SIGTERM 优先
+        import signal
+
+        self.assertEqual(killpg.call_args_list[0][0][1], signal.SIGTERM)
+        proc.terminate.assert_not_called()
+
+    def test_kill_proc_tree_darwin_killpg_fallback_terminate(self):
+        from services import sound as sound_mod
+
+        proc = mock.Mock()
+        proc.pid = 99
+        proc.poll.return_value = None
+        proc.wait.side_effect = Exception("still alive")
+
+        with mock.patch.object(sound_mod.platform, "system", return_value="Darwin"):
+            with mock.patch.object(
+                    sound_mod.os, "getpgid", side_effect=ProcessLookupError
+            ):
+                with mock.patch.object(sound_mod.os, "killpg") as killpg:
+                    sound_mod._kill_proc_tree(proc)
+        killpg.assert_not_called()
+        proc.terminate.assert_called_once()
+        proc.kill.assert_called_once()
+
+    def test_play_macos_afplay_start_new_session_and_duration(self):
+        from services import sound as sound_mod
+
+        fake_proc = mock.Mock()
+        fake_proc.poll.return_value = None
+        with mock.patch.object(
+                sound_mod, "_probe_macos_audio_seconds", return_value=8.0
+        ) as probe:
+            with mock.patch.object(
+                    sound_mod.subprocess, "Popen", return_value=fake_proc
+            ) as popen:
+                with mock.patch.object(sound_mod, "_mark_playing_until") as mark:
+                    with mock.patch.object(sound_mod, "_track_proc") as track:
+                        ok = sound_mod._play_macos("/tmp/x.mp3")
+        self.assertTrue(ok)
+        probe.assert_called_once_with("/tmp/x.mp3")
+        args, kwargs = popen.call_args
+        self.assertEqual(args[0], ["afplay", "/tmp/x.mp3"])
+        self.assertTrue(kwargs.get("start_new_session"))
+        track.assert_called_once_with(fake_proc)
+        mark.assert_called_once_with(8.0)
+
+    def test_play_macos_ffplay_fallback(self):
+        from services import sound as sound_mod
+
+        fake_proc = mock.Mock()
+        fake_proc.poll.return_value = None
+
+        def _popen(cmd, **kwargs):
+            if cmd[0] == "afplay":
+                raise FileNotFoundError("no afplay")
+            return fake_proc
+
+        with mock.patch.object(
+                sound_mod, "_probe_macos_audio_seconds", return_value=5.0
+        ):
+            with mock.patch.object(sound_mod.subprocess, "Popen", side_effect=_popen):
+                with mock.patch.object(sound_mod, "_mark_playing_until") as mark:
+                    with mock.patch.object(sound_mod, "_track_proc") as track:
+                        ok = sound_mod._play_macos("/tmp/x.mp3")
+        self.assertTrue(ok)
+        track.assert_called_once_with(fake_proc)
+        mark.assert_called_once_with(5.0)
+
+    def test_play_macos_all_fail_returns_false(self):
+        from services import sound as sound_mod
+
+        with mock.patch.object(
+                sound_mod, "_probe_macos_audio_seconds", return_value=5.0
+        ):
+            with mock.patch.object(
+                    sound_mod.subprocess, "Popen", side_effect=FileNotFoundError
+            ):
+                self.assertFalse(sound_mod._play_macos("/tmp/x.mp3"))
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ import platform
 import queue
 import re
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -392,6 +393,47 @@ def _estimate_audio_seconds(path: str) -> float:
     return _DEFAULT_AUDIO_SECONDS
 
 
+_AFINFO_DURATION_RE = re.compile(
+    r"(?:estimated\s+duration|duration)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*sec",
+    re.IGNORECASE,
+)
+
+
+def _parse_afinfo_duration(text: str) -> Optional[float]:
+    """从 afinfo 输出解析时长（秒）。"""
+    if not text:
+        return None
+    m = _AFINFO_DURATION_RE.search(text)
+    if not m:
+        return None
+    try:
+        sec = float(m.group(1))
+    except ValueError:
+        return None
+    if sec <= 0:
+        return None
+    return max(0.3, sec + 0.2)
+
+
+def _probe_macos_audio_seconds(path: str) -> float:
+    """macOS：优先 afinfo 读真实时长，失败再粗估。"""
+    try:
+        r = subprocess.run(
+            ["afinfo", path],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        blob = (r.stdout or "") + "\n" + (r.stderr or "")
+        sec = _parse_afinfo_duration(blob)
+        if sec is not None:
+            return sec
+    except Exception:
+        logger.debug("afinfo 探测时长失败: %s", path, exc_info=True)
+    return _estimate_audio_seconds(path)
+
+
 def _bump_play_gen() -> int:
     """取消进行中的异步播放任务，返回新 generation。"""
     global _play_gen
@@ -587,7 +629,7 @@ def is_sound_playing() -> bool:
 
 
 def _kill_proc_tree(proc: subprocess.Popen) -> None:
-    """尽量彻底结束播放进程（含 Windows 子进程树）。"""
+    """尽量彻底结束播放进程（含 Windows 子进程树 / mac|linux 进程组）。"""
     if proc is None:
         return
     try:
@@ -595,7 +637,8 @@ def _kill_proc_tree(proc: subprocess.Popen) -> None:
             return
     except Exception:
         return
-    if platform.system() == "Windows":
+    system = platform.system()
+    if system == "Windows":
         try:
             # MediaPlayer/powershell 可能有子进程，仅 terminate 父进程会漏音
             subprocess.run(
@@ -608,6 +651,40 @@ def _kill_proc_tree(proc: subprocess.Popen) -> None:
             return
         except Exception:
             logger.debug("taskkill 失败 pid=%s", getattr(proc, "pid", None), exc_info=True)
+    elif system in ("Darwin", "Linux"):
+        # start_new_session=True 时 afplay/ffplay 自成会话，killpg 可一并掐断
+        pid = getattr(proc, "pid", None)
+        if pid:
+            try:
+                pgid = os.getpgid(pid)
+                os.killpg(pgid, signal.SIGTERM)
+                try:
+                    proc.wait(timeout=0.4)
+                    return
+                except Exception:
+                    pass
+                if proc.poll() is None:
+                    try:
+                        os.killpg(pgid, signal.SIGKILL)
+                    except Exception:
+                        logger.debug(
+                            "killpg SIGKILL 失败 pid=%s pgid=%s",
+                            pid,
+                            pgid,
+                            exc_info=True,
+                        )
+                    try:
+                        proc.wait(timeout=0.3)
+                    except Exception:
+                        pass
+                    if proc.poll() is not None:
+                        return
+            except Exception:
+                logger.debug(
+                    "killpg 失败 pid=%s，回退 terminate/kill",
+                    pid,
+                    exc_info=True,
+                )
     try:
         if proc.poll() is None:
             proc.terminate()
@@ -617,7 +694,7 @@ def _kill_proc_tree(proc: subprocess.Popen) -> None:
         if proc.poll() is None:
             proc.kill()
     except Exception:
-        pass
+        logger.debug("强制结束播放进程失败", exc_info=True)
 
 
 def _halt_devices() -> None:
@@ -812,19 +889,29 @@ def _play_windows_media_player(path: str, est_seconds: float = 0.0) -> bool:
 
 
 def _play_macos(path: str) -> bool:
-    try:
-        proc = subprocess.Popen(
-            ["afplay", path],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        _track_proc(proc)
-        _mark_playing_until(_estimate_audio_seconds(path))
-        return True
-    except Exception:
-        logger.debug("afplay 失败", exc_info=True)
-        return False
+    """macOS：优先 afplay；失败时若有 ffplay 则回退。"""
+    est = _probe_macos_audio_seconds(path)
+    for cmd in (
+        ["afplay", path],
+        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path],
+    ):
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            _track_proc(proc)
+            _mark_playing_until(est)
+            return True
+        except FileNotFoundError:
+            logger.debug("mac 播放器不可用: %s", cmd[0])
+            continue
+        except Exception:
+            logger.debug("mac 播放失败: %s", cmd[0], exc_info=True)
+            continue
+    return False
 
 
 def _play_linux(path: str) -> bool:
