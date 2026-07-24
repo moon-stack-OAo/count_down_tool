@@ -24,7 +24,7 @@
 - **主题切换**：托盘/mac 菜单栏「主题」子菜单（无托盘时完整窗右键亦可），5 套预设
 - **结束提醒**：红绿闪烁 + 可自定义结束音效（预设/本地文件完整播 1 次；支持网易云 `.ncm`；系统铃 3 次；可静音；菜单可试听/停止试听）+ 托盘/弹窗通知
 - **多主题 UI**：自定义圆角窗口；完整模式为「剩余时间主视觉 + 设置卡」两层结构
-- **跨平台**：支持 Windows / macOS / Linux，自动适配字体
+- **跨平台**：支持 Windows / macOS / Linux；倒计时数字使用内嵌 **JetBrains Mono**（OFL），UI 文案按系统字体探测回退
 
 ## 环境要求
 
@@ -172,16 +172,21 @@ count_down_tool/
 │   ├── windows_native.py    # 圆角/任务栏/透明/单实例
 │   └── autostart.py         # 开机自启（Windows 快捷方式）
 ├── assets/
-│   └── count_down_tool.ico  # 应用图标
+│   ├── count_down_tool.ico  # 应用图标
+│   ├── sounds/              # 预设结束音效
+│   └── fonts/               # 内嵌 JetBrains Mono（OFL）
 ├── scripts/
 │   ├── build_exe.bat        # Windows 打包
 │   ├── build_mac.sh         # macOS 打包
 │   ├── build_mac_all.sh     # macOS 一键打包
 │   ├── convert_icon.sh      # ico → icns
 │   └── create_dmg.sh        # DMG 安装包
+├── core/
+│   └── fonts.py             # 内嵌字体注册 + 系统回退
 └── tests/
     ├── test_countdown_core.py
     ├── test_themes.py
+    ├── test_fonts.py
     └── test_context_menus.py
 ```
 

@@ -95,6 +95,9 @@ fi
 if [ -d "$TOOL_DIR/assets/sounds" ]; then
     ADD_DATA_OPTION="$ADD_DATA_OPTION --add-data=$TOOL_DIR/assets/sounds:assets/sounds"
 fi
+if [ -d "$TOOL_DIR/assets/fonts" ]; then
+    ADD_DATA_OPTION="$ADD_DATA_OPTION --add-data=$TOOL_DIR/assets/fonts:assets/fonts"
+fi
 
 echo ""
 echo "Building application..."
@@ -107,6 +110,7 @@ echo "Building application..."
     --hidden-import core \
     --hidden-import core.countdown_core \
     --hidden-import core.themes \
+    --hidden-import core.fonts \
     --hidden-import services.autostart \
     --hidden-import app \
     --hidden-import app.countdown \

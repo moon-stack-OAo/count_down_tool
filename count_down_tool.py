@@ -122,7 +122,7 @@ class CountdownApp:
         self._sound_path = ""
         self._sound_history = []
 
-        self.FONTS = self._get_fonts()
+        self.FONTS = self._get_fonts(self.master)
         self._ctrl = CountdownController(self)
 
         # Mini 模式相关
@@ -175,41 +175,14 @@ class CountdownApp:
                 self._switch_to_mini()
 
     @staticmethod
-    def _get_fonts():
-        system = platform.system()
-        if system == "Windows":
-            return {
-                "title": ("Segoe UI", 20, "bold"),
-                "time": ("Consolas", 32, "bold"),
-                "countdown": ("Consolas", 42, "bold"),
-                "label": ("Segoe UI", 11),
-                "button": ("Segoe UI", 12, "bold"),
-                "mini_time": ("Consolas", 10, "bold"),
-                "mini_countdown": ("Consolas", 16, "bold"),
-            }
-        elif system == "Darwin":
-            return {
-                "title": ("Helvetica Neue", 20, "bold"),
-                "time": ("Menlo", 32, "bold"),
-                "countdown": ("Menlo", 42, "bold"),
-                "label": ("Helvetica Neue", 11),
-                "button": ("Helvetica Neue", 12, "bold"),
-                "mini_time": ("Menlo", 18, "bold"),
-                "mini_countdown": ("Menlo", 28, "bold"),
-            }
-        else:
-            return {
-                "title": ("Ubuntu", 20, "bold"),
-                "time": ("Monospace", 32, "bold"),
-                "countdown": ("Monospace", 42, "bold"),
-                "label": ("Ubuntu", 11),
-                "button": ("Ubuntu", 12, "bold"),
-                "mini_time": ("Monospace", 10, "bold"),
-                "mini_countdown": ("Monospace", 16, "bold"),
-            }
+    def _get_fonts(root=None):
+        """按系统探测可用字体并回退，避免缺字时样式怪异。"""
+        from core.fonts import resolve_fonts
+
+        return resolve_fonts(root=root)
 
     def _font(self, key, size=None, bold=None):
-        """基于 FONTS 派生字体，保证跨平台一致"""
+        """基于 FONTS 派生字体，保证同一角色族名一致。"""
         base = self.FONTS[key]
         family = base[0]
         fsize = size if size is not None else base[1]

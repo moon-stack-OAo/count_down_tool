@@ -83,9 +83,11 @@ jobs:
             --osx-bundle-identifier "com.moon.count-down-tool" \
             --add-data "assets/count_down_tool.ico:assets" \
             --add-data "assets/sounds:assets/sounds" \
+            --add-data "assets/fonts:assets/fonts" \
             --hidden-import core \
             --hidden-import core.countdown_core \
             --hidden-import core.themes \
+            --hidden-import core.fonts \
             --hidden-import services.autostart \
             --hidden-import app \
             --hidden-import app.countdown \
@@ -189,7 +191,7 @@ jobs:
       - name: Build with PyInstaller
         working-directory: .
         run: |
-          python -m PyInstaller --onefile --windowed --name "count_down_tool" --icon="assets/count_down_tool.ico" --add-data "assets/count_down_tool.ico;assets" --add-data "assets/sounds;assets/sounds" --hidden-import core --hidden-import core.countdown_core --hidden-import core.themes --hidden-import services.autostart --hidden-import app --hidden-import app.countdown --hidden-import app.config_store --hidden-import app.window_chrome --hidden-import app.theme --hidden-import app.mode --hidden-import ui --hidden-import ui.widgets --hidden-import ui.mini_window --hidden-import ui.time_picker --hidden-import ui.full_window --hidden-import ui.context_menus --hidden-import ui.mini_text_picker --hidden-import services --hidden-import services.tray --hidden-import services.sound --hidden-import services.ncm --hidden-import services.windows_native --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder count_down_tool.py
+          python -m PyInstaller --onefile --windowed --name "count_down_tool" --icon="assets/count_down_tool.ico" --add-data "assets/count_down_tool.ico;assets" --add-data "assets/sounds;assets/sounds" --add-data "assets/fonts;assets/fonts" --hidden-import core --hidden-import core.countdown_core --hidden-import core.themes --hidden-import core.fonts --hidden-import services.autostart --hidden-import app --hidden-import app.countdown --hidden-import app.config_store --hidden-import app.window_chrome --hidden-import app.theme --hidden-import app.mode --hidden-import ui --hidden-import ui.widgets --hidden-import ui.mini_window --hidden-import ui.time_picker --hidden-import ui.full_window --hidden-import ui.context_menus --hidden-import ui.mini_text_picker --hidden-import services --hidden-import services.tray --hidden-import services.sound --hidden-import services.ncm --hidden-import services.windows_native --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder count_down_tool.py
 
       - name: Package versioned zip (inner exe unversioned)
         shell: pwsh
