@@ -146,6 +146,10 @@ class CountdownApp:
         self._theme_id = DEFAULT_THEME_ID
         self._theme_custom = None
         self._autostart = False
+        # 自动更新
+        self._check_update_on_start = True
+        self._last_update_check = ""
+        self._ignored_update_version = ""
         self.COLORS = resolve_theme(self._theme_id)
 
         # 倒计时状态（完整和 mini 共享）
@@ -173,6 +177,12 @@ class CountdownApp:
             has_last = "last_mode" in getattr(self, "_loaded_keys", set())
             if (has_last and self._last_mode == "mini") or (not has_last):
                 self._switch_to_mini()
+        try:
+            from services.updater import schedule_startup_check
+
+            schedule_startup_check(self)
+        except Exception:
+            logger.debug("调度启动更新检查失败", exc_info=True)
 
     @staticmethod
     def _get_fonts(root=None):

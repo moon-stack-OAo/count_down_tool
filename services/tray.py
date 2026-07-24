@@ -96,6 +96,16 @@ def init_tray_icon(app, icon_path):
                              checked=lambda _: app._autostart),
             pystray.MenuItem("主题", pystray.Menu(*theme_items)),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "检查更新…",
+                lambda icon=None, item=None: tray_check_update(app),
+            ),
+            pystray.MenuItem(
+                "启动时检查更新",
+                lambda icon=None, item=None: tray_toggle_check_update_on_start(app),
+                checked=lambda _: bool(getattr(app, "_check_update_on_start", True)),
+            ),
+            pystray.Menu.SEPARATOR,
             pystray.MenuItem("退出", lambda icon=None, item=None: tray_quit(app)),
         )
         app.tray_icon = pystray.Icon(APP_NAME, image, APP_NAME, menu)
@@ -434,6 +444,18 @@ def tray_toggle_autostart(app, icon=None, item=None):
         refresh_tray_menu(app)
 
     app.master.after(0, _do)
+
+
+def tray_check_update(app, icon=None, item=None):
+    from services.updater import tray_check_update as _check
+
+    _check(app, icon, item)
+
+
+def tray_toggle_check_update_on_start(app, icon=None, item=None):
+    from services.updater import tray_toggle_check_update_on_start as _toggle
+
+    _toggle(app, icon, item)
 
 
 def load_tray_icon(icon_path):

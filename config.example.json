@@ -20,5 +20,8 @@
       "path": "C:/Users/You/AppData/Roaming/count_down_tool/sounds/demo_abcdef123456.mp3",
       "name": "demo.mp3"
     }
-  ]
+  ],
+  "check_update_on_start": true,
+  "last_update_check": "",
+  "ignored_update_version": ""
 }

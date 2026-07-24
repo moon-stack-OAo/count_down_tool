@@ -107,6 +107,12 @@ def load_config(app) -> None:
         if app._sound_path and os.path.isfile(app._sound_path):
             history = touch_sound_history(history, app._sound_path)
         app._sound_history = history
+        if "check_update_on_start" in config:
+            app._check_update_on_start = bool(config.get("check_update_on_start"))
+        luc = config.get("last_update_check")
+        app._last_update_check = luc if isinstance(luc, str) else ""
+        ign = config.get("ignored_update_version")
+        app._ignored_update_version = ign if isinstance(ign, str) else ""
         real_autostart = is_autostart_enabled()
         app._autostart = real_autostart
         if config.get("autostart") is not None and bool(config.get("autostart")) != real_autostart:
@@ -125,6 +131,9 @@ def load_config(app) -> None:
         app._sound_id = "soft"
         app._sound_path = ""
         app._sound_history = []
+        app._check_update_on_start = True
+        app._last_update_check = ""
+        app._ignored_update_version = ""
 
 
 def save_config(app) -> None:
@@ -148,6 +157,9 @@ def save_config(app) -> None:
             sound_id=str(getattr(app, "_sound_id", "soft") or "soft"),
             sound_path=str(getattr(app, "_sound_path", "") or ""),
             sound_history=history,
+            check_update_on_start=bool(getattr(app, "_check_update_on_start", True)),
+            last_update_check=str(getattr(app, "_last_update_check", "") or ""),
+            ignored_update_version=str(getattr(app, "_ignored_update_version", "") or ""),
         )
         if app._theme_custom is not None:
             config = merge_config(config, theme_custom=app._theme_custom)

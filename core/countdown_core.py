@@ -481,6 +481,9 @@ def merge_config(
     - sound_id: Optional[str]  # system | soft | chime | alert | custom
     - sound_path: Optional[str]  # 自定义音效绝对路径（用户 sounds 目录副本）
     - sound_history: Optional[list]  # [{path, name}, ...] 历史自定义音效
+    - check_update_on_start: Optional[bool]
+    - last_update_check: Optional[str]  # YYYY-MM-DD
+    - ignored_update_version: Optional[str]  # 用户忽略的版本号
     """
     result: Dict[str, Any] = dict(config) if isinstance(config, dict) else {}
     for key, value in updates.items():

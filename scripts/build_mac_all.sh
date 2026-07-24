@@ -113,6 +113,7 @@ fi
     --hidden-import core.countdown_core \
     --hidden-import core.themes \
     --hidden-import core.fonts \
+    --hidden-import core.update \
     --hidden-import services.autostart \
     --hidden-import app \
     --hidden-import app.countdown \
@@ -129,6 +130,7 @@ fi
     --hidden-import ui.mini_text_picker \
     --hidden-import services \
     --hidden-import services.tray \
+    --hidden-import services.updater \
     --hidden-import services.mac_menu \
     --hidden-import services.sound \
     --hidden-import services.ncm \

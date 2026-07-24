@@ -65,9 +65,10 @@ python count_down_tool.py
 ### 托盘 / mac 菜单栏
 
 - 文案：完整模式为「显示主窗口」「Mini 模式」；Mini 时为「展开主窗口」「退出 Mini 模式」
-- 选择时间 / 开始·暂停·继续 / 透明模式 / **恢复默认大小**（仅 Mini）/ **字体颜色…**（带色块预览面板）/ 开机自启 / 主题 / 退出
+- 选择时间 / 开始·暂停·继续 / 透明模式 / **恢复默认大小**（仅 Mini）/ **字体颜色…**（带色块预览面板）/ 开机自启 / 主题 / **检查更新…** / **启动时检查更新** / 退出
 - **开机自启**（Windows）：勾选后在「启动」文件夹创建 `Count Down Tool.lnk`；取消则删除。macOS/Linux 暂不支持。
 - **主题**：子菜单中选中一套预设即切换并保存；切换时保留倒计时状态与时间输入。
+- **自动更新**：启动时（默认开启，每天最多一次）查询 GitHub Releases；Windows **打包版**可下载并自动替换 `count_down_tool.exe` 后重启；macOS 仅下载 zip 到「下载」文件夹，需手动替换 App。版本号 Win/Mac 共用，按本机平台选对应附件。
 
 ### 配置与资源
 
@@ -75,7 +76,8 @@ python count_down_tool.py
 - 字段示例见 `config.example.json`：`mini_position`、`mini_size`、`transparent_mode`、`last_mode`、`autostart`、`theme_id`、
   `theme_custom`、`mini_text`（Mini 当前时间/倒计时三态字色，值为主题色键）、
   `sound_muted` / `sound_id`（system|soft|chime|alert|custom）/ `sound_path`（自定义音效路径，导入后指向用户库副本）/
-  `sound_history`（历史自定义列表 `[{path,name}]`，最多 12 条）
+  `sound_history`（历史自定义列表 `[{path,name}]`，最多 12 条）、
+  `check_update_on_start` / `last_update_check`（YYYY-MM-DD）/ `ignored_update_version`
 - 自定义音效导入目录：`%APPDATA%/count_down_tool/sounds/`（Windows）或 `~/.config/count_down_tool/sounds/`
 - 打包后图标与 `assets/sounds` 预设音效从程序包内加载
 

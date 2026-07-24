@@ -201,6 +201,15 @@ def _fill_settings(menu: tk.Menu, app) -> None:
         )
     menu.add_cascade(label="主题", menu=theme_menu)
     menu.add_separator()
+    menu.add_command(
+        label="检查更新…",
+        command=lambda: _check_update(app),
+    )
+    auto_upd = "启动时检查更新"
+    if getattr(app, "_check_update_on_start", True):
+        auto_upd = "✓ 启动时检查更新"
+    menu.add_command(label=auto_upd, command=lambda: _toggle_check_update_on_start(app))
+    menu.add_separator()
     menu.add_command(label="退出", command=app._quit_app)
 
 
@@ -230,6 +239,18 @@ def _toggle_autostart(app) -> None:
         return
     app._autostart = target
     app._save_config()
+
+
+def _check_update(app) -> None:
+    from services.updater import run_update_check
+
+    run_update_check(app, manual=True)
+
+
+def _toggle_check_update_on_start(app) -> None:
+    app._check_update_on_start = not bool(getattr(app, "_check_update_on_start", True))
+    app._save_config()
+    refresh_mac_menubar(app)
 
 
 def _toggle_sound_mute(app) -> None:
