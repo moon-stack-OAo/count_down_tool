@@ -741,36 +741,53 @@ def stop_playback() -> None:
     _halt_devices()
 
 
-def play_file(path: str, play_gen: Optional[int] = None) -> bool:
-    """异步播放一次完整文件。成功启动返回 True。先停掉上一路。
+def play_file(
+    path: str,
+    play_gen: Optional[int] = None,
+    root=None,
+) -> bool:
+    """播放一次完整文件。成功启动（或已调度到主线程）返回 True。
 
     play_gen 非空时：prepare（如 ncm 解密）结束后若已取消则不再开播。
+    root 非空时：Windows 在主线程开播（winsound/部分驱动在后台线程不可靠）。
     """
     play_path = prepare_playable_path(path)
     if not play_path:
         return False
     if _is_play_cancelled(play_gen):
         return False
-    # 仅停设备，不 bump generation（避免取消正在执行的异步试听任务）
-    _halt_devices()
-    if _is_play_cancelled(play_gen):
-        return False
-    system = platform.system()
-    try:
-        if system == "Windows":
-            ok = _play_windows(play_path)
-        elif system == "Darwin":
-            ok = _play_macos(play_path)
-        else:
-            ok = _play_linux(play_path)
-        # 开播后必须再检查：stop 可能发生在 PlaySound/MCI 调用前后
+
+    def _start() -> bool:
         if _is_play_cancelled(play_gen):
-            _halt_devices()
             return False
-        return bool(ok)
-    except Exception:
-        logger.debug("播放文件失败: %s", path, exc_info=True)
-        return False
+        # 仅停设备，不 bump generation（避免取消正在执行的异步试听任务）
+        _halt_devices()
+        if _is_play_cancelled(play_gen):
+            return False
+        system = platform.system()
+        try:
+            if system == "Windows":
+                ok = _play_windows(play_path)
+            elif system == "Darwin":
+                ok = _play_macos(play_path)
+            else:
+                ok = _play_linux(play_path)
+            if _is_play_cancelled(play_gen):
+                _halt_devices()
+                return False
+            return bool(ok)
+        except Exception:
+            logger.debug("播放文件失败: %s", path, exc_info=True)
+            return False
+
+    # Windows：尽量在 Tk 主线程开播，避免设置窗/托盘异步线程里 winsound 无声
+    if root is not None and platform.system() == "Windows":
+        try:
+            root.after(0, _start)
+            return True
+        except Exception:
+            logger.debug("调度主线程播放失败，回退同步", exc_info=True)
+    return _start()
 
 
 def _track_proc(proc: subprocess.Popen) -> None:
@@ -1035,7 +1052,7 @@ def play_finish_sound(
         # 解密等可能较慢：prepare/开播前在 play_file 内再检查 generation
         if _is_play_cancelled(play_gen):
             return
-        if play_file(path, play_gen=play_gen):
+        if play_file(path, play_gen=play_gen, root=root):
             _clear_pending_play(play_gen)
             return
         if _is_play_cancelled(play_gen):

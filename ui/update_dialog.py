@@ -19,6 +19,8 @@ from ui.design.tokens import (
     UPDATE_DIALOG_WIDTH,
 )
 from ui.time_picker import _activate_picker, _picker_parent
+from ui.window_chrome_dialog import center_dialog_later
+from ui.window_chrome_dialog import CHROME_TITLE_HEIGHT, use_borderless_chrome
 
 logger = logging.getLogger("count_down_tool")
 
@@ -68,6 +70,27 @@ def show_update_available(app, result, notes: str, on_action: ActionCb = None) -
             win.transient(parent)
     except tk.TclError:
         pass
+
+    closed = {"done": False}
+
+    def _finish(action: str):
+        if closed["done"]:
+            return
+        closed["done"] = True
+        try:
+            win.destroy()
+        except tk.TclError:
+            pass
+        if on_action:
+            try:
+                on_action(action)
+            except Exception:
+                logger.exception("更新对话框回调失败")
+
+    win.protocol("WM_DELETE_WINDOW", lambda: _finish("later"))
+    borderless = use_borderless_chrome(
+        win, app, title="发现更新", on_close=lambda: _finish("later")
+    )
 
     shell = tk.Frame(win, bg=c["bg"], padx=SPACE_LG, pady=SPACE_LG)
     shell.pack(fill=tk.BOTH, expand=True)
@@ -129,22 +152,6 @@ def show_update_available(app, result, notes: str, on_action: ActionCb = None) -
     text.insert("1.0", notes_text)
     text.configure(state=tk.DISABLED)
 
-    closed = {"done": False}
-
-    def _finish(action: str):
-        if closed["done"]:
-            return
-        closed["done"] = True
-        try:
-            win.destroy()
-        except tk.TclError:
-            pass
-        if on_action:
-            try:
-                on_action(action)
-            except Exception:
-                logger.exception("更新对话框回调失败")
-
     footer = tk.Frame(shell, bg=c["bg"])
     footer.pack(fill=tk.X, pady=(SPACE_LG, 0))
 
@@ -175,12 +182,11 @@ def show_update_available(app, result, notes: str, on_action: ActionCb = None) -
         command=lambda: _finish(primary_action),
     ).pack(side=tk.RIGHT, padx=(0, SPACE_SM))
 
-    win.protocol("WM_DELETE_WINDOW", lambda: _finish("later"))
-
     win.update_idletasks()
     w = max(UPDATE_DIALOG_WIDTH, win.winfo_reqwidth() + 24)
     h = max(UPDATE_DIALOG_MIN_HEIGHT, win.winfo_reqheight() + 16)
-    if platform.system() == "Windows":
+    # 无边框后不再加系统标题栏余量；自绘标题栏高度已计入 reqheight
+    if not borderless and platform.system() == "Windows":
         h += 28
         w += 12
     _center(win, w, h)
@@ -204,8 +210,15 @@ def show_update_progress(app, title: str, message: str = "") -> tk.Toplevel:
             win.transient(parent)
     except tk.TclError:
         pass
-    # 下载中禁止关窗误操作（仍可协议关闭，避免卡死）
+    # 下载中禁止关窗误操作（× / Esc / 协议均 no-op）
     win.protocol("WM_DELETE_WINDOW", lambda: None)
+    borderless = use_borderless_chrome(
+        win,
+        app,
+        title=title or "更新",
+        on_close=lambda: None,
+        close_enabled=False,
+    )
 
     shell = tk.Frame(win, bg=c["bg"], padx=SPACE_LG, pady=SPACE_LG)
     shell.pack(fill=tk.BOTH, expand=True)
@@ -276,7 +289,9 @@ def show_update_progress(app, title: str, message: str = "") -> tk.Toplevel:
 
     win.update_idletasks()
     w = UPDATE_DIALOG_WIDTH
-    h = max(140, win.winfo_reqheight() + 24)
+    # 自绘标题栏已计入 reqheight；无边框不再加系统标题栏余量
+    min_h = 140 + (CHROME_TITLE_HEIGHT if borderless else 0)
+    h = max(min_h, win.winfo_reqheight() + 24)
     _center(win, w, h)
     _activate_picker(win)
     return win
@@ -350,7 +365,8 @@ def show_update_message(app, kind: str, message: str, title: str = "") -> None:
         default_title = "提示"
 
     win = tk.Toplevel(parent)
-    win.title(f"{APP_NAME} · {title or default_title}")
+    display_title = title or default_title
+    win.title(f"{APP_NAME} · {display_title}")
     win.configure(bg=c["bg"])
     win.resizable(False, False)
     try:
@@ -363,12 +379,21 @@ def show_update_message(app, kind: str, message: str, title: str = "") -> None:
     except tk.TclError:
         pass
 
+    def _close():
+        try:
+            win.destroy()
+        except tk.TclError:
+            pass
+
+    win.protocol("WM_DELETE_WINDOW", _close)
+    use_borderless_chrome(win, app, title=display_title, on_close=_close)
+
     shell = tk.Frame(win, bg=c["bg"], padx=SPACE_LG, pady=SPACE_LG)
     shell.pack(fill=tk.BOTH, expand=True)
 
     tk.Label(
         shell,
-        text=title or default_title,
+        text=display_title,
         font=app._font("button", 12, bold=True),
         bg=c["bg"],
         fg=accent,
@@ -384,16 +409,9 @@ def show_update_message(app, kind: str, message: str, title: str = "") -> None:
         anchor="w",
     ).pack(anchor="w", pady=(SPACE_SM, SPACE_LG))
 
-    def _close():
-        try:
-            win.destroy()
-        except tk.TclError:
-            pass
-
     _pill(shell, "知道了", app=app, c=c, primary=True, command=_close).pack(
         side=tk.RIGHT
     )
-    win.protocol("WM_DELETE_WINDOW", _close)
     win.update_idletasks()
     w = max(320, min(UPDATE_DIALOG_WIDTH, win.winfo_reqwidth() + 32))
     h = max(140, win.winfo_reqheight() + 16)
@@ -423,12 +441,5 @@ def _pill(parent, text, *, app, c, primary=True, command=None):
 
 
 def _center(win, w: int, h: int) -> None:
-    try:
-        win.update_idletasks()
-        sw = win.winfo_screenwidth()
-        sh = win.winfo_screenheight()
-        x = max(0, (sw - w) // 2)
-        y = max(0, (sh - h) // 3)
-        win.geometry(f"{int(w)}x{int(h)}+{x}+{y}")
-    except tk.TclError:
-        pass
+    """居中（含 overrideredirect 后补定位）。"""
+    center_dialog_later(win, int(w), int(h))

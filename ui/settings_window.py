@@ -23,6 +23,8 @@ from ui.design.tokens import (
     SPACE_XS,
 )
 from ui.time_picker import _activate_picker, _picker_parent
+from ui.widgets import ThinScrollbar
+from ui.window_chrome_dialog import center_dialog_later, use_borderless_chrome
 
 logger = logging.getLogger("count_down_tool")
 
@@ -86,13 +88,24 @@ def show_settings(app) -> None:
             app._settings_window = None
 
     win.protocol("WM_DELETE_WINDOW", _on_close)
+    # Windows：无边框 + 自绘标题栏；macOS 等保留原生边框
+    use_borderless_chrome(win, app, title="⚙  设置", on_close=_on_close)
 
-    # ===== 可滚动内容 =====
+    # ===== 可滚动内容（主题化细滚动条）=====
     outer = tk.Frame(win, bg=c["bg"])
     outer.pack(fill=tk.BOTH, expand=True)
 
     canvas = tk.Canvas(outer, bg=c["bg"], highlightthickness=0, bd=0)
-    scrollbar = tk.Scrollbar(outer, orient=tk.VERTICAL, command=canvas.yview)
+    scrollbar = ThinScrollbar(
+        outer,
+        command=canvas.yview,
+        bg=c["bg"],
+        trough=c.get("input_bg", c["card"]),
+        thumb=c.get("border", c["text_muted"]),
+        thumb_hover=c.get("text_muted", c["text_dim"]),
+        width=6,
+        pad=3,
+    )
     canvas.configure(yscrollcommand=scrollbar.set)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -135,21 +148,14 @@ def show_settings(app) -> None:
     content = tk.Frame(body, bg=c["bg"])
     content.pack(fill=tk.BOTH, expand=True, padx=pad, pady=pad)
 
-    # 标题
-    tk.Label(
-        content,
-        text="设置中心",
-        font=app._font("button", 14, bold=True),
-        bg=c["bg"],
-        fg=c["text"],
-    ).pack(anchor="w")
+    # 副标题（主标题已在自绘标题栏 / 原生标题栏）
     tk.Label(
         content,
         text="外观 · 声音 · 系统 · 关于",
         font=app._font("label", 9),
         bg=c["bg"],
         fg=c["text_muted"],
-    ).pack(anchor="w", pady=(SPACE_XS, SPACE_MD))
+    ).pack(anchor="w", pady=(0, SPACE_MD))
     tk.Frame(content, bg=c["accent"], height=2).pack(fill=tk.X, pady=(0, SPACE_LG))
 
     # 状态刷新回调集合（主题/音效切换后局部更新勾选）
@@ -181,7 +187,8 @@ def show_settings(app) -> None:
 
     win.update_idletasks()
     _bind_wheel(body)
-    _center_window(win, SETTINGS_WIDTH, SETTINGS_HEIGHT)
+    # overrideredirect 后系统常落到 0,0，延后多次居中
+    center_dialog_later(win, SETTINGS_WIDTH, SETTINGS_HEIGHT)
     _activate_picker(win)
     # 暴露刷新，供内部切换主题后重绘勾选（主题会 close 窗，一般用不到）
     win._settings_refresh = _refresh_all  # type: ignore[attr-defined]
@@ -277,6 +284,8 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
         is_audio_file,
         is_sound_playing,
         play_finish_sound_async,
+        prune_sound_history,
+        purge_orphan_sounds,
         stop_playback,
         touch_sound_history,
     )
@@ -284,30 +293,48 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
     _section_header(parent, "声音", app, c)
     card = _card(parent, c)
 
-    mute_var_holder = {"lbl": None}
     sound_rows = {}
+    history_frame = tk.Frame(card, bg=c["card"])
+
+    def _tray_refresh():
+        try:
+            from services.tray import refresh_tray_menu
+
+            refresh_tray_menu(app)
+        except Exception:
+            pass
 
     def _toggle_mute():
         app._sound_muted = not bool(getattr(app, "_sound_muted", False))
         app._save_config()
         _refresh()
-        try:
-            from services.tray import refresh_tray_menu
-
-            refresh_tray_menu(app)
-        except Exception:
-            pass
+        _tray_refresh()
 
     def _set_sound(sid: str):
         app._sound_id = sid
         app._save_config()
         _refresh()
-        try:
-            from services.tray import refresh_tray_menu
+        _tray_refresh()
 
-            refresh_tray_menu(app)
-        except Exception:
-            pass
+    def _select_history(path: str):
+        if not path or not os.path.isfile(path):
+            messagebox.showerror(APP_NAME, "该历史音效文件已不存在。", parent=win)
+            app._sound_history = [
+                h
+                for h in getattr(app, "_sound_history", [])
+                if (h.get("path") if isinstance(h, dict) else h) != path
+            ]
+            app._save_config()
+            _refresh()
+            return
+        app._sound_id = SOUND_ID_CUSTOM
+        app._sound_path = path
+        app._sound_history = touch_sound_history(
+            getattr(app, "_sound_history", []), path
+        )
+        app._save_config()
+        _refresh()
+        _tray_refresh()
 
     def _import_sound():
         path = filedialog.askopenfilename(
@@ -340,18 +367,21 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
         )
         app._save_config()
         _refresh()
-        try:
-            from services.tray import refresh_tray_menu
+        _tray_refresh()
 
-            refresh_tray_menu(app)
-        except Exception:
+    def _preview_root():
+        # 系统铃依赖 root.bell/after；主窗 Mini withdraw 时可能无声，优先设置窗
+        try:
+            if win.winfo_exists():
+                return win
+        except tk.TclError:
             pass
+        return app.master
 
     def _preview():
-        if is_sound_playing():
-            stop_playback()
+        # 勿先 stop 再 async：交给 async 内部 halt，避免 gen/竞态掐断刚起的播放
         play_finish_sound_async(
-            app.master,
+            _preview_root(),
             muted=False,
             sound_id=str(getattr(app, "_sound_id", "soft") or "soft"),
             custom_path=str(getattr(app, "_sound_path", "") or ""),
@@ -362,11 +392,38 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
         stop_playback()
         _schedule_preview_refresh()
 
+    def _clear_history():
+        app._sound_history = []
+        app._save_config()
+        _refresh()
+
+    def _purge_orphans():
+        ok = messagebox.askyesno(
+            APP_NAME,
+            "将删除本地音效库中未出现在历史列表、且不是当前所选的文件。\n"
+            "历史记录本身不会被清空。\n\n确定清理？",
+            parent=win,
+        )
+        if not ok:
+            return
+        stop_playback()
+        n = purge_orphan_sounds(
+            getattr(app, "_sound_history", []),
+            str(getattr(app, "_sound_path", "") or ""),
+        )
+        messagebox.showinfo(
+            APP_NAME,
+            f"已清理 {n} 个未使用音效文件。" if n else "没有可清理的未使用音效。",
+            parent=win,
+        )
+        _refresh()
+
     def _schedule_preview_refresh():
         _refresh()
         try:
             win.after(400, _refresh)
             win.after(1500, _refresh)
+            win.after(3500, _refresh)
         except tk.TclError:
             pass
 
@@ -384,7 +441,6 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
     )
     mute_lbl.pack(fill=tk.X)
     mute_lbl.bind("<Button-1>", lambda e: _toggle_mute())
-    mute_var_holder["lbl"] = mute_lbl
 
     tk.Frame(card, bg=c["border"], height=1).pack(fill=tk.X, pady=SPACE_SM)
 
@@ -434,6 +490,8 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
     )
     custom_lbl.pack(fill=tk.X)
 
+    history_frame.pack(fill=tk.X, pady=(SPACE_XS, 0))
+
     btn_row = tk.Frame(card, bg=c["card"])
     btn_row.pack(fill=tk.X, pady=(SPACE_SM, 0))
 
@@ -444,6 +502,71 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
     preview_btn.pack(side=tk.LEFT, padx=(0, SPACE_SM))
     stop_btn = _pill(btn_row, "停止试听", app=app, c=c, primary=False, command=_stop_preview)
     stop_btn.pack(side=tk.LEFT)
+
+    util_row = tk.Frame(card, bg=c["card"])
+    util_row.pack(fill=tk.X, pady=(SPACE_SM, 0))
+    _pill(util_row, "清空历史", app=app, c=c, primary=False, command=_clear_history).pack(
+        side=tk.LEFT, padx=(0, SPACE_SM)
+    )
+    _pill(util_row, "清理未使用…", app=app, c=c, primary=False, command=_purge_orphans).pack(
+        side=tk.LEFT
+    )
+
+    def _rebuild_history():
+        for child in list(history_frame.winfo_children()):
+            try:
+                child.destroy()
+            except tk.TclError:
+                pass
+        history = prune_sound_history(getattr(app, "_sound_history", []))
+        if not history:
+            return
+        tk.Label(
+            history_frame,
+            text="最近导入",
+            font=app._font("label", 9),
+            bg=c["card"],
+            fg=c["text_muted"],
+            anchor="w",
+        ).pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_SM, SPACE_XS))
+        cur = str(getattr(app, "_sound_id", "soft") or "soft")
+        cur_path = str(getattr(app, "_sound_path", "") or "")
+        for entry in history[:8]:
+            path = entry.get("path") or ""
+            label = entry.get("name") or os.path.basename(path) or "音效"
+            if len(label) > 32:
+                label = label[:29] + "…"
+            mark = ""
+            if cur == SOUND_ID_CUSTOM and path:
+                try:
+                    if os.path.normcase(os.path.abspath(cur_path)) == os.path.normcase(
+                        os.path.abspath(path)
+                    ):
+                        mark = "✓  "
+                    else:
+                        mark = "    "
+                except OSError:
+                    mark = "✓  " if cur_path == path else "    "
+            else:
+                mark = "    "
+            row = tk.Label(
+                history_frame,
+                text=f"{mark}{label}",
+                font=app._font("label", 9),
+                bg=c["card"],
+                fg=c["text"],
+                anchor="w",
+                cursor="hand2",
+                padx=SPACE_SM,
+                pady=4,
+            )
+            row.pack(fill=tk.X)
+            row.bind("<Button-1>", lambda e, p=path: _select_history(p))
+            row.bind(
+                "<Enter>",
+                lambda e, w=row: w.config(bg=c.get("chip_hover", c["border"])),
+            )
+            row.bind("<Leave>", lambda e, w=row: w.config(bg=c["card"]))
 
     def _refresh():
         muted = bool(getattr(app, "_sound_muted", False))
@@ -470,9 +593,9 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
             custom_lbl.config(text=tip)
         except tk.TclError:
             pass
+        _rebuild_history()
         playing = is_sound_playing()
         try:
-            # 播放中禁用试听观感（Label 仍可点，逻辑里会先 stop）
             preview_btn.config(fg=c["text_muted"] if playing else c["bg"])
             stop_btn.config(fg=c["text"] if playing else c["text_muted"])
         except tk.TclError:
@@ -641,13 +764,3 @@ def _pill(parent, text, *, app, c, primary=True, command=None):
     return btn
 
 
-def _center_window(win, w: int, h: int) -> None:
-    try:
-        win.update_idletasks()
-        sw = win.winfo_screenwidth()
-        sh = win.winfo_screenheight()
-        x = max(0, (sw - w) // 2)
-        y = max(0, (sh - h) // 3)
-        win.geometry(f"{w}x{h}+{x}+{y}")
-    except tk.TclError:
-        pass
