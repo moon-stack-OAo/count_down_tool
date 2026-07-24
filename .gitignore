@@ -27,3 +27,9 @@ build/
 config.json
 .DS_Store
 Thumbs.db
+
+### Node / Tauri (desktop/) ###
+node_modules/
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
