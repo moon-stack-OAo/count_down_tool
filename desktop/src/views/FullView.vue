@@ -1,28 +1,48 @@
 <script setup lang="ts">
-import { APP_NAME } from "../core/constants";
+import { computed } from "vue";
+import {
+  APP_NAME,
+  STATE_FINISHED,
+  STATE_IDLE,
+  STATE_PAUSED,
+  STATE_RUNNING,
+} from "../core/constants";
 import { PRESETS } from "../core/countdown";
-import { STATE_FINISHED } from "../core/constants";
 import TitleBar from "../components/TitleBar.vue";
 import SettingsPanel from "../components/SettingsPanel.vue";
+import TimeStepper from "../components/TimeStepper.vue";
 import { useCountdownStore } from "../stores/countdown";
 import { useSettingsStore } from "../stores/settings";
 
 const cd = useCountdownStore();
 const settings = useSettingsStore();
 
-function onHour(e: Event) {
-  cd.setHms(Number((e.target as HTMLInputElement).value) || 0, cd.minute, cd.second);
+const primaryBtnClass = computed(() => {
+  switch (cd.state) {
+    case STATE_RUNNING:
+    case STATE_PAUSED:
+      return "is-running";
+    case STATE_FINISHED:
+      return "is-finished";
+    case STATE_IDLE:
+    default:
+      return "is-idle";
+  }
+});
+
+function setHour(v: number) {
+  cd.setHms(v, cd.minute, cd.second);
 }
-function onMinute(e: Event) {
-  cd.setHms(cd.hour, Number((e.target as HTMLInputElement).value) || 0, cd.second);
+function setMinute(v: number) {
+  cd.setHms(cd.hour, v, cd.second);
 }
-function onSecond(e: Event) {
-  cd.setHms(cd.hour, cd.minute, Number((e.target as HTMLInputElement).value) || 0);
+function setSecond(v: number) {
+  cd.setHms(cd.hour, cd.minute, v);
 }
 </script>
 
 <template>
-  <div class="full-root opaque-shell" style="height: 100%; display: flex; flex-direction: column">
+  <div class="full-root opaque-shell">
     <TitleBar
       :title="`⏱  ${APP_NAME}`"
       @settings="settings.openSettings()"
@@ -31,50 +51,50 @@ function onSecond(e: Event) {
     />
 
     <div class="main-body">
-      <div class="card">
+      <div class="card display-card">
         <div
           class="countdown-display"
           :class="{ success: cd.state === STATE_FINISHED }"
         >
           {{ cd.remainingText }}
         </div>
-        <div class="progress-track">
+        <div
+          class="progress-track"
+          :class="{ full: cd.state === STATE_FINISHED }"
+        >
           <div class="progress-fill" :style="{ width: `${cd.progress * 100}%` }" />
         </div>
         <div class="meta">
-          <div>{{ cd.targetLabel }}</div>
+          <div class="target">{{ cd.targetLabel }}</div>
           <div class="clock">现在 {{ cd.clockText }}</div>
         </div>
       </div>
 
-      <div class="card muted">
+      <div class="card muted time-card" :class="{ locked: cd.inputsLocked }">
         <div class="section-label">到期时间</div>
         <div class="hms-row">
-          <input
-            type="number"
-            min="0"
-            max="23"
-            :value="cd.hour"
+          <TimeStepper
+            :model-value="cd.hour"
+            :min="0"
+            :max="23"
             :disabled="cd.inputsLocked"
-            @change="onHour"
+            @update:model-value="setHour"
           />
           <span class="sep">:</span>
-          <input
-            type="number"
-            min="0"
-            max="59"
-            :value="cd.minute"
+          <TimeStepper
+            :model-value="cd.minute"
+            :min="0"
+            :max="59"
             :disabled="cd.inputsLocked"
-            @change="onMinute"
+            @update:model-value="setMinute"
           />
           <span class="sep">:</span>
-          <input
-            type="number"
-            min="0"
-            max="59"
-            :value="cd.second"
+          <TimeStepper
+            :model-value="cd.second"
+            :min="0"
+            :max="59"
             :disabled="cd.inputsLocked"
-            @change="onSecond"
+            @update:model-value="setSecond"
           />
         </div>
         <div class="presets">
@@ -91,10 +111,15 @@ function onSecond(e: Event) {
         </div>
       </div>
 
-      <div class="error-line">{{ cd.error }}</div>
+      <div v-if="cd.error" class="error-line">{{ cd.error }}</div>
 
       <div class="actions">
-        <button type="button" class="btn-primary" @click="cd.toggle()">
+        <button
+          type="button"
+          class="btn-primary"
+          :class="primaryBtnClass"
+          @click="cd.toggle()"
+        >
           {{ cd.buttonText }}
         </button>
         <button type="button" class="btn-secondary" @click="cd.reset()">重置</button>
