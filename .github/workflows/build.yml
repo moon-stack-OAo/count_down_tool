@@ -44,10 +44,15 @@ jobs:
         id: ver
         run: |
           set -euo pipefail
+          CODE_VERSION="$(python -c "from core.countdown_core import __version__; print(__version__)")"
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
+            if [[ "${VERSION}" != "${CODE_VERSION}" ]]; then
+              echo "ERROR: tag version (${VERSION}) != code __version__ (${CODE_VERSION})"
+              exit 1
+            fi
           else
-            VERSION="$(python -c "from core.countdown_core import __version__; print(__version__)")"
+            VERSION="${CODE_VERSION}"
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Resolved version: ${VERSION}"
@@ -61,7 +66,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller pystray pillow
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
 
       - name: Build with PyInstaller
         working-directory: .
@@ -71,7 +80,7 @@ jobs:
             --windowed \
             --name "count_down_tool" \
             --target-arch ${{ matrix.arch }} \
-            --osx-bundle-identifier "com.foundtec.count-down-tool" \
+            --osx-bundle-identifier "com.moon.count-down-tool" \
             --add-data "assets/count_down_tool.ico:assets" \
             --add-data "assets/sounds:assets/sounds" \
             --hidden-import core \
@@ -123,7 +132,9 @@ jobs:
           find "$APP" -type f \( -name "count_down_tool" -o -path "*/MacOS/*" \) -exec chmod +x {} \;
           python scripts/set_macos_bundle_version.py "$APP" "$VERSION"
           /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist" || true
-          codesign --force --deep --sign - "$APP" || true
+          if ! codesign --force --deep --sign - "$APP"; then
+            echo "::warning::adhoc codesign failed for $APP (unsigned build may still run for personal use)"
+          fi
           codesign -dv --verbose=2 "$APP" || true
           cd dist
           ditto -c -k --sequesterRsrc --keepParent "count_down_tool.app" "${ZIP_NAME}"
@@ -154,17 +165,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          CODE_VERSION="$(python -c "from core.countdown_core import __version__; print(__version__)")"
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
+            if [[ "${VERSION}" != "${CODE_VERSION}" ]]; then
+              echo "ERROR: tag version (${VERSION}) != code __version__ (${CODE_VERSION})"
+              exit 1
+            fi
           else
-            VERSION="$(python -c "from core.countdown_core import __version__; print(__version__)")"
+            VERSION="${CODE_VERSION}"
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Resolved version: ${VERSION}"
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller pystray pillow
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
 
       - name: Build with PyInstaller
         working-directory: .
