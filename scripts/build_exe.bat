@@ -62,11 +62,12 @@ if exist "%TOOL_DIR%\dist\count_down_tool.exe" (
         exit /b 1
     )
     echo   Build successful!
-    echo   Exe: %TOOL_DIR%\dist\count_down_tool.exe
     echo   Zip: %TOOL_DIR%\dist\%OUT_ZIP%
     echo ========================================
     echo.
     echo   Cleaning build files...
+    rem 分发只保留 zip；exe 已打进 zip 内固定名 count_down_tool.exe
+    del /q "%TOOL_DIR%\dist\count_down_tool.exe" 2>nul
     rd /s /q "%TOOL_DIR%\build"
     del /q "%TOOL_DIR%\count_down_tool.spec" 2>nul
     echo   Done!
