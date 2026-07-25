@@ -6,7 +6,9 @@ import platform
 import tkinter as tk
 
 from core.countdown_core import ACTION_RESUME, STATE_PAUSED, STATE_RUNNING
-from ui.widgets import RoundedFrame, init_circle_button, update_circle_button
+from ui.design.tokens import SPACE_LG, SPACE_MD, SPACE_SM
+from ui.widgets import RoundedFrame, init_circle_button, make_pill, update_circle_button
+from ui.window_chrome_dialog import center_dialog_later, use_borderless_chrome
 
 logger = logging.getLogger("count_down_tool")
 
@@ -74,40 +76,21 @@ def _bind_hover_bg(widget, normal, hover):
     widget.bind("<Leave>", lambda e: widget.config(bg=normal))
 
 
-def _pill_button(parent, text, *, font, bg, fg, hover_bg, padx=28, pady=8, command=None):
-    """圆角观感的操作按钮（Label + 内边距）。"""
-    btn = tk.Label(
-        parent,
-        text=text,
-        font=font,
-        bg=bg,
-        fg=fg,
-        padx=padx,
-        pady=pady,
-        cursor="hand2",
-    )
-    btn.pack(side=tk.LEFT, padx=6)
-    if command:
-        btn.bind("<Button-1>", lambda e: command())
-    _bind_hover_bg(btn, bg, hover_bg)
-    return btn
+def _fit_picker_window(picker, shell, min_w, min_h, *, borderless: bool = False):
 
-
-def _fit_picker_window(picker, shell, min_w, min_h):
-    """按内容请求尺寸调整窗口，避免裁切（含系统标题栏余量）。"""
+    """按内容请求尺寸调整窗口，并居中到工作区。"""
     try:
         picker.update_idletasks()
         need_w = max(min_w, shell.winfo_reqwidth() + 48)
-        need_h = max(min_h, shell.winfo_reqheight() + 56)
-        # Windows 标题栏 / 边框
-        if platform.system() == "Windows":
+        need_h = max(min_h, shell.winfo_reqheight() + 40)
+        if not borderless and platform.system() == "Windows":
             need_h += 32
             need_w += 16
-        sw = picker.winfo_screenwidth()
-        sh = picker.winfo_screenheight()
-        x = max(0, (sw - need_w) // 2)
-        y = max(0, (sh - need_h) // 2)
-        picker.geometry(f"{int(need_w)}x{int(need_h)}+{x}+{y}")
+        if borderless:
+            from ui.window_chrome_dialog import CHROME_TITLE_HEIGHT
+
+            need_h += CHROME_TITLE_HEIGHT
+        center_dialog_later(picker, int(need_w), int(need_h))
     except tk.TclError:
         pass
 
@@ -123,7 +106,10 @@ def show_time_picker(app):
     picker.resizable(False, False)
     c = app.COLORS
     picker.configure(bg=c["bg"])
-    picker.attributes("-topmost", True)
+    try:
+        picker.attributes("-topmost", True)
+    except tk.TclError:
+        pass
     try:
         if parent is not app.master or parent.winfo_viewable():
             picker.transient(parent)
@@ -135,8 +121,28 @@ def show_time_picker(app):
     m_var = tk.IntVar(value=m0)
     s_var = tk.IntVar(value=s0)
 
+    # 占位：chrome 需要先绑关闭；确认/取消在后面定义
+    closed = {"done": False}
+
+    def cancel():
+        if closed["done"]:
+            return
+        closed["done"] = True
+        try:
+            picker.grab_release()
+        except tk.TclError:
+            pass
+        try:
+            picker.destroy()
+        except tk.TclError:
+            pass
+
+    borderless = use_borderless_chrome(
+        picker, app, title="选择时间", on_close=cancel
+    )
+
     shell = tk.Frame(picker, bg=c["bg"])
-    shell.pack(fill=tk.BOTH, expand=True, padx=22, pady=18)
+    shell.pack(fill=tk.BOTH, expand=True, padx=SPACE_LG, pady=SPACE_MD)
 
     # 标题
     header = tk.Frame(shell, bg=c["bg"])
@@ -373,6 +379,8 @@ def show_time_picker(app):
             pass
 
     def confirm():
+        if closed["done"]:
+            return
         try:
             # 失焦提交：确保 Entry 中未确认的输入生效
             try:
@@ -388,6 +396,7 @@ def show_time_picker(app):
             app.hour_var.set(f"{hh:02d}")
             app.minute_var.set(f"{mm:02d}")
             app.second_var.set(f"{ss:02d}")
+            closed["done"] = True
             try:
                 picker.grab_release()
             except tk.TclError:
@@ -411,49 +420,49 @@ def show_time_picker(app):
         except (ValueError, TypeError, tk.TclError):
             logger.debug("时间选择器输入无效", exc_info=True)
 
-    def cancel():
-        try:
-            picker.grab_release()
-        except tk.TclError:
-            pass
-        picker.destroy()
-
     btn_row = tk.Frame(shell, bg=c["bg"])
     btn_row.pack(pady=(0, 4))
     btn_inner = tk.Frame(btn_row, bg=c["bg"])
     btn_inner.pack()
 
-    _pill_button(
+    make_pill(
         btn_inner,
         "确认",
-        font=app._font("label", 11, bold=True),
-        bg=c["accent"],
-        fg=c["white"],
-        hover_bg=c["accent_hover"],
+        app=app,
+        c=c,
+        primary=True,
+        command=confirm,
         padx=32,
         pady=8,
-        command=confirm,
-    )
-    _pill_button(
+        font_size=11,
+    ).pack(side=tk.LEFT, padx=(0, SPACE_SM))
+    make_pill(
         btn_inner,
         "取消",
-        font=app._font("label", 11),
-        bg=c["card"],
-        fg=c["text_dim"],
-        hover_bg=c["border"],
+        app=app,
+        c=c,
+        primary=False,
+        command=cancel,
         padx=32,
         pady=8,
-        command=cancel,
-    )
+        font_size=11,
+    ).pack(side=tk.LEFT)
 
     picker.bind("<Return>", lambda e: confirm())
     picker.bind("<Escape>", lambda e: cancel())
     picker.protocol("WM_DELETE_WINDOW", cancel)
 
     def _ready():
-        _fit_picker_window(picker, shell, min_w, min_h)
+        _fit_picker_window(
+            picker, shell, min_w, min_h, borderless=borderless
+        )
         _activate_picker(picker)
 
     picker.after_idle(_ready)
     picker.after(50, _ready)
-    picker.after(120, lambda: _fit_picker_window(picker, shell, min_w, min_h))
+    picker.after(
+        120,
+        lambda: _fit_picker_window(
+            picker, shell, min_w, min_h, borderless=borderless
+        ),
+    )

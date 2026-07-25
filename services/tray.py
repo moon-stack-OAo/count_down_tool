@@ -10,7 +10,6 @@ import platform
 import threading
 
 from core.countdown_core import APP_NAME, button_text_for_state
-from ui.context_menus import tray_mini_menu_label, tray_window_menu_label
 
 logger = logging.getLogger("count_down_tool")
 
@@ -38,6 +37,8 @@ def init_tray_icon(app, icon_path):
         return
     try:
         image = load_tray_icon(icon_path)
+        from ui.context_menus import tray_mini_menu_label, tray_window_menu_label
+
         # 主题/音效/自启/更新已迁入设置中心，托盘仅保留常用快捷项
         menu = pystray.Menu(
             # 文案随 Mini/完整模式动态变化

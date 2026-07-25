@@ -24,7 +24,7 @@ from ui.design.tokens import (
     SPACE_XS,
 )
 from ui.time_picker import _activate_picker, _picker_parent
-from ui.widgets import ThinScrollbar
+from ui.widgets import ThinScrollbar, make_pill
 from ui.window_chrome_dialog import center_dialog_later, use_borderless_chrome
 
 logger = logging.getLogger("count_down_tool")
@@ -821,24 +821,7 @@ def _build_about_section(app, parent, c) -> None:
 
 
 def _pill(parent, text, *, app, c, primary=True, command=None):
-    """圆角观感操作按钮。"""
-    bg = c["accent"] if primary else c["chip"]
-    fg = c["bg"] if primary else c["text"]
-    hover = c["accent_hover"] if primary else c.get("chip_hover", c["border"])
-    btn = tk.Label(
-        parent,
-        text=text,
-        font=app._font("label", 9, bold=True) if primary else app._font("label", 9),
-        bg=bg,
-        fg=fg,
-        padx=14,
-        pady=6,
-        cursor="hand2",
-    )
-    if command:
-        btn.bind("<Button-1>", lambda e: command())
-    btn.bind("<Enter>", lambda e: btn.config(bg=hover))
-    btn.bind("<Leave>", lambda e: btn.config(bg=bg))
-    return btn
+    """兼容旧调用：委托统一 make_pill。"""
+    return make_pill(parent, text, app=app, c=c, primary=primary, command=command)
 
 

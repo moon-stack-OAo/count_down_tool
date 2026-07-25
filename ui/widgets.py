@@ -221,3 +221,58 @@ def update_circle_button(canvas, item_ids, fill=None, text=None, text_color=None
             canvas.itemconfig(text_id, fill=text_color)
         if text is not None:
             canvas.itemconfig(text_id, text=text)
+
+
+def make_pill(
+    parent,
+    text,
+    *,
+    app,
+    c=None,
+    primary=True,
+    command=None,
+    danger=False,
+    padx=14,
+    pady=6,
+    font_size=9,
+):
+    """主题化胶囊按钮（统一 settings / update / dialogs）。
+
+    primary 使用 btn_primary / btn_on_primary；danger 使用 error 色。
+    """
+    colors = c if isinstance(c, dict) else getattr(app, "COLORS", {}) or {}
+    if danger:
+        bg = colors.get("error", "#FB7185")
+        fg = colors.get("white", "#FFFFFF")
+        hover = colors.get("btn_hover_close", bg)
+        bold = True
+    elif primary:
+        bg = colors.get("btn_primary", colors.get("accent", "#38BDF8"))
+        fg = colors.get("btn_on_primary", colors.get("bg", "#0F1419"))
+        hover = colors.get(
+            "btn_primary_hover",
+            colors.get("accent_hover", bg),
+        )
+        bold = True
+    else:
+        bg = colors.get("chip", colors.get("card", "#1A2332"))
+        fg = colors.get("text", "#F1F5F9")
+        hover = colors.get("chip_hover", colors.get("border", bg))
+        bold = False
+
+    font = app._font("label", font_size, bold=bold) if bold else app._font("label", font_size)
+    btn = tk.Label(
+        parent,
+        text=text,
+        font=font,
+        bg=bg,
+        fg=fg,
+        padx=padx,
+        pady=pady,
+        cursor="hand2",
+    )
+    if command:
+        btn.bind("<Button-1>", lambda e: command())
+    btn.bind("<Enter>", lambda e: btn.config(bg=hover))
+    btn.bind("<Leave>", lambda e: btn.config(bg=bg))
+    return btn

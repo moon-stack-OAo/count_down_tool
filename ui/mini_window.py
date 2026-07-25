@@ -5,8 +5,6 @@ import logging
 import platform
 import tkinter as tk
 from datetime import datetime
-from tkinter import messagebox
-
 from core.countdown_core import (
     STATE_FINISHED,
     STATE_RUNNING,
@@ -654,12 +652,18 @@ def mini_close(app):
         refresh_tray_menu(app)
         if app._first_hide:
             app._first_hide = False
-            app.master.after(0, lambda: messagebox.showinfo(
-                "提示",
-                "程序已最小化到系统托盘。\n"
-                "右键托盘图标可切换 Mini 模式或退出。",
-                parent=app.master,
-            ))
+
+            def _tip():
+                from ui.app_dialogs import show_info
+
+                show_info(
+                    app,
+                    "程序已最小化到系统托盘。\n"
+                    "右键托盘图标可切换 Mini 模式或退出。",
+                    title="提示",
+                )
+
+            app.master.after(0, _tip)
     else:
         app._switch_to_full()
 

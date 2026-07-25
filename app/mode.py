@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-from tkinter import messagebox
-
 from services.tray import refresh_tray_menu
 
 
@@ -44,10 +42,12 @@ def hide_to_tray(app) -> None:
                 "程序已最小化到系统托盘。\n"
                 "右键托盘图标可切换 Mini 模式或退出。"
             )
-        app.master.after(
-            0,
-            lambda: messagebox.showinfo("提示", tip, parent=app.master),
-        )
+        def _tip():
+            from ui.app_dialogs import show_info
+
+            show_info(app, tip, title="提示")
+
+        app.master.after(0, _tip)
     app.master.withdraw()
 
 

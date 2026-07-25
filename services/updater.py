@@ -12,7 +12,6 @@ from typing import Optional
 
 from core.countdown_core import APP_NAME, __version__
 from core import update as core_update
-from ui.app_dialogs import show_error, show_info
 
 logger = logging.getLogger("count_down_tool.updater")
 
@@ -44,7 +43,15 @@ def run_update_check(app, manual: bool = False) -> None:
     global _CHECKING
     if _CHECKING:
         if manual:
-            show_info(app, "正在检查更新，请稍候…")
+            def _busy():
+                from ui.app_dialogs import show_info
+
+                show_info(app, "正在检查更新，请稍候…")
+
+            try:
+                app.master.after(0, _busy)
+            except Exception:
+                pass
         return
     _CHECKING = True
 
@@ -82,6 +89,8 @@ def _on_check_done(app, result: core_update.UpdateCheckResult, manual: bool) -> 
 
     if result.error:
         if manual:
+            from ui.app_dialogs import show_error
+
             show_error(
                 app,
                 f"检查更新失败：\n{result.error}\n\n也可手动打开：\n{core_update.GITHUB_RELEASES_PAGE}",
@@ -90,6 +99,8 @@ def _on_check_done(app, result: core_update.UpdateCheckResult, manual: bool) -> 
 
     if not result.has_update:
         if manual:
+            from ui.app_dialogs import show_info
+
             show_info(
                 app,
                 f"当前已是最新版本。\n\n本地：{result.current_version}\n远程：{result.latest_version or '—'}",
@@ -198,6 +209,8 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
         def done():
             close_progress(progress_win)
             if err:
+                from ui.app_dialogs import show_error
+
                 show_error(
                     app,
                     f"更新失败：\n{err}\n\n可手动下载：\n{core_update.GITHUB_RELEASES_PAGE}",
@@ -253,11 +266,15 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
         def done():
             close_progress(progress_win)
             if err:
+                from ui.app_dialogs import show_error
+
                 show_error(
                     app,
                     f"下载失败：\n{err}\n\n可手动打开：\n{core_update.GITHUB_RELEASES_PAGE}",
                 )
                 return
+            from ui.app_dialogs import show_info
+
             show_info(
                 app,
                 f"已下载到：\n{dest}\n\n请解压后手动替换 count_down_tool.app。",

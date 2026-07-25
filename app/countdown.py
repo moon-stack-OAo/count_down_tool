@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 from core.countdown_core import (
     ACTION_FINISH,
@@ -391,11 +391,14 @@ class CountdownController:
             except Exception:
                 logger.debug("托盘 notify 失败", exc_info=True)
         try:
-            app.master.after(
-                0, lambda: messagebox.showinfo(title, message, parent=app.master)
-            )
+            def _tip():
+                from ui.app_dialogs import show_info
+
+                show_info(app, message, title=title)
+
+            app.master.after(0, _tip)
         except Exception:
-            logger.debug("messagebox 通知失败", exc_info=True)
+            logger.debug("结束通知弹窗失败", exc_info=True)
 
     def ring_bell(self):
         """结束提示音：文件类完整播 1 次；系统铃循环 3 次；静音跳过。"""

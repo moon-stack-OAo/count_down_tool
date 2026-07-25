@@ -9,7 +9,8 @@ import tkinter as tk
 from typing import Optional
 
 from core.countdown_core import APP_NAME
-from ui.design.tokens import SPACE_LG, SPACE_MD, SPACE_SM, UPDATE_DIALOG_WIDTH
+from ui.design.tokens import SPACE_LG, SPACE_MD, SPACE_SM
+from ui.widgets import make_pill
 from ui.window_chrome_dialog import center_dialog_later, use_borderless_chrome
 
 logger = logging.getLogger("count_down_tool")
@@ -165,36 +166,6 @@ def temporary_withdraw(*windows) -> _WithdrawGuard:
     return _WithdrawGuard(*windows)
 
 
-def _pill(parent, text, *, app, c, primary=True, command=None, danger=False):
-    if danger:
-        bg = c.get("error", "#FB7185")
-        fg = c.get("white", "#FFFFFF")
-        hover = c.get("btn_hover_close", bg)
-    elif primary:
-        bg = c.get("btn_primary", c["accent"])
-        fg = c.get("btn_on_primary", c["bg"])
-        hover = c.get("btn_primary_hover", c.get("accent_hover", bg))
-    else:
-        bg = c["chip"]
-        fg = c["text"]
-        hover = c.get("chip_hover", c["border"])
-    btn = tk.Label(
-        parent,
-        text=text,
-        font=app._font("label", 9, bold=True) if primary or danger else app._font("label", 9),
-        bg=bg,
-        fg=fg,
-        padx=14,
-        pady=6,
-        cursor="hand2",
-    )
-    if command:
-        btn.bind("<Button-1>", lambda e: command())
-    btn.bind("<Enter>", lambda e: btn.config(bg=hover))
-    btn.bind("<Leave>", lambda e: btn.config(bg=bg))
-    return btn
-
-
 def _show_message(
     app,
     kind: str,
@@ -259,7 +230,7 @@ def _show_message(
         anchor="w",
     ).pack(anchor="w", pady=(SPACE_SM, SPACE_LG))
 
-    _pill(shell, "知道了", app=app, c=c, primary=True, command=_close).pack(side=tk.RIGHT)
+    make_pill(shell, "知道了", app=app, c=c, primary=True, command=_close).pack(side=tk.RIGHT)
 
     win.update_idletasks()
     w = max(320, min(_DIALOG_WIDTH, win.winfo_reqwidth() + 32))
@@ -349,7 +320,7 @@ def ask_yes_no(
 
     row = tk.Frame(shell, bg=c["bg"])
     row.pack(fill=tk.X)
-    _pill(
+    make_pill(
         row,
         yes_text,
         app=app,
@@ -358,9 +329,9 @@ def ask_yes_no(
         danger=danger,
         command=lambda: _finish(True),
     ).pack(side=tk.RIGHT, padx=(SPACE_SM, 0))
-    _pill(row, no_text, app=app, c=c, primary=False, command=lambda: _finish(False)).pack(
-        side=tk.RIGHT
-    )
+    make_pill(
+        row, no_text, app=app, c=c, primary=False, command=lambda: _finish(False)
+    ).pack(side=tk.RIGHT)
 
     win.update_idletasks()
     w = max(320, min(_DIALOG_WIDTH, win.winfo_reqwidth() + 32))

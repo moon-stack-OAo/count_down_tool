@@ -353,91 +353,21 @@ def close_progress(win) -> None:
 
 
 def show_update_message(app, kind: str, message: str, title: str = "") -> None:
-    """主题化轻量提示（info / error）。简单场景也可用 messagebox。"""
-    parent = _picker_parent(app)
-    c = app.COLORS
+    """主题化轻量提示：委托统一 app_dialogs。"""
+    from ui.app_dialogs import show_error, show_info
+
     kind = (kind or "info").lower()
     if kind == "error":
-        accent = c.get("error", "#FB7185")
-        default_title = "出错了"
+        show_error(app, message, title=title or "出错了")
     else:
-        accent = c.get("accent", "#38BDF8")
-        default_title = "提示"
-
-    win = tk.Toplevel(parent)
-    display_title = title or default_title
-    win.title(f"{APP_NAME} · {display_title}")
-    win.configure(bg=c["bg"])
-    win.resizable(False, False)
-    try:
-        win.attributes("-topmost", True)
-    except tk.TclError:
-        pass
-    try:
-        if parent is not app.master or parent.winfo_viewable():
-            win.transient(parent)
-    except tk.TclError:
-        pass
-
-    def _close():
-        try:
-            win.destroy()
-        except tk.TclError:
-            pass
-
-    win.protocol("WM_DELETE_WINDOW", _close)
-    use_borderless_chrome(win, app, title=display_title, on_close=_close)
-
-    shell = tk.Frame(win, bg=c["bg"], padx=SPACE_LG, pady=SPACE_LG)
-    shell.pack(fill=tk.BOTH, expand=True)
-
-    tk.Label(
-        shell,
-        text=display_title,
-        font=app._font("button", 12, bold=True),
-        bg=c["bg"],
-        fg=accent,
-    ).pack(anchor="w")
-    tk.Label(
-        shell,
-        text=message or "",
-        font=app._font("label", 9),
-        bg=c["bg"],
-        fg=c["text"],
-        wraplength=UPDATE_DIALOG_WIDTH - 48,
-        justify=tk.LEFT,
-        anchor="w",
-    ).pack(anchor="w", pady=(SPACE_SM, SPACE_LG))
-
-    _pill(shell, "知道了", app=app, c=c, primary=True, command=_close).pack(
-        side=tk.RIGHT
-    )
-    win.update_idletasks()
-    w = max(320, min(UPDATE_DIALOG_WIDTH, win.winfo_reqwidth() + 32))
-    h = max(140, win.winfo_reqheight() + 16)
-    _center(win, w, h)
-    _activate_picker(win)
+        show_info(app, message, title=title or "提示")
 
 
 def _pill(parent, text, *, app, c, primary=True, command=None):
-    bg = c["accent"] if primary else c["chip"]
-    fg = c["bg"] if primary else c["text"]
-    hover = c["accent_hover"] if primary else c.get("chip_hover", c["border"])
-    btn = tk.Label(
-        parent,
-        text=text,
-        font=app._font("label", 9, bold=True) if primary else app._font("label", 9),
-        bg=bg,
-        fg=fg,
-        padx=14,
-        pady=6,
-        cursor="hand2",
-    )
-    if command:
-        btn.bind("<Button-1>", lambda e: command())
-    btn.bind("<Enter>", lambda e: btn.config(bg=hover))
-    btn.bind("<Leave>", lambda e: btn.config(bg=bg))
-    return btn
+    """兼容旧调用：委托统一 make_pill。"""
+    from ui.widgets import make_pill
+
+    return make_pill(parent, text, app=app, c=c, primary=primary, command=command)
 
 
 def _center(win, w: int, h: int) -> None:

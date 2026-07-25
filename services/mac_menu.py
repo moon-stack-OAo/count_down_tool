@@ -11,10 +11,8 @@ from __future__ import annotations
 import logging
 import platform
 import tkinter as tk
-from tkinter import messagebox
 
-from core.countdown_core import button_text_for_state
-from ui.context_menus import tray_mini_menu_label, tray_window_menu_label
+from core.countdown_core import APP_NAME, __version__, button_text_for_state
 
 logger = logging.getLogger("count_down_tool")
 
@@ -34,14 +32,16 @@ def init_mac_menubar(app) -> bool:
         # Apple 菜单（关于）
         apple = tk.Menu(menubar, name="apple", tearoff=0)
         menubar.add_cascade(menu=apple)
-        apple.add_command(
-            label=f"关于 {APP_NAME}",
-            command=lambda: messagebox.showinfo(
-                APP_NAME,
+        def _about():
+            from ui.app_dialogs import show_info
+
+            show_info(
+                app,
                 f"{APP_NAME}\n版本 {__version__}",
-                parent=root,
-            ),
-        )
+                title=f"关于 {APP_NAME}",
+            )
+
+        apple.add_command(label=f"关于 {APP_NAME}", command=_about)
 
         # 设置：每次打开前重建，保证状态文案最新
         settings = tk.Menu(menubar, tearoff=0)
@@ -85,6 +85,8 @@ def _fill_settings(menu: tk.Menu, app) -> None:
         command=lambda: _show_settings(app),
     )
     menu.add_separator()
+    from ui.context_menus import tray_mini_menu_label, tray_window_menu_label
+
     menu.add_command(
         label=tray_window_menu_label(app._is_mini),
         command=app._show_full_mode,
