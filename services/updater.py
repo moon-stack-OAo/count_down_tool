@@ -82,6 +82,29 @@ def _mark_checked_today(app) -> None:
         logger.debug("保存 last_update_check 失败", exc_info=True)
 
 
+def set_pending_update(app, result: Optional[core_update.UpdateCheckResult]) -> None:
+    """缓存待处理更新并刷新完整窗标题 NEW 角标。"""
+    app._pending_update_result = result if (result and result.has_update) else None
+    try:
+        from ui.full_window import refresh_update_badge
+
+        refresh_update_badge(app)
+    except Exception:
+        logger.debug("刷新更新角标失败", exc_info=True)
+
+
+def open_update_from_ui(app) -> None:
+    """标题 NEW / 右键菜单：有缓存则直接弹更新窗，否则手动检查。"""
+    pending = getattr(app, "_pending_update_result", None)
+    if pending is not None and getattr(pending, "has_update", False):
+        notes = ""
+        if pending.release:
+            notes = core_update.truncate_release_notes(pending.release.body)
+        _prompt_update(app, pending, notes)
+        return
+    run_update_check(app, manual=True)
+
+
 def _on_check_done(app, result: core_update.UpdateCheckResult, manual: bool) -> None:
     global _CHECKING
     _CHECKING = False
@@ -98,6 +121,7 @@ def _on_check_done(app, result: core_update.UpdateCheckResult, manual: bool) -> 
         return
 
     if not result.has_update:
+        set_pending_update(app, None)
         if manual:
             from ui.app_dialogs import show_info
 
@@ -110,6 +134,7 @@ def _on_check_done(app, result: core_update.UpdateCheckResult, manual: bool) -> 
     notes = ""
     if result.release:
         notes = core_update.truncate_release_notes(result.release.body)
+    set_pending_update(app, result)
     # 有更新：托盘气泡提示（启动静默检查时尤其有用；无托盘则仅弹窗）
     _notify_update_available(app, result)
     _prompt_update(app, result, notes)
@@ -137,6 +162,7 @@ def _prompt_update(app, result: core_update.UpdateCheckResult, notes: str) -> No
 
     def on_action(action: str) -> None:
         if action == "later":
+            # 保留 pending，完整窗标题 NEW 角标继续提示
             return
         if action == "ignore":
             app._ignored_update_version = ver
@@ -144,6 +170,7 @@ def _prompt_update(app, result: core_update.UpdateCheckResult, notes: str) -> No
                 app._save_config()
             except Exception:
                 pass
+            set_pending_update(app, None)
             return
 
         # 用户接受更新 → 清除忽略

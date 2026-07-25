@@ -150,6 +150,7 @@ class CountdownApp:
         self._check_update_on_start = True
         self._last_update_check = ""
         self._ignored_update_version = ""
+        self._pending_update_result = None  # 有更新时缓存，供标题 NEW 角标
         self.COLORS = resolve_theme(self._theme_id)
 
         # 倒计时状态（完整和 mini 共享）

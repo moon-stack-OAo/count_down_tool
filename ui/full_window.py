@@ -4,9 +4,32 @@
 import tkinter as tk
 from tkinter import ttk
 
-from core.countdown_core import APP_NAME
+from core.countdown_core import APP_NAME, __version__
 from ui.context_menus import bind_full_context_menu, bind_full_context_menu_tree
 from ui.widgets import RoundedFrame, init_circle_button, update_circle_button
+
+
+def refresh_update_badge(app) -> None:
+    """按 app._pending_update_result 显示/隐藏标题栏 NEW 角标。"""
+    badge = getattr(app, "_title_update_badge", None)
+    if badge is None:
+        return
+    try:
+        if not badge.winfo_exists():
+            return
+    except tk.TclError:
+        return
+    pending = getattr(app, "_pending_update_result", None)
+    show = bool(pending is not None and getattr(pending, "has_update", False))
+    try:
+        if show:
+            if not badge.winfo_ismapped():
+                badge.pack(side=tk.LEFT, padx=(6, 0))
+        else:
+            if badge.winfo_ismapped():
+                badge.pack_forget()
+    except tk.TclError:
+        pass
 
 
 def setup_styles(app):
@@ -138,6 +161,39 @@ def build_full_ui(app):
     title_label.pack(side=tk.LEFT, fill=tk.Y)
     title_label.bind("<Button-1>", app._start_drag)
     title_label.bind("<B1-Motion>", app._on_drag)
+
+    def _on_update_from_title(_e=None):
+        from services.updater import open_update_from_ui
+
+        open_update_from_ui(app)
+
+    # 弱样式版本号：点击等同检查更新
+    version_label = tk.Label(
+        title_bar,
+        text=f"v{__version__}",
+        bg=c["title_bar"],
+        fg=c.get("text_muted", c.get("text_dim", c["text"])),
+        font=app._font("label", 8),
+        cursor="hand2",
+    )
+    version_label.pack(side=tk.LEFT, padx=(6, 0))
+    version_label.bind("<Button-1>", _on_update_from_title)
+    app._title_version_label = version_label
+
+    # 标题旁 NEW：有可用更新时显示，点击打开更新流程
+    update_badge = tk.Label(
+        title_bar,
+        text=" NEW ",
+        bg=c.get("error", "#FB7185"),
+        fg=c.get("white", "#FFFFFF"),
+        font=app._font("label", 8, bold=True),
+        cursor="hand2",
+        padx=4,
+        pady=1,
+    )
+    app._title_update_badge = update_badge
+    update_badge.bind("<Button-1>", _on_update_from_title)
+    refresh_update_badge(app)
 
     btn_frame = tk.Frame(title_bar, bg=app.COLORS["title_bar"])
     btn_frame.pack(side=tk.RIGHT, padx=(0, 10))
@@ -456,5 +512,5 @@ def build_full_ui(app):
 
     # 右键菜单：标题区 + 主内容树（不绑关闭/最小化按钮，避免误触）
     # Button-3 与标题拖动（Button-1）互不干扰
-    bind_full_context_menu(app, title_bar, title_label)
+    bind_full_context_menu(app, title_bar, title_label, version_label, update_badge)
     bind_full_context_menu_tree(app, main_frame)

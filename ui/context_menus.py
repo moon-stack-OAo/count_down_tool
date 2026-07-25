@@ -166,6 +166,20 @@ def _fill_full_menu(menu, app):
         show_settings(app)
 
     menu.add_command(label="设置…", command=_open_settings)
+
+    def _check_update():
+        from services.updater import open_update_from_ui
+
+        open_update_from_ui(app)
+
+    pending = getattr(app, "_pending_update_result", None)
+    if pending is not None and getattr(pending, "has_update", False):
+        ver = (getattr(pending, "latest_version", None) or "").strip()
+        label = f"更新到 v{ver}…" if ver else "查看更新…"
+    else:
+        label = "检查更新…"
+    menu.add_command(label=label, command=_check_update)
+
     if app._has_tray():
         menu.add_command(label="隐藏到托盘", command=app._hide_to_tray)
     else:
