@@ -2,14 +2,14 @@
 
 ![Python](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
-![Windows](https://img.shields.io/badge/Windows%20(v1.3.26)-0078D6?logo=windows&logoColor=white)
-![macOS](https://img.shields.io/badge/macOS%20(v1.3.26)-000000?logo=apple&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.3.26-brightgreen.svg)
+![Windows](https://img.shields.io/badge/Windows%20(v1.3.27)-0078D6?logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS%20(v1.3.27)-000000?logo=apple&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.3.27-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 基于 **Python + Tkinter** 的深色主题桌面倒计时工具（完整模式 + Mini 小组件）。
 
-**当前版本：1.3.26**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.3.27**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ---
 
@@ -81,7 +81,7 @@ python count_down_tool.py
 
 ## 打包构建
 
-版本号读取自 `core.countdown_core.__version__`（当前 **1.3.26**）。CI 打 tag 时要求 tag 与代码版本一致。
+版本号读取自 `core.countdown_core.__version__`（当前 **1.3.27**）。CI 打 tag 时要求 tag 与代码版本一致。
 
 ### Windows
 
