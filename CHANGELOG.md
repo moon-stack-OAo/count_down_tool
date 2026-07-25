@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+## 1.3.26
+
+### 修复
+
+- **CI 跨平台测试**：macOS 上 mock `os.startfile` 使用 `create=True`；`test_resolve_frozen` 改用本机路径分隔符
+
 ## 1.3.25
 
 ### 修复

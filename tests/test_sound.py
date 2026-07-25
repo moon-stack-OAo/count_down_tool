@@ -189,7 +189,8 @@ class TestWindowsPlayChain(unittest.TestCase):
                 with mock.patch(
                         "services.sound._play_windows_mci", return_value=False
                 ) as mci:
-                    with mock.patch("os.startfile") as sf:
+                    # macOS/Linux 无 os.startfile，须 create=True
+                    with mock.patch("os.startfile", create=True) as sf:
                         from services.sound import _play_windows
 
                         self.assertTrue(_play_windows(path))
@@ -210,7 +211,7 @@ class TestWindowsPlayChain(unittest.TestCase):
                 with mock.patch(
                         "services.sound._play_windows_mci", return_value=True
                 ) as mci:
-                    with mock.patch("os.startfile") as sf:
+                    with mock.patch("os.startfile", create=True) as sf:
                         from services.sound import _play_windows
 
                         self.assertTrue(_play_windows(path))
@@ -230,7 +231,7 @@ class TestWindowsPlayChain(unittest.TestCase):
                 with mock.patch(
                         "services.sound._play_windows_mci", return_value=False
                 ):
-                    with mock.patch("os.startfile") as sf:
+                    with mock.patch("os.startfile", create=True) as sf:
                         from services.sound import _play_windows
 
                         self.assertTrue(_play_windows(path))

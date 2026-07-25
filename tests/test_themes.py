@@ -129,13 +129,16 @@ class TestMergeThemeAutostart(unittest.TestCase):
 
 class TestAutostartResolve(unittest.TestCase):
     def test_resolve_frozen(self):
+        # 用本机路径分隔符，避免 macOS 上反斜杠被当成文件名导致 dirname 错误
+        apps = os.path.join(os.path.sep, "Apps")
+        exe_path = os.path.join(apps, "count_down_tool.exe")
         exe, args, cwd = autostart.resolve_launch_command(
             frozen=True,
-            executable=r"C:\Apps\count_down_tool.exe",
+            executable=exe_path,
         )
-        self.assertEqual(exe, r"C:\Apps\count_down_tool.exe")
+        self.assertEqual(exe, exe_path)
         self.assertEqual(args, [])
-        self.assertEqual(cwd, r"C:\Apps")
+        self.assertEqual(cwd, os.path.abspath(apps))
 
     def test_resolve_dev(self):
         script = os.path.join(_ROOT, "count_down_tool.py")
