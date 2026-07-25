@@ -12,6 +12,7 @@ import shutil
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -144,6 +145,24 @@ def select_asset(
     return None
 
 
+def _format_http_error(exc: BaseException) -> str:
+    """将 urllib HTTP 错误转为可读说明（尤其是 API 限流）。"""
+    if isinstance(exc, urllib.error.HTTPError):
+        code = int(exc.code or 0)
+        reason = str(exc.reason or "")
+        if code == 403 and "rate limit" in (reason + str(exc)).lower():
+            return (
+                "GitHub API 请求过于频繁（未登录每小时约 60 次）。"
+                "请稍后再试，或直接打开发布页下载。"
+            )
+        if code == 403:
+            return f"GitHub 拒绝访问（HTTP 403）。{reason}".strip()
+        if code == 404:
+            return "未找到 Release（仓库可能无发布或地址有误）。"
+        return f"HTTP Error {code}: {reason}".strip()
+    return str(exc)
+
+
 def _http_get_json(url: str, timeout: float = 15.0) -> Dict[str, Any]:
     req = urllib.request.Request(
         url,
@@ -153,23 +172,107 @@ def _http_get_json(url: str, timeout: float = 15.0) -> Dict[str, Any]:
         },
         method="GET",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(_format_http_error(exc)) from exc
     data = json.loads(raw.decode("utf-8"))
     if not isinstance(data, dict):
         raise ValueError("GitHub API 返回非对象 JSON")
     return data
 
 
+def _release_download_url(version: str, asset_name: str) -> str:
+    ver = normalize_tag_version(version)
+    tag = f"v{ver}"
+    return (
+        f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
+        f"/releases/download/{tag}/{asset_name}"
+    )
+
+
+def _synthetic_assets(version: str) -> Tuple[Dict[str, Any], ...]:
+    """按命名约定生成三平台附件（无需 API assets 列表）。"""
+    ver = normalize_tag_version(version)
+    names = (
+        f"count_down_tool-{ver}-win64.zip",
+        f"count_down_tool-{ver}-mac-arm64.zip",
+        f"count_down_tool-{ver}-mac-x86_64.zip",
+    )
+    out: List[Dict[str, Any]] = []
+    for name in names:
+        out.append(
+            {
+                "name": name,
+                "browser_download_url": _release_download_url(ver, name),
+                "size": 0,
+            }
+        )
+    return tuple(out)
+
+
+def fetch_latest_tag_via_redirect(timeout: float = 15.0) -> str:
+    """
+    通过 GitHub 网页 releases/latest 的 302 解析最新 tag。
+    不走 api.github.com，避免未认证 60 次/小时限流。
+    """
+    req = urllib.request.Request(
+        GITHUB_RELEASES_PAGE,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            final = str(resp.geturl() or "")
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(_format_http_error(exc)) from exc
+    # .../releases/tag/v1.3.26 或 .../releases/tag/1.3.26
+    m = re.search(r"/releases/tag/([^/?#]+)", final)
+    if not m:
+        raise RuntimeError(f"无法从发布页解析版本：{final or GITHUB_RELEASES_PAGE}")
+    return urllib.parse.unquote(m.group(1))
+
+
 def fetch_latest_release(timeout: float = 15.0) -> ReleaseInfo:
-    """请求 GitHub releases/latest。"""
-    data = _http_get_json(GITHUB_API_LATEST, timeout=timeout)
+    """获取最新 Release：优先网页重定向（不占 API 配额），失败再回退 API。"""
+    # 1) 网页重定向 + 按约定合成下载链接（不请求 api.github.com）
+    try:
+        tag = fetch_latest_tag_via_redirect(timeout=timeout)
+        version = normalize_tag_version(tag)
+        if not version:
+            raise RuntimeError("解析到空版本号")
+        tag_name = tag if str(tag).lower().startswith("v") else f"v{version}"
+        html_url = (
+            f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
+            f"/releases/tag/{tag_name}"
+        )
+        return ReleaseInfo(
+            version=version,
+            tag_name=tag_name,
+            body="",
+            html_url=html_url,
+            assets=_synthetic_assets(version),
+        )
+    except Exception as web_exc:
+        logger.info("网页方式检查更新失败，回退 API: %s", web_exc)
+
+    # 2) API 回退（可能触发未认证限流）
+    try:
+        data = _http_get_json(GITHUB_API_LATEST, timeout=timeout)
+    except Exception as api_exc:
+        raise RuntimeError(_format_http_error(api_exc)) from api_exc
     tag = str(data.get("tag_name") or "")
     version = normalize_tag_version(tag)
     assets_raw = data.get("assets") or []
     assets: List[Dict[str, Any]] = [
         a for a in assets_raw if isinstance(a, dict)
     ]
+    if not assets and version:
+        assets = list(_synthetic_assets(version))
     return ReleaseInfo(
         version=version,
         tag_name=tag,
@@ -204,7 +307,7 @@ def check_for_update(
             asset_url=None,
             asset_size=0,
             platform_key=pk,
-            error=str(exc),
+            error=_format_http_error(exc),
         )
 
     newer = is_newer_version(release.version, current_version)

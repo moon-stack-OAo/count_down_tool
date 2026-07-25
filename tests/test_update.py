@@ -21,8 +21,12 @@ from core.update import (
     select_asset,
     write_windows_replace_script,
     check_for_update,
+    fetch_latest_release,
+    _format_http_error,
+    _synthetic_assets,
     ReleaseInfo,
 )
+import urllib.error
 
 
 class TestVersion(unittest.TestCase):
@@ -132,6 +136,48 @@ class TestCheckForUpdate(unittest.TestCase):
             r = check_for_update("1.0.0")
         self.assertIsNotNone(r.error)
         self.assertFalse(r.has_update)
+
+    def test_rate_limit_message(self):
+        err = urllib.error.HTTPError(
+            url="https://api.github.com/x",
+            code=403,
+            msg="rate limit exceeded",
+            hdrs=None,
+            fp=None,
+        )
+        text = _format_http_error(err)
+        self.assertIn("过于频繁", text)
+
+    def test_synthetic_assets(self):
+        assets = _synthetic_assets("1.3.26")
+        names = {a["name"] for a in assets}
+        self.assertIn("count_down_tool-1.3.26-win64.zip", names)
+        self.assertTrue(
+            assets[0]["browser_download_url"].startswith(
+                "https://github.com/moon-stack-OAo/count_down_tool/releases/download/"
+            )
+        )
+
+    def test_fetch_via_redirect_no_api(self):
+        class _Resp:
+            def geturl(self):
+                return "https://github.com/moon-stack-OAo/count_down_tool/releases/tag/v1.3.26"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return b""
+
+        with mock.patch("core.update.urllib.request.urlopen", return_value=_Resp()):
+            with mock.patch("core.update._http_get_json") as api:
+                info = fetch_latest_release()
+        api.assert_not_called()
+        self.assertEqual(info.version, "1.3.26")
+        self.assertTrue(any(a["name"].endswith("win64.zip") for a in info.assets))
 
 
 if __name__ == "__main__":
