@@ -8,7 +8,7 @@ import os
 import threading
 import webbrowser
 from datetime import date
-from typing import Optional
+from typing import Callable, Optional
 
 from core.countdown_core import APP_NAME, __version__
 from core import update as core_update
@@ -18,6 +18,9 @@ logger = logging.getLogger("count_down_tool.updater")
 # 启动后延迟检查（毫秒）
 _STARTUP_DELAY_MS = 4000
 _CHECKING = False
+
+# kind: busy | ok | error | update | info
+StatusCb = Optional[Callable[[str, str], None]]
 
 
 def schedule_startup_check(app) -> None:
@@ -38,11 +41,31 @@ def schedule_startup_check(app) -> None:
         logger.debug("调度启动更新检查失败", exc_info=True)
 
 
-def run_update_check(app, manual: bool = False) -> None:
-    """后台线程检查更新；结果回主线程。"""
+def _emit_status(status_cb: StatusCb, message: str, kind: str = "info") -> None:
+    if not status_cb:
+        return
+    try:
+        status_cb(message, kind)
+    except Exception:
+        logger.debug("更新状态回调失败", exc_info=True)
+
+
+def run_update_check(
+        app,
+        manual: bool = False,
+        *,
+        status_cb: StatusCb = None,
+) -> None:
+    """后台线程检查更新；结果回主线程。
+
+    status_cb(message, kind)：设置中心等内联反馈；传入后手动检查不再弹 info/error。
+    kind: busy | ok | error | update | info
+    """
     global _CHECKING
     if _CHECKING:
-        if manual:
+        if status_cb:
+            _emit_status(status_cb, "正在检查更新，请稍候…", "busy")
+        elif manual:
             def _busy():
                 from ui.app_dialogs import show_info
 
@@ -54,6 +77,7 @@ def run_update_check(app, manual: bool = False) -> None:
                 pass
         return
     _CHECKING = True
+    _emit_status(status_cb, "正在检查更新…", "busy")
 
     def worker():
         # 手动检查不受「忽略此版本」影响；启动检查会尊重忽略
@@ -65,7 +89,12 @@ def run_update_check(app, manual: bool = False) -> None:
             ignored_version=ignored,
         )
         try:
-            app.master.after(0, lambda: _on_check_done(app, result, manual=manual))
+            app.master.after(
+                0,
+                lambda: _on_check_done(
+                    app, result, manual=manual, status_cb=status_cb
+                ),
+            )
         except Exception:
             global _CHECKING
             _CHECKING = False
@@ -105,13 +134,21 @@ def open_update_from_ui(app) -> None:
     run_update_check(app, manual=True)
 
 
-def _on_check_done(app, result: core_update.UpdateCheckResult, manual: bool) -> None:
+def _on_check_done(
+        app,
+        result: core_update.UpdateCheckResult,
+        manual: bool,
+        status_cb: StatusCb = None,
+) -> None:
     global _CHECKING
     _CHECKING = False
     _mark_checked_today(app)
 
     if result.error:
-        if manual:
+        msg = f"检查失败：{result.error}"
+        if status_cb:
+            _emit_status(status_cb, msg, "error")
+        elif manual:
             from ui.app_dialogs import show_error
 
             show_error(
@@ -122,7 +159,14 @@ def _on_check_done(app, result: core_update.UpdateCheckResult, manual: bool) -> 
 
     if not result.has_update:
         set_pending_update(app, None)
-        if manual:
+        remote = result.latest_version or "—"
+        local = result.current_version or "—"
+        msg = f"已是最新版本  v{local}"
+        if remote and remote != local and remote != "—":
+            msg = f"已是最新版本  本地 v{local} · 远程 v{remote}"
+        if status_cb:
+            _emit_status(status_cb, msg, "ok")
+        elif manual:
             from ui.app_dialogs import show_info
 
             show_info(
@@ -135,8 +179,18 @@ def _on_check_done(app, result: core_update.UpdateCheckResult, manual: bool) -> 
     if result.release:
         notes = core_update.truncate_release_notes(result.release.body)
     set_pending_update(app, result)
-    # 有更新：托盘气泡提示（启动静默检查时尤其有用；无托盘则仅弹窗）
+    ver = (result.latest_version or "").strip()
+    if status_cb:
+        _emit_status(
+            status_cb,
+            f"发现新版本 v{ver}" if ver else "发现新版本",
+            "update",
+        )
+    # 有更新：托盘气泡（启动静默时尤其有用）
     _notify_update_available(app, result)
+    # 设置中心内联模式：不自动弹窗，由用户点「查看更新」；其它入口仍弹安装窗
+    if status_cb:
+        return
     _prompt_update(app, result, notes)
 
 

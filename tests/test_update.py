@@ -78,9 +78,9 @@ class TestExtractAndScript(unittest.TestCase):
             with open(out, "rb") as f:
                 self.assertEqual(f.read(), payload)
 
-    def test_write_bat(self):
+    def test_write_replace_script(self):
         with tempfile.TemporaryDirectory() as tmp:
-            script = os.path.join(tmp, "u.bat")
+            script = os.path.join(tmp, "apply_update.ps1")
             write_windows_replace_script(
                 script,
                 target_exe=r"C:\App\count_down_tool.exe",
@@ -88,15 +88,15 @@ class TestExtractAndScript(unittest.TestCase):
                 pid=12345,
                 zip_path=r"C:\Temp\a.zip",
             )
-            with open(script, "r", encoding="gbk") as f:
+            with open(script, "r", encoding="utf-8-sig") as f:
                 body = f.read()
             self.assertIn("12345", body)
             self.assertIn("count_down_tool.exe", body)
-            self.assertIn("copy /Y", body)
-            self.assertIn("EnableDelayedExpansion", body)
-            self.assertIn("SSIZE", body)
-            self.assertIn('start "" /D', body)
-            self.assertIn(":copyloop", body)
+            self.assertIn("Copy-Item", body)
+            self.assertIn("Get-Process", body)
+            self.assertIn("Start-Process", body)
+            self.assertNotIn("tasklist", body)
+            self.assertNotIn("find ", body.lower())
 
 
 class TestCheckForUpdate(unittest.TestCase):

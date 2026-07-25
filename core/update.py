@@ -651,6 +651,11 @@ def default_download_dir() -> str:
     return tempfile.gettempdir()
 
 
+def _ps_single_quoted(path: str) -> str:
+    """PowerShell 单引号字符串（内部 ' 写成 ''）。"""
+    return "'" + (path or "").replace("'", "''") + "'"
+
+
 def write_windows_replace_script(
     script_path: str,
     target_exe: str,
@@ -659,71 +664,58 @@ def write_windows_replace_script(
     zip_path: Optional[str] = None,
 ) -> str:
     """
-    生成 bat：等待 PID 退出 → 重试覆盖 exe → 校验大小 → 延迟启动 → 清理。
+    生成静默 PowerShell：等待 PID 退出 → 重试覆盖 → 校验 → 延迟启动 → 清理。
+    不再使用 bat + tasklist/find（易弹黑窗、find 误匹配死循环）。
     返回 script_path。
     """
     target_abs = os.path.abspath(target_exe)
     source_abs = os.path.abspath(source_exe)
     target_dir = os.path.dirname(target_abs) or "."
-    # 用短路径风格避免引号问题；全部加引号
-    # 延迟启动：给 Defender 扫描与文件句柄释放留时间，降低
-    # onefile 解压 _MEI 时 LoadLibrary(python311.dll) 失败概率
+    zip_abs = os.path.abspath(zip_path) if zip_path else ""
+    # 延迟启动：给 Defender / 句柄释放时间，降低 onefile _MEI 加载失败
     lines = [
-        "@echo off",
-        "setlocal EnableDelayedExpansion",
-        f'set "TARGET={target_abs}"',
-        f'set "SOURCE={source_abs}"',
-        f'set "TARGETDIR={target_dir}"',
-        f"set PID={int(pid)}",
-        ":waitloop",
-        'tasklist /FI "PID eq %PID%" 2>NUL | find "%PID%" >NUL',
-        "if not errorlevel 1 (",
-        "  timeout /t 1 /nobreak >NUL",
-        "  goto waitloop",
-        ")",
-        "timeout /t 2 /nobreak >NUL",
-        "set RETRIES=0",
-        ":copyloop",
-        'copy /Y "%SOURCE%" "%TARGET%" >NUL',
-        "if errorlevel 1 (",
-        "  set /a RETRIES+=1",
-        "  if !RETRIES! GEQ 8 (",
-        "    echo Update failed: cannot copy executable.",
-        "    pause",
-        "    exit /b 1",
-        "  )",
-        "  timeout /t 1 /nobreak >NUL",
-        "  goto copyloop",
-        ")",
-        'for %%I in ("%SOURCE%") do set SSIZE=%%~zI',
-        'for %%I in ("%TARGET%") do set TSIZE=%%~zI',
-        'if not "!SSIZE!"=="!TSIZE!" (',
-        "  echo Update failed: size mismatch after copy.",
-        "  pause",
-        "  exit /b 1",
-        ")",
-        "if !TSIZE! LSS 1024 (",
-        "  echo Update failed: target too small.",
-        "  pause",
-        "  exit /b 1",
-        ")",
-        "timeout /t 3 /nobreak >NUL",
-        'start "" /D "%TARGETDIR%" "%TARGET%"',
-        'del /f /q "%SOURCE%" >NUL 2>&1',
+        "$ErrorActionPreference = 'Stop'",
+        f"$target = {_ps_single_quoted(target_abs)}",
+        f"$source = {_ps_single_quoted(source_abs)}",
+        f"$targetDir = {_ps_single_quoted(target_dir)}",
+        f"$pidWait = {int(pid)}",
+        f"$zipPath = {_ps_single_quoted(zip_abs)}",
+        "$self = $MyInvocation.MyCommand.Path",
+        # 等待旧进程退出（最多约 120 秒，避免永久卡住）
+        "$deadline = (Get-Date).AddSeconds(120)",
+        "while ((Get-Date) -lt $deadline) {",
+        "  $p = Get-Process -Id $pidWait -ErrorAction SilentlyContinue",
+        "  if (-not $p) { break }",
+        "  Start-Sleep -Milliseconds 500",
+        "}",
+        "Start-Sleep -Seconds 2",
+        "$ok = $false",
+        "for ($i = 0; $i -lt 12; $i++) {",
+        "  try {",
+        "    Copy-Item -LiteralPath $source -Destination $target -Force",
+        "    $ss = (Get-Item -LiteralPath $source).Length",
+        "    $ts = (Get-Item -LiteralPath $target).Length",
+        "    if ($ss -gt 1024 -and $ss -eq $ts) { $ok = $true; break }",
+        "  } catch {}",
+        "  Start-Sleep -Seconds 1",
+        "}",
+        "if (-not $ok) { exit 1 }",
+        "Start-Sleep -Seconds 3",
+        "Start-Process -FilePath $target -WorkingDirectory $targetDir",
+        "try { Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue } catch {}",
+        "if ($zipPath) {",
+        "  try { Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue } catch {}",
+        "}",
+        "try { Remove-Item -LiteralPath $self -Force -ErrorAction SilentlyContinue } catch {}",
+        "exit 0",
     ]
-    if zip_path:
-        lines.append(f'del /f /q "{os.path.abspath(zip_path)}" >NUL 2>&1')
-    lines.extend(
-        [
-            'del /f /q "%~f0" >NUL 2>&1',
-            "endlocal",
-        ]
-    )
     parent = os.path.dirname(script_path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    with open(script_path, "w", encoding="gbk", errors="replace", newline="\r\n") as f:
-        f.write("\r\n".join(lines) + "\r\n")
+    # UTF-8 BOM：Windows PowerShell 5.1 更稳妥识别中文路径
+    text = "\r\n".join(lines) + "\r\n"
+    with open(script_path, "w", encoding="utf-8-sig", newline="") as f:
+        f.write(text)
     return os.path.abspath(script_path)
 
 
@@ -733,13 +725,13 @@ def launch_windows_replace_and_exit_prep(
     zip_path: Optional[str] = None,
 ) -> str:
     """
-    启动替换脚本（不等待）。调用方应随后退出进程。
+    启动静默替换脚本（不等待）。调用方应随后退出进程。
     返回脚本路径。
     """
     import subprocess
 
     work = tempfile.mkdtemp(prefix="cdt_update_")
-    script = os.path.join(work, "apply_update.bat")
+    script = os.path.join(work, "apply_update.ps1")
     write_windows_replace_script(
         script,
         target_exe=os.path.abspath(target_exe),
@@ -747,17 +739,42 @@ def launch_windows_replace_and_exit_prep(
         pid=os.getpid(),
         zip_path=os.path.abspath(zip_path) if zip_path else None,
     )
-    # CREATE_NO_WINDOW + DETACHED 避免卡在控制台
+    # 仅 CREATE_NO_WINDOW：DETACHED_PROCESS 在部分环境下会导致
+    # powershell -File 静默起不来（替换脚本不执行）。
     creation = 0
     if hasattr(subprocess, "CREATE_NO_WINDOW"):
         creation |= subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
-    if hasattr(subprocess, "DETACHED_PROCESS"):
-        creation |= subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
+    if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+        creation |= subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+    startup = None
+    try:
+        startup = subprocess.STARTUPINFO()
+        startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startup.wShowWindow = 0  # SW_HIDE
+    except Exception:
+        startup = None
+    # 用 -Command 执行脚本内容，避免 -File + 临时目录偶发策略问题
+    # 仍 -WindowStyle Hidden，不弹控制台
+    ps_cmd = (
+        f"$ErrorActionPreference='Stop'; "
+        f"& {_ps_single_quoted(os.path.abspath(script))}"
+    )
     subprocess.Popen(
-        ["cmd.exe", "/c", script],
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            ps_cmd,
+        ],
         cwd=work,
         close_fds=True,
         creationflags=creation,
+        startupinfo=startup,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

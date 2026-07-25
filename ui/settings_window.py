@@ -142,9 +142,15 @@ def show_settings(app) -> None:
             except tk.TclError:
                 pass
             _style_tab(k, k == key)
-        # 切页后滚回顶部
+        # 切页后滚回顶部，并按当前内容高度同步是否可滚
         try:
             pages[key]._settings_canvas.yview_moveto(0)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        try:
+            sync = getattr(pages[key], "_settings_sync_scroll", None)
+            if sync:
+                pages[key].after_idle(sync)
         except Exception:
             pass
 
@@ -185,6 +191,12 @@ def show_settings(app) -> None:
     win.update_idletasks()
     for page in pages.values():
         _bind_wheel_tree(page, page._settings_canvas)
+        sync = getattr(page, "_settings_sync_scroll", None)
+        if sync:
+            try:
+                page.after_idle(sync)
+            except tk.TclError:
+                pass
     # overrideredirect 后系统常落到 0,0，延后多次居中
     center_dialog_later(win, SETTINGS_WIDTH, SETTINGS_HEIGHT)
     _activate_picker(win, topmost=False)
@@ -198,7 +210,10 @@ def show_settings(app) -> None:
 
 
 def _make_scroll_page(host: tk.Frame, app, c) -> tk.Frame:
-    """单 Tab 页：Canvas + 细滚动条 + content 内边距。"""
+    """单 Tab 页：Canvas + 细滚动条 + content 内边距。
+
+    内容未超出视口时：scrollregion 锁在可视高度，禁止空滚；滚动条由 ThinScrollbar 自动收起。
+    """
     page = tk.Frame(host, bg=c["bg"])
     canvas = tk.Canvas(page, bg=c["bg"], highlightthickness=0, bd=0)
     scrollbar = ThinScrollbar(
@@ -217,10 +232,34 @@ def _make_scroll_page(host: tk.Frame, app, c) -> tk.Frame:
 
     body = tk.Frame(canvas, bg=c["bg"])
     body_id = canvas.create_window((0, 0), window=body, anchor="nw")
+    scroll_state = {"needed": False}
 
-    def _on_body_configure(_e=None):
+    def _content_height() -> int:
         try:
-            canvas.configure(scrollregion=canvas.bbox("all"))
+            body.update_idletasks()
+            return max(int(body.winfo_reqheight()), 1)
+        except tk.TclError:
+            return 1
+
+    def _sync_scroll(_e=None):
+        """按内容与视口高度更新 scrollregion；不足一屏时不可滚。"""
+        try:
+            ch = max(int(canvas.winfo_height()), 1)
+            bh = _content_height()
+            needed = bh > ch + 1
+            scroll_state["needed"] = needed
+            if needed:
+                canvas.configure(scrollregion=(0, 0, canvas.winfo_width(), bh))
+            else:
+                # 锁在视口高度，yview 无法再偏移
+                canvas.configure(scrollregion=(0, 0, canvas.winfo_width(), ch))
+                canvas.yview_moveto(0)
+            # 触发滚动条 set，收起/展开宽度
+            try:
+                first, last = canvas.yview()
+                scrollbar.set(first, last)
+            except tk.TclError:
+                pass
         except tk.TclError:
             pass
 
@@ -229,11 +268,14 @@ def _make_scroll_page(host: tk.Frame, app, c) -> tk.Frame:
             canvas.itemconfigure(body_id, width=e.width)
         except tk.TclError:
             pass
+        _sync_scroll()
 
-    body.bind("<Configure>", _on_body_configure)
+    body.bind("<Configure>", _sync_scroll)
     canvas.bind("<Configure>", _on_canvas_configure)
 
     def _wheel(e):
+        if not scroll_state["needed"]:
+            return
         try:
             if platform.system() == "Darwin":
                 canvas.yview_scroll(int(-1 * e.delta), "units")
@@ -242,9 +284,23 @@ def _make_scroll_page(host: tk.Frame, app, c) -> tk.Frame:
         except tk.TclError:
             pass
 
+    def _wheel_up(_e=None):
+        if scroll_state["needed"]:
+            try:
+                canvas.yview_scroll(-1, "units")
+            except tk.TclError:
+                pass
+
+    def _wheel_down(_e=None):
+        if scroll_state["needed"]:
+            try:
+                canvas.yview_scroll(1, "units")
+            except tk.TclError:
+                pass
+
     canvas.bind("<MouseWheel>", _wheel)
-    canvas.bind("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
-    canvas.bind("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
+    canvas.bind("<Button-4>", _wheel_up)
+    canvas.bind("<Button-5>", _wheel_down)
 
     content = tk.Frame(body, bg=c["bg"])
     content.pack(fill=tk.BOTH, expand=True, padx=SPACE_MD, pady=(SPACE_MD, SPACE_SM))
@@ -252,13 +308,32 @@ def _make_scroll_page(host: tk.Frame, app, c) -> tk.Frame:
     page._settings_canvas = canvas  # type: ignore[attr-defined]
     page._settings_content = content  # type: ignore[attr-defined]
     page._settings_wheel = _wheel  # type: ignore[attr-defined]
+    page._settings_scroll_state = scroll_state  # type: ignore[attr-defined]
+    page._settings_sync_scroll = _sync_scroll  # type: ignore[attr-defined]
+    page._settings_wheel_up = _wheel_up  # type: ignore[attr-defined]
+    page._settings_wheel_down = _wheel_down  # type: ignore[attr-defined]
     return page
 
 
 def _bind_wheel_tree(root: tk.Misc, canvas: tk.Canvas) -> None:
-    """把滚轮事件绑到子树，保证卡片上也能滚。"""
+    """把滚轮事件绑到子树；仅内容溢出时滚动。"""
+    page = None
+    try:
+        # canvas 的 master 即 page
+        page = canvas.master
+    except Exception:
+        page = None
+    scroll_state = getattr(page, "_settings_scroll_state", None) if page else None
+    wheel = getattr(page, "_settings_wheel", None) if page else None
+    wheel_up = getattr(page, "_settings_wheel_up", None) if page else None
+    wheel_down = getattr(page, "_settings_wheel_down", None) if page else None
 
     def _wheel(e):
+        if scroll_state is not None and not scroll_state.get("needed"):
+            return
+        if wheel:
+            wheel(e)
+            return
         try:
             if platform.system() == "Darwin":
                 canvas.yview_scroll(int(-1 * e.delta), "units")
@@ -267,10 +342,32 @@ def _bind_wheel_tree(root: tk.Misc, canvas: tk.Canvas) -> None:
         except tk.TclError:
             pass
 
+    def _up(e):
+        if scroll_state is not None and not scroll_state.get("needed"):
+            return
+        if wheel_up:
+            wheel_up(e)
+        else:
+            try:
+                canvas.yview_scroll(-1, "units")
+            except tk.TclError:
+                pass
+
+    def _down(e):
+        if scroll_state is not None and not scroll_state.get("needed"):
+            return
+        if wheel_down:
+            wheel_down(e)
+        else:
+            try:
+                canvas.yview_scroll(1, "units")
+            except tk.TclError:
+                pass
+
     def _bind(w):
         w.bind("<MouseWheel>", _wheel)
-        w.bind("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
-        w.bind("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
+        w.bind("<Button-4>", _up)
+        w.bind("<Button-5>", _down)
         for child in w.winfo_children():
             _bind(child)
 
@@ -620,7 +717,7 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
             if cur == SOUND_ID_CUSTOM and path:
                 try:
                     if os.path.normcase(os.path.abspath(cur_path)) == os.path.normcase(
-                        os.path.abspath(path)
+                            os.path.abspath(path)
                     ):
                         mark = "✓  "
                     else:
@@ -796,10 +893,52 @@ def _build_about_section(app, parent, c) -> None:
     btn_row = tk.Frame(card, bg=c["card"])
     btn_row.pack(fill=tk.X)
 
+    status_lbl = tk.Label(
+        card,
+        text="",
+        font=app._font("label", 9),
+        bg=c["card"],
+        fg=c["text_muted"],
+        anchor="w",
+        justify=tk.LEFT,
+        wraplength=SETTINGS_WIDTH - 96,
+    )
+    status_lbl.pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_MD, 0))
+
+    action_row = tk.Frame(card, bg=c["card"])
+
+    # 发现更新时再 pack
+
+    def _set_status(message: str, kind: str = "info") -> None:
+        colors = {
+            "busy": c.get("text_muted", c["text_dim"]),
+            "ok": c.get("success", c["text"]),
+            "error": c.get("error", c["text"]),
+            "update": c.get("accent_glow", c.get("accent", c["text"])),
+            "info": c.get("text_dim", c["text"]),
+        }
+        try:
+            status_lbl.configure(
+                text=message or "",
+                fg=colors.get(kind, c.get("text_dim", c["text"])),
+            )
+        except tk.TclError:
+            return
+        # 有更新时露出「查看更新」
+        try:
+            if kind == "update":
+                if not action_row.winfo_ismapped():
+                    action_row.pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_SM, 0))
+            else:
+                if action_row.winfo_ismapped():
+                    action_row.pack_forget()
+        except tk.TclError:
+            pass
+
     def _check():
         from services.updater import run_update_check
 
-        run_update_check(app, manual=True)
+        run_update_check(app, manual=True, status_cb=_set_status)
 
     def _open_releases():
         try:
@@ -807,12 +946,31 @@ def _build_about_section(app, parent, c) -> None:
         except Exception:
             logger.debug("打开发布页失败", exc_info=True)
 
+    def _open_update():
+        from services.updater import open_update_from_ui
+
+        open_update_from_ui(app)
+
     _pill(btn_row, "检查更新…", app=app, c=c, primary=True, command=_check).pack(
         side=tk.LEFT, padx=(0, SPACE_SM)
     )
     _pill(btn_row, "GitHub 发布页", app=app, c=c, primary=False, command=_open_releases).pack(
         side=tk.LEFT
     )
+    _pill(
+        action_row,
+        "查看更新…",
+        app=app,
+        c=c,
+        primary=True,
+        command=_open_update,
+    ).pack(side=tk.LEFT)
+
+    # 若此前已发现更新，进入关于页时直接展示
+    pending = getattr(app, "_pending_update_result", None)
+    if pending is not None and getattr(pending, "has_update", False):
+        ver = (getattr(pending, "latest_version", None) or "").strip()
+        _set_status(f"发现新版本 v{ver}" if ver else "发现新版本", "update")
 
 
 # ---------------------------------------------------------------------------
@@ -823,5 +981,3 @@ def _build_about_section(app, parent, c) -> None:
 def _pill(parent, text, *, app, c, primary=True, command=None):
     """兼容旧调用：委托统一 make_pill。"""
     return make_pill(parent, text, app=app, c=c, primary=primary, command=command)
-
-
