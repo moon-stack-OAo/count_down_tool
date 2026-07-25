@@ -83,39 +83,45 @@ _MONO_CANDIDATES = {
 # 各角色字号（平台仅 Mini 数字区不同，适配 macOS 点阵/Retina）
 _SIZES = {
     "Windows": {
-        "title": 20,
-        "time": 32,
-        "countdown": 42,
-        "label": 11,
-        "button": 12,
-        "mini_time": 10,
+        "title": 12,
+        "time": 14,
+        "countdown": 46,
+        "label": 10,
+        "button": 11,
+        "mini_time": 12,
         "mini_countdown": 16,
     },
     "Darwin": {
-        "title": 20,
-        "time": 32,
-        "countdown": 42,
-        "label": 11,
-        "button": 12,
-        "mini_time": 18,
+        "title": 12,
+        "time": 14,
+        "countdown": 46,
+        "label": 10,
+        "button": 11,
+        "mini_time": 14,
         "mini_countdown": 28,
     },
     "Linux": {
-        "title": 20,
-        "time": 32,
-        "countdown": 42,
-        "label": 11,
-        "button": 12,
-        "mini_time": 10,
+        "title": 12,
+        "time": 14,
+        "countdown": 46,
+        "label": 10,
+        "button": 11,
+        "mini_time": 12,
         "mini_countdown": 16,
     },
 }
 
 
 def _system_key(system: Optional[str] = None) -> str:
-    s = system or platform.system()
+    """返回与 _UI_CANDIDATES / _SIZES 一致的键：Windows | Darwin | Linux。"""
+    s = (system or platform.system() or "").strip()
     if s in _UI_CANDIDATES:
         return s
+    # 大小写不敏感回退
+    low = s.lower()
+    for key in _UI_CANDIDATES:
+        if key.lower() == low:
+            return key
     return "Linux"
 
 

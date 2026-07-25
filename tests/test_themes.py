@@ -57,6 +57,18 @@ class TestThemes(unittest.TestCase):
         self.assertIn("chip_hover", colors)
         self.assertIn("text_muted", colors)
         self.assertIn("warning", colors)
+        # 主按钮状态语义色
+        for key in (
+            "btn_primary",
+            "btn_primary_hover",
+            "btn_running",
+            "btn_running_hover",
+            "btn_finished",
+            "btn_finished_hover",
+            "btn_on_primary",
+        ):
+            self.assertIn(key, colors)
+            self.assertTrue(colors[key])
 
     def test_resolve_theme_unknown_fallback(self):
         colors = resolve_theme("unknown_xyz")

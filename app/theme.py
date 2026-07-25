@@ -86,7 +86,9 @@ def apply_theme(app, theme_id: str) -> None:
     except Exception:
         logger.debug("主题切换后刷新目标时间失败", exc_info=True)
 
-    # 主题重建后按状态恢复锁定与进度
+    # 主题重建后按状态恢复主按钮色、锁定与进度
+    if hasattr(app, "_apply_primary_button_style"):
+        app._apply_primary_button_style()
     app._apply_input_lock()
     app._refresh_progress_bar()
 

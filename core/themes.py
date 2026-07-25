@@ -32,6 +32,14 @@ _SLATE_CYAN_COLORS = {
     "btn_hover_min": "#FBBF24",
     "btn_hover_close": "#F43F5E",
     "white": "#FFFFFF",
+    # 主按钮状态色（开始 / 暂停·继续 / 完成）
+    "btn_primary": "#38BDF8",
+    "btn_primary_hover": "#0EA5E9",
+    "btn_running": "#FBBF24",
+    "btn_running_hover": "#F59E0B",
+    "btn_finished": "#4ADE80",
+    "btn_finished_hover": "#22C55E",
+    "btn_on_primary": "#0F1419",
 }
 
 _MIDNIGHT_PURPLE_COLORS = {
@@ -58,6 +66,13 @@ _MIDNIGHT_PURPLE_COLORS = {
     "btn_hover_min": "#FBBF24",
     "btn_hover_close": "#F43F5E",
     "white": "#FFFFFF",
+    "btn_primary": "#A78BFA",
+    "btn_primary_hover": "#8B5CF6",
+    "btn_running": "#FBBF24",
+    "btn_running_hover": "#F59E0B",
+    "btn_finished": "#4ADE80",
+    "btn_finished_hover": "#22C55E",
+    "btn_on_primary": "#0D0B14",
 }
 
 _WARM_AMBER_COLORS = {
@@ -84,6 +99,13 @@ _WARM_AMBER_COLORS = {
     "btn_hover_min": "#FBBF24",
     "btn_hover_close": "#F43F5E",
     "white": "#FFFFFF",
+    "btn_primary": "#F59E0B",
+    "btn_primary_hover": "#D97706",
+    "btn_running": "#FBBF24",
+    "btn_running_hover": "#F59E0B",
+    "btn_finished": "#4ADE80",
+    "btn_finished_hover": "#22C55E",
+    "btn_on_primary": "#14110C",
 }
 
 _EMERALD_COLORS = {
@@ -110,6 +132,13 @@ _EMERALD_COLORS = {
     "btn_hover_min": "#FBBF24",
     "btn_hover_close": "#F43F5E",
     "white": "#FFFFFF",
+    "btn_primary": "#34D399",
+    "btn_primary_hover": "#10B981",
+    "btn_running": "#FBBF24",
+    "btn_running_hover": "#F59E0B",
+    "btn_finished": "#4ADE80",
+    "btn_finished_hover": "#22C55E",
+    "btn_on_primary": "#0A1410",
 }
 
 # 浅色：title_bar 用浅灰，避免 Windows transparentcolor 纯白误抠
@@ -137,6 +166,13 @@ _LIGHT_COLORS = {
     "btn_hover_min": "#D97706",
     "btn_hover_close": "#E11D48",
     "white": "#FFFFFF",
+    "btn_primary": "#0284C7",
+    "btn_primary_hover": "#0369A1",
+    "btn_running": "#D97706",
+    "btn_running_hover": "#B45309",
+    "btn_finished": "#16A34A",
+    "btn_finished_hover": "#15803D",
+    "btn_on_primary": "#FFFFFF",
 }
 
 THEMES: Dict[str, Dict[str, Any]] = {

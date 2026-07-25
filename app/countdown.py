@@ -48,6 +48,7 @@ class CountdownController:
         app.running = app._state == STATE_RUNNING
         if app.btn_start:
             app.btn_start.config(text=button_text_for_state(app._state))
+        self.apply_primary_button_style()
         self.apply_input_lock()
         refresh_tray_menu(app)
         return app._state
@@ -56,8 +57,26 @@ class CountdownController:
         """仅 running 时锁定到期时间与快捷预设；暂停后可改时间。"""
         return self.app._state == STATE_RUNNING
 
+    def apply_primary_button_style(self):
+        """主按钮按状态切换样式：空闲 accent / 运行·暂停 warning / 完成 success。"""
+        app = self.app
+        btn = getattr(app, "btn_start", None)
+        if not btn:
+            return
+        state = app._state
+        if state in (STATE_RUNNING, STATE_PAUSED):
+            style_name = "PrimaryRunning.TButton"
+        elif state == STATE_FINISHED:
+            style_name = "PrimaryFinished.TButton"
+        else:
+            style_name = "Accent.TButton"
+        try:
+            btn.config(style=style_name, text=button_text_for_state(state))
+        except Exception:
+            logger.debug("主按钮样式切换失败", exc_info=True)
+
     def apply_input_lock(self):
-        """按状态启用/禁用 Spinbox 与预设 chip。"""
+        """按状态启用/禁用 Spinbox 与预设 chip；锁定时设置卡弱化。"""
         app = self.app
         locked = self.inputs_locked()
         spin_state = "disabled" if locked else "normal"
@@ -88,7 +107,7 @@ class CountdownController:
             else:
                 hms = getattr(btn, "_preset_hms", None)
                 try:
-                    btn.config(bg=c["chip"], fg=c["text"], cursor="hand2")
+                    btn.config(bg=c["chip"], fg=c.get("text_dim", c["text"]), cursor="hand2")
                     btn.bind(
                         "<Enter>",
                         lambda e, b=btn: b.config(
@@ -97,7 +116,9 @@ class CountdownController:
                     )
                     btn.bind(
                         "<Leave>",
-                        lambda e, b=btn: b.config(bg=c["chip"], fg=c["text"]),
+                        lambda e, b=btn: b.config(
+                            bg=c["chip"], fg=c.get("text_dim", c["text"])
+                        ),
                     )
                     if hms is not None:
                         hh, mm, ss = hms
@@ -107,6 +128,24 @@ class CountdownController:
                         )
                 except Exception:
                     logger.debug("预设 chip 启用失败", exc_info=True)
+
+        # 设置卡锁定时整体弱化（不改布局，只调色）
+        card = getattr(app, "_settings_card", None)
+        if card is not None:
+            try:
+                border = c.get("border", c.get("card_border", c["chip"]))
+                if locked:
+                    card.configure_colors(
+                        bg_color=c.get("card", c["glass"]),
+                        border_color=border,
+                    )
+                else:
+                    card.configure_colors(
+                        bg_color=c.get("card", c["glass"]),
+                        border_color=c.get("card_border", border),
+                    )
+            except Exception:
+                logger.debug("设置卡锁定样式失败", exc_info=True)
 
     def record_duration_total(self, target_time, now=None):
         """成功开始/重启时记录总时长（秒）。"""
@@ -140,7 +179,7 @@ class CountdownController:
         self.draw_progress_bar(app._progress_value)
 
     def draw_progress_bar(self, ratio: float):
-        """在 Canvas 上绘制细进度条。"""
+        """在 Canvas 上绘制细进度条；完成态用 success 色。"""
         app = self.app
         canvas = getattr(app, "progress_canvas", None)
         fill_id = getattr(app, "_progress_fill_id", None)
@@ -153,7 +192,12 @@ class CountdownController:
             fill_w = w * r
             canvas.coords(fill_id, 0, 0, fill_w, h)
             c = app.COLORS
-            canvas.itemconfig(fill_id, fill=c["accent"])
+            fill_color = (
+                c.get("success", c["accent"])
+                if app._state == STATE_FINISHED
+                else c["accent"]
+            )
+            canvas.itemconfig(fill_id, fill=fill_color)
             track_id = getattr(app, "_progress_track_id", None)
             if track_id is not None:
                 canvas.itemconfig(
@@ -444,6 +488,7 @@ class CountdownController:
         app.running = True
         if app.btn_start:
             app.btn_start.config(text=button_text_for_state(STATE_RUNNING))
+        self.apply_primary_button_style()
         self.apply_input_lock()
         refresh_tray_menu(app)
         self.update_countdown(target)

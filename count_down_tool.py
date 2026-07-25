@@ -245,6 +245,9 @@ class CountdownApp:
     def _apply_input_lock(self):
         self._ctrl.apply_input_lock()
 
+    def _apply_primary_button_style(self):
+        self._ctrl.apply_primary_button_style()
+
     def _record_duration_total(self, target_time, now=None):
         self._ctrl.record_duration_total(target_time, now)
 

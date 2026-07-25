@@ -16,6 +16,16 @@ class RoundedFrame(tk.Canvas):
         self._border_width = border_width
         self.bind("<Configure>", self._draw)
 
+    def configure_colors(self, bg_color=None, border_color=None, border_width=None):
+        """运行时更新卡片配色并重绘。"""
+        if bg_color is not None:
+            self._bg_color = bg_color
+        if border_color is not None:
+            self._border_color = border_color
+        if border_width is not None:
+            self._border_width = border_width
+        self._draw()
+
     def _draw(self, event=None):
         self.delete("all")
         w, h = self.winfo_width(), self.winfo_height()
