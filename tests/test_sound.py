@@ -422,9 +422,14 @@ class TestMacOSKillAndDuration(unittest.TestCase):
 
         proc.wait.side_effect = _wait
 
+        # Windows 无 getpgid/killpg，须 create=True 才能 patch
         with mock.patch.object(sound_mod.platform, "system", return_value="Darwin"):
-            with mock.patch.object(sound_mod.os, "getpgid", return_value=4242) as getpgid:
-                with mock.patch.object(sound_mod.os, "killpg") as killpg:
+            with mock.patch.object(
+                sound_mod.os, "getpgid", create=True, return_value=4242
+            ) as getpgid:
+                with mock.patch.object(
+                    sound_mod.os, "killpg", create=True
+                ) as killpg:
                     sound_mod._kill_proc_tree(proc)
         getpgid.assert_called_with(4242)
         killpg.assert_called()
@@ -445,9 +450,14 @@ class TestMacOSKillAndDuration(unittest.TestCase):
 
         with mock.patch.object(sound_mod.platform, "system", return_value="Darwin"):
             with mock.patch.object(
-                    sound_mod.os, "getpgid", side_effect=ProcessLookupError
+                sound_mod.os,
+                "getpgid",
+                create=True,
+                side_effect=ProcessLookupError,
             ):
-                with mock.patch.object(sound_mod.os, "killpg") as killpg:
+                with mock.patch.object(
+                    sound_mod.os, "killpg", create=True
+                ) as killpg:
                     sound_mod._kill_proc_tree(proc)
         killpg.assert_not_called()
         proc.terminate.assert_called_once()

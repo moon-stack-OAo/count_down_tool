@@ -2,14 +2,14 @@
 
 ![Python](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
-![Windows](https://img.shields.io/badge/Windows%20(v1.3.24)-0078D6?logo=windows&logoColor=white)
-![macOS](https://img.shields.io/badge/macOS%20(v1.3.24)-000000?logo=apple&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.3.24-brightgreen.svg)
+![Windows](https://img.shields.io/badge/Windows%20(v1.3.25)-0078D6?logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS%20(v1.3.25)-000000?logo=apple&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.3.25-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 基于 **Python + Tkinter** 的深色主题桌面倒计时工具（完整模式 + Mini 小组件）。
 
-**当前版本：1.3.24**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.3.25**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ---
 
@@ -60,12 +60,12 @@ python count_down_tool.py
 
 ### 结束音效
 
-| 类型     | 说明 |
-|----------|------|
-| 预设     | 柔和提示 / 钟声 / 警报；或系统铃声（循环 3 次） |
-| 自定义   | 本地音频；导入后复制到配置目录 `sounds/` 永久备份 |
-| 网易云   | 选择 `.ncm` 时自动解密后再播（无额外依赖） |
-| 历史     | 最多 12 条；托盘/菜单可切换、清空历史、清理未引用文件 |
+| 类型  | 说明                             |
+|-----|--------------------------------|
+| 预设  | 柔和提示 / 钟声 / 警报；或系统铃声（循环 3 次）   |
+| 自定义 | 本地音频；导入后复制到配置目录 `sounds/` 永久备份 |
+| 网易云 | 选择 `.ncm` 时自动解密后再播（无额外依赖）      |
+| 历史  | 最多 12 条；托盘/菜单可切换、清空历史、清理未引用文件  |
 
 ### 配置目录
 
@@ -81,7 +81,7 @@ python count_down_tool.py
 
 ## 打包构建
 
-版本号读取自 `core.countdown_core.__version__`（当前 **1.3.24**）。CI 打 tag 时要求 tag 与代码版本一致。
+版本号读取自 `core.countdown_core.__version__`（当前 **1.3.25**）。CI 打 tag 时要求 tag 与代码版本一致。
 
 ### Windows
 

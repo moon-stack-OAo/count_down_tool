@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+## 1.3.25
+
+### 修复
+
+- **CI 测试失败**：Windows 上 mock macOS `os.getpgid` / `os.killpg` 需 `create=True`，否则 patch 报错导致构建中断
+
 ## 1.3.24
 
 ### 功能
