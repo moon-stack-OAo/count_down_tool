@@ -99,7 +99,23 @@ def _on_check_done(app, result: core_update.UpdateCheckResult, manual: bool) -> 
     notes = ""
     if result.release:
         notes = core_update.truncate_release_notes(result.release.body)
+    # 有更新：托盘气泡提示（启动静默检查时尤其有用；无托盘则仅弹窗）
+    _notify_update_available(app, result)
     _prompt_update(app, result, notes)
+
+
+def _notify_update_available(app, result: core_update.UpdateCheckResult) -> None:
+    """系统托盘气泡提示有新版本（Windows pystray；失败静默）。"""
+    ver = (result.latest_version or "").strip()
+    title = APP_NAME
+    message = f"发现新版本 v{ver}" if ver else "发现新版本"
+    icon = getattr(app, "tray_icon", None)
+    if icon is None:
+        return
+    try:
+        icon.notify(message, title)
+    except Exception:
+        logger.debug("托盘更新提示失败", exc_info=True)
 
 
 def _prompt_update(app, result: core_update.UpdateCheckResult, notes: str) -> None:

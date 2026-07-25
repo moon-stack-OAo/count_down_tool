@@ -88,13 +88,121 @@ def show_settings(app) -> None:
     # Windows：无边框 + 自绘标题栏；macOS 等保留原生边框
     use_borderless_chrome(win, app, title="⚙  设置", on_close=_on_close)
 
-    # ===== 可滚动内容（主题化细滚动条）=====
-    outer = tk.Frame(win, bg=c["bg"])
-    outer.pack(fill=tk.BOTH, expand=True)
+    # ===== 顶栏 Tab + 单页可滚动内容 =====
+    shell = tk.Frame(win, bg=c["bg"])
+    shell.pack(fill=tk.BOTH, expand=True)
 
-    canvas = tk.Canvas(outer, bg=c["bg"], highlightthickness=0, bd=0)
+    tab_bar = tk.Frame(shell, bg=c.get("title_bar", c["bg"]))
+    tab_bar.pack(fill=tk.X, side=tk.TOP)
+    tk.Frame(shell, bg=c["accent"], height=2).pack(fill=tk.X, side=tk.TOP)
+
+    page_host = tk.Frame(shell, bg=c["bg"])
+    page_host.pack(fill=tk.BOTH, expand=True)
+
+    tabs_spec = (
+        ("appearance", "外观"),
+        ("sound", "声音"),
+        ("system", "系统"),
+        ("about", "关于"),
+    )
+    pages: dict = {}
+    tab_btns: dict = {}
+    state = {"tab": "appearance"}
+
+    def _style_tab(key: str, active: bool):
+        btn = tab_btns.get(key)
+        if btn is None:
+            return
+        try:
+            if active:
+                btn.config(
+                    bg=c["bg"],
+                    fg=c.get("accent_glow", c["accent"]),
+                    font=app._font("label", 10, bold=True),
+                )
+            else:
+                btn.config(
+                    bg=c.get("title_bar", c["bg"]),
+                    fg=c["text_dim"],
+                    font=app._font("label", 10),
+                )
+        except tk.TclError:
+            pass
+
+    def _show_tab(key: str):
+        if key not in pages:
+            return
+        state["tab"] = key
+        for k, frame in pages.items():
+            try:
+                if k == key:
+                    frame.pack(fill=tk.BOTH, expand=True)
+                else:
+                    frame.pack_forget()
+            except tk.TclError:
+                pass
+            _style_tab(k, k == key)
+        # 切页后滚回顶部
+        try:
+            pages[key]._settings_canvas.yview_moveto(0)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    for key, label in tabs_spec:
+        btn = tk.Label(
+            tab_bar,
+            text=label,
+            font=app._font("label", 10),
+            bg=c.get("title_bar", c["bg"]),
+            fg=c["text_dim"],
+            padx=16,
+            pady=10,
+            cursor="hand2",
+        )
+        btn.pack(side=tk.LEFT)
+        btn.bind("<Button-1>", lambda e, k=key: _show_tab(k))
+        tab_btns[key] = btn
+
+        page = _make_scroll_page(page_host, app, c)
+        pages[key] = page
+
+    # 状态刷新回调集合（主题/音效切换后局部更新勾选）
+    refreshers = []
+
+    def _refresh_all():
+        for fn in list(refreshers):
+            try:
+                fn()
+            except Exception:
+                logger.debug("设置窗刷新失败", exc_info=True)
+
+    _build_appearance_section(app, pages["appearance"]._settings_content, c, refreshers)
+    _build_sound_section(app, pages["sound"]._settings_content, c, refreshers, win)
+    _build_system_section(app, pages["system"]._settings_content, c, refreshers)
+    _build_about_section(app, pages["about"]._settings_content, c)
+
+    _show_tab("appearance")
+    win.update_idletasks()
+    for page in pages.values():
+        _bind_wheel_tree(page, page._settings_canvas)
+    # overrideredirect 后系统常落到 0,0，延后多次居中
+    center_dialog_later(win, SETTINGS_WIDTH, SETTINGS_HEIGHT)
+    _activate_picker(win, topmost=False)
+    # 暴露刷新，供内部切换主题后重绘勾选（主题会 close 窗，一般用不到）
+    win._settings_refresh = _refresh_all  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# 分区构建
+# ---------------------------------------------------------------------------
+
+
+def _make_scroll_page(host: tk.Frame, app, c) -> tk.Frame:
+    """单 Tab 页：Canvas + 细滚动条 + content 内边距。"""
+    page = tk.Frame(host, bg=c["bg"])
+    canvas = tk.Canvas(page, bg=c["bg"], highlightthickness=0, bd=0)
     scrollbar = ThinScrollbar(
-        outer,
+        page,
         command=canvas.yview,
         bg=c["bg"],
         trough=c.get("input_bg", c["card"]),
@@ -134,79 +242,42 @@ def show_settings(app) -> None:
         except tk.TclError:
             pass
 
-    def _bind_wheel(w):
+    canvas.bind("<MouseWheel>", _wheel)
+    canvas.bind("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+    canvas.bind("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
+
+    content = tk.Frame(body, bg=c["bg"])
+    content.pack(fill=tk.BOTH, expand=True, padx=SPACE_MD, pady=(SPACE_MD, SPACE_SM))
+
+    page._settings_canvas = canvas  # type: ignore[attr-defined]
+    page._settings_content = content  # type: ignore[attr-defined]
+    page._settings_wheel = _wheel  # type: ignore[attr-defined]
+    return page
+
+
+def _bind_wheel_tree(root: tk.Misc, canvas: tk.Canvas) -> None:
+    """把滚轮事件绑到子树，保证卡片上也能滚。"""
+
+    def _wheel(e):
+        try:
+            if platform.system() == "Darwin":
+                canvas.yview_scroll(int(-1 * e.delta), "units")
+            else:
+                canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        except tk.TclError:
+            pass
+
+    def _bind(w):
         w.bind("<MouseWheel>", _wheel)
         w.bind("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
         w.bind("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
         for child in w.winfo_children():
-            _bind_wheel(child)
+            _bind(child)
 
-    pad = SPACE_MD
-    content = tk.Frame(body, bg=c["bg"])
-    content.pack(fill=tk.BOTH, expand=True, padx=pad, pady=(SPACE_SM, SPACE_MD))
-
-    # 副标题（主标题已在自绘标题栏 / 原生标题栏）
-    tk.Label(
-        content,
-        text="外观 · 声音 · 系统 · 关于",
-        font=app._font("label", 9),
-        bg=c["bg"],
-        fg=c["text_muted"],
-    ).pack(anchor="w", pady=(0, SPACE_SM))
-    tk.Frame(content, bg=c["accent"], height=2).pack(fill=tk.X, pady=(0, SPACE_MD))
-
-    # 状态刷新回调集合（主题/音效切换后局部更新勾选）
-    refreshers = []
-
-    def _refresh_all():
-        for fn in list(refreshers):
-            try:
-                fn()
-            except Exception:
-                logger.debug("设置窗刷新失败", exc_info=True)
-
-    _build_appearance_section(app, content, c, refreshers)
-    _build_sound_section(app, content, c, refreshers, win)
-    _build_system_section(app, content, c, refreshers)
-    _build_about_section(app, content, c)
-
-    # 底部关闭
-    footer = tk.Frame(content, bg=c["bg"])
-    footer.pack(fill=tk.X, pady=(SPACE_MD, 0))
-    _pill(
-        footer,
-        "关闭",
-        app=app,
-        c=c,
-        primary=False,
-        command=_on_close,
-    ).pack(side=tk.RIGHT)
-
-    win.update_idletasks()
-    _bind_wheel(body)
-    # overrideredirect 后系统常落到 0,0，延后多次居中
-    center_dialog_later(win, SETTINGS_WIDTH, SETTINGS_HEIGHT)
-    _activate_picker(win, topmost=False)
-    # 暴露刷新，供内部切换主题后重绘勾选（主题会 close 窗，一般用不到）
-    win._settings_refresh = _refresh_all  # type: ignore[attr-defined]
-
-
-# ---------------------------------------------------------------------------
-# 分区构建
-# ---------------------------------------------------------------------------
-
-
-def _section_header(parent, title: str, app, c) -> tk.Frame:
-    box = tk.Frame(parent, bg=c["bg"])
-    box.pack(fill=tk.X, pady=(0, SPACE_XS))
-    tk.Label(
-        box,
-        text=title,
-        font=app._font("label", 11, bold=True),
-        bg=c["bg"],
-        fg=c["accent_glow"],
-    ).pack(anchor="w")
-    return box
+    try:
+        _bind(root)
+    except tk.TclError:
+        pass
 
 
 def _card(parent, c) -> tk.Frame:
@@ -223,7 +294,6 @@ def _card(parent, c) -> tk.Frame:
 
 
 def _build_appearance_section(app, parent, c, refreshers) -> None:
-    _section_header(parent, "外观", app, c)
     card = _card(parent, c)
     rows = {}
 
@@ -287,7 +357,6 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
         touch_sound_history,
     )
 
-    _section_header(parent, "声音", app, c)
     card = _card(parent, c)
 
     sound_rows = {}
@@ -617,7 +686,6 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
 
 
 def _build_system_section(app, parent, c, refreshers) -> None:
-    _section_header(parent, "系统", app, c)
     card = _card(parent, c)
 
     auto_lbl = tk.Label(
@@ -706,7 +774,6 @@ def _build_system_section(app, parent, c, refreshers) -> None:
 
 
 def _build_about_section(app, parent, c) -> None:
-    _section_header(parent, "关于", app, c)
     card = _card(parent, c)
 
     tk.Label(
