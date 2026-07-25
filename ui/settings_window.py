@@ -144,9 +144,9 @@ def show_settings(app) -> None:
         for child in w.winfo_children():
             _bind_wheel(child)
 
-    pad = SPACE_LG
+    pad = SPACE_MD
     content = tk.Frame(body, bg=c["bg"])
-    content.pack(fill=tk.BOTH, expand=True, padx=pad, pady=pad)
+    content.pack(fill=tk.BOTH, expand=True, padx=pad, pady=(SPACE_SM, SPACE_MD))
 
     # 副标题（主标题已在自绘标题栏 / 原生标题栏）
     tk.Label(
@@ -155,8 +155,8 @@ def show_settings(app) -> None:
         font=app._font("label", 9),
         bg=c["bg"],
         fg=c["text_muted"],
-    ).pack(anchor="w", pady=(0, SPACE_MD))
-    tk.Frame(content, bg=c["accent"], height=2).pack(fill=tk.X, pady=(0, SPACE_LG))
+    ).pack(anchor="w", pady=(0, SPACE_SM))
+    tk.Frame(content, bg=c["accent"], height=2).pack(fill=tk.X, pady=(0, SPACE_MD))
 
     # 状态刷新回调集合（主题/音效切换后局部更新勾选）
     refreshers = []
@@ -175,7 +175,7 @@ def show_settings(app) -> None:
 
     # 底部关闭
     footer = tk.Frame(content, bg=c["bg"])
-    footer.pack(fill=tk.X, pady=(SPACE_LG, 0))
+    footer.pack(fill=tk.X, pady=(SPACE_MD, 0))
     _pill(
         footer,
         "关闭",
@@ -201,7 +201,7 @@ def show_settings(app) -> None:
 
 def _section_header(parent, title: str, app, c) -> tk.Frame:
     box = tk.Frame(parent, bg=c["bg"])
-    box.pack(fill=tk.X, pady=(0, SPACE_SM))
+    box.pack(fill=tk.X, pady=(0, SPACE_XS))
     tk.Label(
         box,
         text=title,
@@ -219,9 +219,9 @@ def _card(parent, c) -> tk.Frame:
         highlightbackground=c["border"],
         highlightthickness=1,
         padx=SPACE_MD,
-        pady=SPACE_MD,
+        pady=SPACE_SM,
     )
-    card.pack(fill=tk.X, pady=(0, SPACE_LG))
+    card.pack(fill=tk.X, pady=(0, SPACE_MD))
     return card
 
 
@@ -259,7 +259,7 @@ def _build_appearance_section(app, parent, c, refreshers) -> None:
             anchor="w",
             cursor="hand2",
             padx=SPACE_SM,
-            pady=SPACE_SM,
+            pady=6,
         )
         row._theme_name = name  # type: ignore[attr-defined]
         row.pack(fill=tk.X)
@@ -485,7 +485,7 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
         anchor="w",
         padx=SPACE_SM,
         pady=4,
-        wraplength=SETTINGS_WIDTH - 80,
+        wraplength=SETTINGS_WIDTH - 96,
         justify=tk.LEFT,
     )
     custom_lbl.pack(fill=tk.X)

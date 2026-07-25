@@ -13,9 +13,9 @@ RADIUS_SM = 8
 RADIUS_MD = 12
 RADIUS_LG = 16
 
-# 设置中心窗口（高度含 Windows 自绘标题栏）
-SETTINGS_WIDTH = 440
-SETTINGS_HEIGHT = 560
+# 设置中心窗口（高度含 Windows 自绘标题栏；宽贴近主窗 500）
+SETTINGS_WIDTH = 480
+SETTINGS_HEIGHT = 600
 
 # 更新对话框
 UPDATE_DIALOG_WIDTH = 420
