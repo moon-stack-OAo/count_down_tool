@@ -149,7 +149,35 @@ def use_borderless_chrome(
         pass
 
     _apply_rounded_corners(win, app)
+    # overrideredirect 后默认不进 Alt+Tab / 任务栏，补 APPWINDOW 样式
+    _apply_taskbar_visible(win)
     return True
+
+
+def _apply_taskbar_visible(win: tk.Misc) -> None:
+    """无边框窗加入 Alt+Tab / 任务栏（失败静默）。"""
+    if platform.system() != "Windows":
+        return
+    try:
+        from services.windows_native import set_taskbar_visible
+    except Exception:
+        return
+
+    def _set():
+        try:
+            if win.winfo_exists():
+                set_taskbar_visible(win)
+        except tk.TclError:
+            pass
+        except Exception:
+            pass
+
+    _set()
+    try:
+        win.after(50, _set)
+        win.after(200, _set)
+    except tk.TclError:
+        pass
 
 
 def _apply_rounded_corners(win: tk.Misc, app) -> None:

@@ -3,7 +3,6 @@
 
 import platform
 import tkinter as tk
-from tkinter import messagebox
 
 from core.countdown_core import (
     APP_NAME,
@@ -14,6 +13,7 @@ from core.countdown_core import (
 )
 from core.themes import list_themes
 from services.autostart import is_autostart_enabled, set_autostart
+from ui.app_dialogs import show_error
 
 
 def tray_window_menu_label(is_mini: bool) -> str:
@@ -91,10 +91,9 @@ def _toggle_autostart_ui(app):
     target = not is_autostart_enabled()
     ok = set_autostart(target)
     if not ok:
-        messagebox.showerror(
-            APP_NAME,
+        show_error(
+            app,
             "设置开机自启失败。\n请检查是否有权限写入启动文件夹。",
-            parent=app.master,
         )
         app._autostart = is_autostart_enabled()
         return

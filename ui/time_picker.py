@@ -24,10 +24,18 @@ def _picker_parent(app):
     return app.master
 
 
-def _activate_picker(win):
+def _activate_picker(win, *, topmost: bool = True):
+    """将窗口置前。topmost=False 时只 lift/聚焦，不常驻 -topmost（设置中心用）。"""
     try:
         win.lift()
-        win.attributes("-topmost", True)
+        if topmost:
+            win.attributes("-topmost", True)
+        else:
+            # 明确关掉，避免此前被设过 topmost 后残留
+            try:
+                win.attributes("-topmost", False)
+            except tk.TclError:
+                pass
         win.focus_force()
     except tk.TclError:
         pass

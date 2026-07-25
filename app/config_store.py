@@ -102,10 +102,14 @@ def load_config(app) -> None:
         if isinstance(sid, str) and sid:
             app._sound_id = normalize_sound_id(sid)
         app._sound_path = normalize_sound_path(config.get("sound_path", ""))
-        history = prune_sound_history(config.get("sound_history"))
-        # 当前自定义路径并入历史（兼容旧配置仅有 sound_path）
-        if app._sound_path and os.path.isfile(app._sound_path):
-            history = touch_sound_history(history, app._sound_path)
+        # 仅当配置里根本没有 sound_history 字段时，才用 sound_path 迁移进历史
+        # （用户「清空历史」后是显式 []，不可再自动塞回）
+        if "sound_history" not in config:
+            history = []
+            if app._sound_path and os.path.isfile(app._sound_path):
+                history = touch_sound_history(history, app._sound_path)
+        else:
+            history = prune_sound_history(config.get("sound_history"))
         app._sound_history = history
         if "check_update_on_start" in config:
             app._check_update_on_start = bool(config.get("check_update_on_start"))

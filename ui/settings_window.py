@@ -8,12 +8,13 @@ import os
 import platform
 import tkinter as tk
 import webbrowser
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 from core.countdown_core import APP_NAME, __version__
 from core.themes import list_themes
 from core.update import GITHUB_RELEASES_PAGE
 from services.autostart import is_autostart_enabled, set_autostart
+from ui.app_dialogs import ask_yes_no, show_error, show_info, temporary_withdraw
 from ui.design.tokens import (
     SETTINGS_HEIGHT,
     SETTINGS_WIDTH,
@@ -48,7 +49,7 @@ def show_settings(app) -> None:
     if existing is not None:
         try:
             if existing.winfo_exists():
-                _activate_picker(existing)
+                _activate_picker(existing, topmost=False)
                 return
         except tk.TclError:
             pass
@@ -62,10 +63,6 @@ def show_settings(app) -> None:
     win.configure(bg=c["bg"])
     win.geometry(f"{SETTINGS_WIDTH}x{SETTINGS_HEIGHT}")
     win.resizable(False, False)
-    try:
-        win.attributes("-topmost", True)
-    except tk.TclError:
-        pass
     try:
         if parent is not app.master or parent.winfo_viewable():
             win.transient(parent)
@@ -189,7 +186,7 @@ def show_settings(app) -> None:
     _bind_wheel(body)
     # overrideredirect 后系统常落到 0,0，延后多次居中
     center_dialog_later(win, SETTINGS_WIDTH, SETTINGS_HEIGHT)
-    _activate_picker(win)
+    _activate_picker(win, topmost=False)
     # 暴露刷新，供内部切换主题后重绘勾选（主题会 close 窗，一般用不到）
     win._settings_refresh = _refresh_all  # type: ignore[attr-defined]
 
@@ -318,7 +315,7 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
 
     def _select_history(path: str):
         if not path or not os.path.isfile(path):
-            messagebox.showerror(APP_NAME, "该历史音效文件已不存在。", parent=win)
+            show_error(app, "该历史音效文件已不存在。", parent=win)
             app._sound_history = [
                 h
                 for h in getattr(app, "_sound_history", [])
@@ -337,24 +334,27 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
         _tray_refresh()
 
     def _import_sound():
-        path = filedialog.askopenfilename(
-            parent=win,
-            title="导入结束音效（将复制到本地库）",
-            filetypes=AUDIO_FILETYPES,
-        )
+        # Windows 无边框设置窗会盖住系统文件框：选择期间先隐藏设置
+        # parent 用 None，避免系统对话框挂在被隐藏的 Toplevel 上
+        with temporary_withdraw(win):
+            path = filedialog.askopenfilename(
+                parent=None,
+                title="导入结束音效（将复制到本地库）",
+                filetypes=AUDIO_FILETYPES,
+            )
         if not path:
             return
         if not is_audio_file(path):
-            messagebox.showerror(
-                APP_NAME,
+            show_error(
+                app,
                 "不支持的音频格式。\n请选择 wav / mp3 / aiff / m4a / ncm 等常见格式。",
                 parent=win,
             )
             return
         result = import_custom_sound(path)
         if not result:
-            messagebox.showerror(
-                APP_NAME,
+            show_error(
+                app,
                 "导入失败。\n请确认文件可读；若为 ncm 请确认可正常解密。",
                 parent=win,
             )
@@ -368,6 +368,12 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
         app._save_config()
         _refresh()
         _tray_refresh()
+        show_info(
+            app,
+            f"已导入并设为结束音效：\n{name}",
+            title="导入成功",
+            parent=win,
+        )
 
     def _preview_root():
         # 系统铃依赖 root.bell/after；主窗 Mini withdraw 时可能无声，优先设置窗
@@ -392,31 +398,34 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
         stop_playback()
         _schedule_preview_refresh()
 
-    def _clear_history():
-        app._sound_history = []
-        app._save_config()
-        _refresh()
-
-    def _purge_orphans():
-        ok = messagebox.askyesno(
-            APP_NAME,
-            "将删除本地音效库中未出现在历史列表、且不是当前所选的文件。\n"
-            "历史记录本身不会被清空。\n\n确定清理？",
+    def _clear_history_and_orphans():
+        """清空历史列表，并删除库中未引用文件（保留当前结束音效）。"""
+        ok = ask_yes_no(
+            app,
+            "将清空历史记录，并删除本地音效库中未使用的文件。\n"
+            "当前正在使用的结束音效会保留。\n\n确定？",
+            title="清空历史与未使用",
+            yes_text="清空",
+            no_text="取消",
+            danger=True,
             parent=win,
         )
         if not ok:
             return
         stop_playback()
+        app._sound_history = []
         n = purge_orphan_sounds(
-            getattr(app, "_sound_history", []),
+            [],
             str(getattr(app, "_sound_path", "") or ""),
         )
-        messagebox.showinfo(
-            APP_NAME,
-            f"已清理 {n} 个未使用音效文件。" if n else "没有可清理的未使用音效。",
-            parent=win,
-        )
+        app._save_config()
         _refresh()
+        _tray_refresh()
+        if n:
+            msg = f"历史已清空，并删除了 {n} 个未使用音效文件。\n当前结束音效保持不变。"
+        else:
+            msg = "历史已清空。\n当前结束音效保持不变。"
+        show_info(app, msg, title="已清空", parent=win)
 
     def _schedule_preview_refresh():
         _refresh()
@@ -505,12 +514,14 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
 
     util_row = tk.Frame(card, bg=c["card"])
     util_row.pack(fill=tk.X, pady=(SPACE_SM, 0))
-    _pill(util_row, "清空历史", app=app, c=c, primary=False, command=_clear_history).pack(
-        side=tk.LEFT, padx=(0, SPACE_SM)
-    )
-    _pill(util_row, "清理未使用…", app=app, c=c, primary=False, command=_purge_orphans).pack(
-        side=tk.LEFT
-    )
+    _pill(
+        util_row,
+        "清空历史与未使用…",
+        app=app,
+        c=c,
+        primary=False,
+        command=_clear_history_and_orphans,
+    ).pack(side=tk.LEFT)
 
     def _rebuild_history():
         for child in list(history_frame.winfo_children()):
@@ -639,8 +650,8 @@ def _build_system_section(app, parent, c, refreshers) -> None:
         target = not is_autostart_enabled()
         ok = set_autostart(target)
         if not ok:
-            messagebox.showerror(
-                APP_NAME,
+            show_error(
+                app,
                 "设置开机自启失败。\n请检查是否有权限写入启动文件夹。",
                 parent=getattr(app, "_settings_window", None) or app.master,
             )
