@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+## 1.3.29
+
+### 修复
+
+- **Windows 更新黑窗 / FOUND 死循环**：替换脚本改为静默 PowerShell（`Get-Process`），去掉 `tasklist|find`；启动避免 `DETACHED_PROCESS` 导致脚本不执行
+- **设置中心空滚**：内容未超出视口时禁用滚轮并锁定 scrollregion
+
+### 优化
+
+- **关于页检查更新**：状态内联显示在按钮下方；有更新时再点「查看更新…」
+
 ## 1.3.28
 
 ### 修复
