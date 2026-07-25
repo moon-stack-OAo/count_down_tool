@@ -227,7 +227,12 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
                 except Exception:
                     pass
 
-            core_update.download_file(result.asset_url, zip_path, progress=_progress)
+            core_update.download_file(
+                result.asset_url,
+                zip_path,
+                progress=_progress,
+                expected_size=int(getattr(result, "asset_size", 0) or 0),
+            )
             core_update.apply_windows_update_from_zip(zip_path)
         except Exception as exc:
             logger.exception("Windows 自动更新失败")

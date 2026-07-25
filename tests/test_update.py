@@ -22,6 +22,8 @@ from core.update import (
     write_windows_replace_script,
     check_for_update,
     fetch_latest_release,
+    parse_release_body_from_atom,
+    parse_release_body_from_html,
     _format_http_error,
     _synthetic_assets,
     ReleaseInfo,
@@ -67,12 +69,14 @@ class TestExtractAndScript(unittest.TestCase):
     def test_extract_exe(self):
         with tempfile.TemporaryDirectory() as tmp:
             zpath = os.path.join(tmp, "a.zip")
+            # 满足 extract 的 MZ + 最小体积校验
+            payload = b"MZ" + b"\0" * 1200
             with zipfile.ZipFile(zpath, "w") as zf:
-                zf.writestr("count_down_tool.exe", b"MZ-fake")
+                zf.writestr("count_down_tool.exe", payload)
             out = extract_windows_exe(zpath, os.path.join(tmp, "out"))
             self.assertTrue(os.path.isfile(out))
             with open(out, "rb") as f:
-                self.assertEqual(f.read(), b"MZ-fake")
+                self.assertEqual(f.read(), payload)
 
     def test_write_bat(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -89,6 +93,10 @@ class TestExtractAndScript(unittest.TestCase):
             self.assertIn("12345", body)
             self.assertIn("count_down_tool.exe", body)
             self.assertIn("copy /Y", body)
+            self.assertIn("EnableDelayedExpansion", body)
+            self.assertIn("SSIZE", body)
+            self.assertIn('start "" /D', body)
+            self.assertIn(":copyloop", body)
 
 
 class TestCheckForUpdate(unittest.TestCase):
@@ -173,11 +181,46 @@ class TestCheckForUpdate(unittest.TestCase):
                 return b""
 
         with mock.patch("core.update.urllib.request.urlopen", return_value=_Resp()):
-            with mock.patch("core.update._http_get_json") as api:
-                info = fetch_latest_release()
+            with mock.patch(
+                "core.update.fetch_release_body", return_value="## 更新内容\n- 修复"
+            ) as body_fn:
+                with mock.patch("core.update._http_get_json") as api:
+                    info = fetch_latest_release()
         api.assert_not_called()
+        body_fn.assert_called_once()
         self.assertEqual(info.version, "1.3.26")
+        self.assertIn("修复", info.body)
         self.assertTrue(any(a["name"].endswith("win64.zip") for a in info.assets))
+
+    def test_parse_release_body_from_atom(self):
+        atom = """<?xml version="1.0" encoding="UTF-8"?>
+        <feed>
+          <entry>
+            <id>tag:github.com,2008:Repository/1/v1.3.27</id>
+            <link rel="alternate" type="text/html"
+              href="https://github.com/moon-stack-OAo/count_down_tool/releases/tag/v1.3.27"/>
+            <title>v1.3.27</title>
+            <content type="html">&lt;h2&gt;更新内容&lt;/h2&gt;&lt;ul&gt;&lt;li&gt;设置中心 Tab&lt;/li&gt;&lt;/ul&gt;</content>
+          </entry>
+        </feed>
+        """
+        body = parse_release_body_from_atom(atom, "v1.3.27")
+        self.assertIn("设置中心 Tab", body)
+        self.assertIn("更新内容", body)
+
+    def test_parse_release_body_from_html_nested(self):
+        page = """
+        <html><body>
+        <div class="markdown-body my-3">
+          <h2>更新内容</h2>
+          <div><p>主题弹窗统一</p></div>
+          <ul><li>NEW 角标</li></ul>
+        </div>
+        </body></html>
+        """
+        body = parse_release_body_from_html(page)
+        self.assertIn("主题弹窗统一", body)
+        self.assertIn("NEW 角标", body)
 
 
 if __name__ == "__main__":

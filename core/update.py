@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import html as html_lib
 import json
 import logging
 import os
@@ -237,6 +238,202 @@ def fetch_latest_tag_via_redirect(timeout: float = 15.0) -> str:
     return urllib.parse.unquote(m.group(1))
 
 
+def _http_get_text(url: str, timeout: float = 15.0, accept: str = "*/*") -> str:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": accept,
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(_format_http_error(exc)) from exc
+    return raw.decode("utf-8", errors="replace")
+
+
+def _html_fragment_to_text(fragment: str) -> str:
+    """粗略将 HTML 片段转为纯文本（发布说明展示用）。"""
+    text = fragment or ""
+    text = re.sub(r"(?is)<script\b[^>]*>.*?</script>", "", text)
+    text = re.sub(r"(?is)<style\b[^>]*>.*?</style>", "", text)
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?i)</p\s*>", "\n", text)
+    text = re.sub(r"(?i)</li\s*>", "\n", text)
+    text = re.sub(r"(?i)</h[1-6]\s*>", "\n", text)
+    text = re.sub(r"(?i)</tr\s*>", "\n", text)
+    text = re.sub(r"(?i)</div\s*>", "\n", text)
+    text = re.sub(r"(?is)<[^>]+>", "", text)
+    text = html_lib.unescape(text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    # 压缩多余空行
+    lines = [ln.rstrip() for ln in text.split("\n")]
+    out: List[str] = []
+    blank = False
+    for ln in lines:
+        if not ln.strip():
+            if out and not blank:
+                out.append("")
+            blank = True
+            continue
+        blank = False
+        out.append(ln.strip() if len(ln) - len(ln.lstrip()) > 40 else ln)
+    return "\n".join(out).strip()
+
+
+def parse_release_body_from_atom(atom_xml: str, tag_name: str) -> str:
+    """从 releases.atom 中取指定 tag 的 content（HTML）。"""
+    ver = normalize_tag_version(tag_name)
+    tag_v = tag_name if str(tag_name).lower().startswith("v") else f"v{ver}"
+    # 按 entry 切分
+    entries = re.findall(r"(?is)<entry\b[^>]*>(.*?)</entry>", atom_xml or "")
+    for entry in entries:
+        link_m = re.search(
+            r'(?is)<link[^>]+href="([^"]+/releases/tag/[^"]+)"',
+            entry,
+        )
+        href = urllib.parse.unquote(link_m.group(1)) if link_m else ""
+        id_m = re.search(r"(?is)<id>(.*?)</id>", entry)
+        entry_id = (id_m.group(1) if id_m else "").strip()
+        title_m = re.search(r"(?is)<title[^>]*>(.*?)</title>", entry)
+        title = _html_fragment_to_text(title_m.group(1) if title_m else "")
+        hit = (
+            f"/releases/tag/{tag_v}" in href
+            or f"/releases/tag/{ver}" in href
+            or entry_id.endswith(f"/{tag_v}")
+            or entry_id.endswith(f"/{ver}")
+            or title.startswith(tag_v)
+            or title.startswith(ver)
+            or title.startswith(f"v{ver}")
+        )
+        if not hit:
+            continue
+        content_m = re.search(
+            r'(?is)<content\b[^>]*type="html"[^>]*>(.*?)</content>',
+            entry,
+        )
+        if not content_m:
+            content_m = re.search(r"(?is)<content\b[^>]*>(.*?)</content>", entry)
+        if not content_m:
+            return ""
+        raw = html_lib.unescape(content_m.group(1).strip())
+        return _html_fragment_to_text(raw)
+    return ""
+
+
+def _extract_open_div_inner(html: str, open_match_end: int) -> str:
+    """从已匹配的开标签之后，按嵌套深度截取到对应 </div> 之前。"""
+    i = open_match_end
+    depth = 1
+    lower = html.lower()
+    n = len(html)
+    while i < n and depth > 0:
+        next_open = lower.find("<div", i)
+        next_close = lower.find("</div", i)
+        if next_close < 0:
+            return html[open_match_end:].strip()
+        if next_open >= 0 and next_open < next_close:
+            # 确认是标签起始
+            depth += 1
+            gt = html.find(">", next_open)
+            i = gt + 1 if gt >= 0 else next_open + 4
+            continue
+        depth -= 1
+        if depth == 0:
+            return html[open_match_end:next_close].strip()
+        gt = html.find(">", next_close)
+        i = gt + 1 if gt >= 0 else next_close + 5
+    return html[open_match_end:].strip()
+
+
+def parse_release_body_from_html(page_html: str) -> str:
+    """从 GitHub Release 网页解析 markdown-body 发布说明。"""
+    html = page_html or ""
+    open_patterns = (
+        r'(?is)<div[^>]*data-test-selector=["\']body-content["\'][^>]*>',
+        r'(?is)<div[^>]*class=["\'][^"\']*markdown-body[^"\']*["\'][^>]*>',
+    )
+    for pat in open_patterns:
+        m = re.search(pat, html)
+        if not m:
+            continue
+        inner = _extract_open_div_inner(html, m.end())
+        text = _html_fragment_to_text(inner)
+        if text:
+            return text
+    # og:description 兜底（通常较短）
+    og = re.search(
+        r'(?is)<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']',
+        html,
+    )
+    if not og:
+        og = re.search(
+            r'(?is)<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:description["\']',
+            html,
+        )
+    if og:
+        return html_lib.unescape(og.group(1)).strip()
+    return ""
+
+
+def fetch_release_body(tag_name: str, html_url: str, timeout: float = 15.0) -> str:
+    """
+    在已知 tag 时尽量取发布说明（不依赖 latest API）。
+    顺序：releases.atom → 发布页 HTML → API tags/{tag}。
+    任一步失败则尝试下一步；全部失败返回空串。
+    """
+    ver = normalize_tag_version(tag_name)
+    tag_v = tag_name if str(tag_name).lower().startswith("v") else f"v{ver}"
+
+    # 1) Atom（不占 API 配额）
+    try:
+        atom_url = (
+            f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases.atom"
+        )
+        atom = _http_get_text(
+            atom_url, timeout=timeout, accept="application/atom+xml, application/xml, text/xml"
+        )
+        body = parse_release_body_from_atom(atom, tag_v)
+        if body.strip():
+            return body
+    except Exception as exc:
+        logger.debug("Atom 取发布说明失败: %s", exc)
+
+    # 2) 发布页 HTML
+    try:
+        page = _http_get_text(
+            html_url or (
+                f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
+                f"/releases/tag/{tag_v}"
+            ),
+            timeout=timeout,
+            accept="text/html,application/xhtml+xml",
+        )
+        body = parse_release_body_from_html(page)
+        if body.strip():
+            return body
+    except Exception as exc:
+        logger.debug("HTML 取发布说明失败: %s", exc)
+
+    # 3) API（可能限流，失败则空说明，不影响版本检查）
+    try:
+        api_url = (
+            f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}"
+            f"/releases/tags/{urllib.parse.quote(tag_v)}"
+        )
+        data = _http_get_json(api_url, timeout=timeout)
+        body = str(data.get("body") or "").strip()
+        if body:
+            return body
+    except Exception as exc:
+        logger.debug("API 取发布说明失败: %s", exc)
+
+    return ""
+
+
 def fetch_latest_release(timeout: float = 15.0) -> ReleaseInfo:
     """获取最新 Release：优先网页重定向（不占 API 配额），失败再回退 API。"""
     # 1) 网页重定向 + 按约定合成下载链接（不请求 api.github.com）
@@ -250,10 +447,11 @@ def fetch_latest_release(timeout: float = 15.0) -> ReleaseInfo:
             f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
             f"/releases/tag/{tag_name}"
         )
+        body = fetch_release_body(tag_name, html_url, timeout=timeout)
         return ReleaseInfo(
             version=version,
             tag_name=tag_name,
-            body="",
+            body=body,
             html_url=html_url,
             assets=_synthetic_assets(version),
         )
@@ -338,38 +536,79 @@ def download_file(
     dest_path: str,
     timeout: float = 60.0,
     progress: ProgressCb = None,
+    expected_size: int = 0,
 ) -> str:
-    """下载到 dest_path，返回绝对路径。"""
-    os.makedirs(os.path.dirname(os.path.abspath(dest_path)) or ".", exist_ok=True)
+    """下载到 dest_path，返回绝对路径。
+
+    若响应带 Content-Length 或传入 expected_size>0，则校验完整；
+    不完整时删除半成品并抛错，避免坏包触发 onefile 启动失败。
+    """
+    abs_dest = os.path.abspath(dest_path)
+    os.makedirs(os.path.dirname(abs_dest) or ".", exist_ok=True)
     req = urllib.request.Request(
         url,
         headers={"User-Agent": USER_AGENT, "Accept": "application/octet-stream"},
         method="GET",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        total = -1
-        try:
-            total = int(resp.headers.get("Content-Length") or -1)
-        except (TypeError, ValueError):
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             total = -1
-        received = 0
-        chunk = 64 * 1024
-        with open(dest_path, "wb") as out:
-            while True:
-                buf = resp.read(chunk)
-                if not buf:
-                    break
-                out.write(buf)
-                received += len(buf)
-                if progress:
-                    progress(received, total)
-    return os.path.abspath(dest_path)
+            try:
+                total = int(resp.headers.get("Content-Length") or -1)
+            except (TypeError, ValueError):
+                total = -1
+            if expected_size and expected_size > 0:
+                if total > 0 and total != int(expected_size):
+                    raise RuntimeError(
+                        f"下载大小与发布信息不一致（期望 {expected_size}，响应 {total}）"
+                    )
+                if total <= 0:
+                    total = int(expected_size)
+            received = 0
+            chunk = 64 * 1024
+            with open(abs_dest, "wb") as out:
+                while True:
+                    buf = resp.read(chunk)
+                    if not buf:
+                        break
+                    out.write(buf)
+                    received += len(buf)
+                    if progress:
+                        progress(received, total)
+        if total > 0 and received != total:
+            raise RuntimeError(
+                f"下载不完整（已收 {received} / 期望 {total} 字节），请重试"
+            )
+        if received <= 0:
+            raise RuntimeError("下载结果为空文件")
+        # 磁盘落盘后再读一次长度，防止缓冲/杀软截断
+        on_disk = os.path.getsize(abs_dest)
+        if total > 0 and on_disk != total:
+            raise RuntimeError(
+                f"落盘文件大小异常（磁盘 {on_disk} / 期望 {total} 字节）"
+            )
+        if expected_size and expected_size > 0 and on_disk != int(expected_size):
+            raise RuntimeError(
+                f"落盘文件与发布大小不符（磁盘 {on_disk} / 期望 {expected_size}）"
+            )
+    except Exception:
+        try:
+            if os.path.isfile(abs_dest):
+                os.remove(abs_dest)
+        except OSError:
+            pass
+        raise
+    return abs_dest
 
 
 def extract_windows_exe(zip_path: str, dest_dir: str) -> str:
     """从 win zip 中取出 count_down_tool.exe，返回 exe 绝对路径。"""
     os.makedirs(dest_dir, exist_ok=True)
     with zipfile.ZipFile(zip_path, "r") as zf:
+        # 先校验 zip 本身
+        bad = zf.testzip()
+        if bad is not None:
+            raise RuntimeError(f"更新包损坏（zip 校验失败: {bad}）")
         names = zf.namelist()
         exe_name = None
         for n in names:
@@ -382,7 +621,15 @@ def extract_windows_exe(zip_path: str, dest_dir: str) -> str:
         target = os.path.join(dest_dir, "count_down_tool.exe")
         with zf.open(exe_name) as src, open(target, "wb") as dst:
             shutil.copyfileobj(src, dst)
-    return os.path.abspath(target)
+    abs_target = os.path.abspath(target)
+    size = os.path.getsize(abs_target)
+    if size < 1024:
+        raise RuntimeError(f"解压得到的 exe 过小（{size} 字节），包可能损坏")
+    with open(abs_target, "rb") as f:
+        magic = f.read(2)
+    if magic != b"MZ":
+        raise RuntimeError("解压得到的文件不是有效 Windows 可执行文件")
+    return abs_target
 
 
 def is_frozen_app() -> bool:
@@ -412,15 +659,21 @@ def write_windows_replace_script(
     zip_path: Optional[str] = None,
 ) -> str:
     """
-    生成 bat：等待 PID 退出 → 覆盖 exe → 启动 → 清理。
+    生成 bat：等待 PID 退出 → 重试覆盖 exe → 校验大小 → 延迟启动 → 清理。
     返回 script_path。
     """
+    target_abs = os.path.abspath(target_exe)
+    source_abs = os.path.abspath(source_exe)
+    target_dir = os.path.dirname(target_abs) or "."
     # 用短路径风格避免引号问题；全部加引号
+    # 延迟启动：给 Defender 扫描与文件句柄释放留时间，降低
+    # onefile 解压 _MEI 时 LoadLibrary(python311.dll) 失败概率
     lines = [
         "@echo off",
-        "setlocal",
-        f'set "TARGET={target_exe}"',
-        f'set "SOURCE={source_exe}"',
+        "setlocal EnableDelayedExpansion",
+        f'set "TARGET={target_abs}"',
+        f'set "SOURCE={source_abs}"',
+        f'set "TARGETDIR={target_dir}"',
         f"set PID={int(pid)}",
         ":waitloop",
         'tasklist /FI "PID eq %PID%" 2>NUL | find "%PID%" >NUL',
@@ -428,18 +681,38 @@ def write_windows_replace_script(
         "  timeout /t 1 /nobreak >NUL",
         "  goto waitloop",
         ")",
-        "timeout /t 1 /nobreak >NUL",
+        "timeout /t 2 /nobreak >NUL",
+        "set RETRIES=0",
+        ":copyloop",
         'copy /Y "%SOURCE%" "%TARGET%" >NUL',
         "if errorlevel 1 (",
-        "  echo Update failed: cannot copy executable.",
+        "  set /a RETRIES+=1",
+        "  if !RETRIES! GEQ 8 (",
+        "    echo Update failed: cannot copy executable.",
+        "    pause",
+        "    exit /b 1",
+        "  )",
+        "  timeout /t 1 /nobreak >NUL",
+        "  goto copyloop",
+        ")",
+        'for %%I in ("%SOURCE%") do set SSIZE=%%~zI',
+        'for %%I in ("%TARGET%") do set TSIZE=%%~zI',
+        'if not "!SSIZE!"=="!TSIZE!" (',
+        "  echo Update failed: size mismatch after copy.",
         "  pause",
         "  exit /b 1",
         ")",
-        'start "" "%TARGET%"',
+        "if !TSIZE! LSS 1024 (",
+        "  echo Update failed: target too small.",
+        "  pause",
+        "  exit /b 1",
+        ")",
+        "timeout /t 3 /nobreak >NUL",
+        'start "" /D "%TARGETDIR%" "%TARGET%"',
         'del /f /q "%SOURCE%" >NUL 2>&1',
     ]
     if zip_path:
-        lines.append(f'del /f /q "{zip_path}" >NUL 2>&1')
+        lines.append(f'del /f /q "{os.path.abspath(zip_path)}" >NUL 2>&1')
     lines.extend(
         [
             'del /f /q "%~f0" >NUL 2>&1',
