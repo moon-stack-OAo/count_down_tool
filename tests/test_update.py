@@ -14,6 +14,7 @@ if _ROOT not in sys.path:
 
 from core.update import (
     expected_asset_name,
+    download_file,
     extract_windows_exe,
     is_newer_version,
     parse_version,
@@ -78,6 +79,41 @@ class TestExtractAndScript(unittest.TestCase):
             with open(out, "rb") as f:
                 self.assertEqual(f.read(), payload)
 
+    def test_extract_missing_exe_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = os.path.join(tmp, "no_exe.zip")
+            with zipfile.ZipFile(zpath, "w") as zf:
+                zf.writestr("readme.txt", b"hello")
+            with self.assertRaises(FileNotFoundError):
+                extract_windows_exe(zpath, os.path.join(tmp, "out"))
+
+    def test_extract_exe_too_small_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = os.path.join(tmp, "tiny.zip")
+            with zipfile.ZipFile(zpath, "w") as zf:
+                zf.writestr("count_down_tool.exe", b"MZ" + b"\0" * 10)
+            with self.assertRaises(RuntimeError) as ctx:
+                extract_windows_exe(zpath, os.path.join(tmp, "out"))
+            self.assertIn("过小", str(ctx.exception))
+
+    def test_extract_exe_bad_magic_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = os.path.join(tmp, "bad_magic.zip")
+            payload = b"XX" + b"\0" * 1200
+            with zipfile.ZipFile(zpath, "w") as zf:
+                zf.writestr("count_down_tool.exe", payload)
+            with self.assertRaises(RuntimeError) as ctx:
+                extract_windows_exe(zpath, os.path.join(tmp, "out"))
+            self.assertIn("不是有效 Windows 可执行文件", str(ctx.exception))
+
+    def test_extract_corrupt_zip_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = os.path.join(tmp, "corrupt.zip")
+            with open(zpath, "wb") as f:
+                f.write(b"not a zip at all")
+            with self.assertRaises(zipfile.BadZipFile):
+                extract_windows_exe(zpath, os.path.join(tmp, "out"))
+
     def test_write_replace_script(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = os.path.join(tmp, "apply_update.ps1")
@@ -97,6 +133,91 @@ class TestExtractAndScript(unittest.TestCase):
             self.assertIn("Start-Process", body)
             self.assertNotIn("tasklist", body)
             self.assertNotIn("find ", body.lower())
+
+
+class TestDownloadFile(unittest.TestCase):
+    def _mock_resp(self, body: bytes, content_length=None):
+        class _Resp:
+            def __init__(self):
+                self.headers = {}
+                if content_length is not None:
+                    self.headers["Content-Length"] = str(content_length)
+                self._data = body
+                self._pos = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self, n=-1):
+                if self._pos >= len(self._data):
+                    return b""
+                if n is None or n < 0:
+                    chunk = self._data[self._pos :]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+        return _Resp()
+
+    def test_download_success(self):
+        payload = b"hello-update-payload"
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "pkg.zip")
+            with mock.patch(
+                "core.update.urllib.request.urlopen",
+                return_value=self._mock_resp(payload, content_length=len(payload)),
+            ):
+                path = download_file("https://example.com/a.zip", dest)
+            self.assertEqual(path, os.path.abspath(dest))
+            with open(dest, "rb") as f:
+                self.assertEqual(f.read(), payload)
+
+    def test_download_incomplete_removes_file(self):
+        payload = b"partial"
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "pkg.zip")
+            with mock.patch(
+                "core.update.urllib.request.urlopen",
+                return_value=self._mock_resp(payload, content_length=100),
+            ):
+                with self.assertRaises(RuntimeError) as ctx:
+                    download_file("https://example.com/a.zip", dest)
+            self.assertIn("不完整", str(ctx.exception))
+            self.assertFalse(os.path.isfile(dest))
+
+    def test_download_empty_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "empty.zip")
+            with mock.patch(
+                "core.update.urllib.request.urlopen",
+                return_value=self._mock_resp(b""),
+            ):
+                with self.assertRaises(RuntimeError) as ctx:
+                    download_file("https://example.com/a.zip", dest)
+            self.assertIn("空", str(ctx.exception))
+            self.assertFalse(os.path.isfile(dest))
+
+    def test_download_expected_size_mismatch(self):
+        payload = b"12345"
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "pkg.zip")
+            with mock.patch(
+                "core.update.urllib.request.urlopen",
+                return_value=self._mock_resp(payload, content_length=5),
+            ):
+                with self.assertRaises(RuntimeError) as ctx:
+                    download_file(
+                        "https://example.com/a.zip",
+                        dest,
+                        expected_size=99,
+                    )
+            self.assertIn("不一致", str(ctx.exception))
+            self.assertFalse(os.path.isfile(dest))
 
 
 class TestCheckForUpdate(unittest.TestCase):

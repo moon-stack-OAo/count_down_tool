@@ -106,8 +106,9 @@ def _fill_settings(menu: tk.Menu, app) -> None:
         label=tray_mini_menu_label(app._is_mini),
         command=app._toggle_mini_mode,
     )
+    transparent_on = bool(getattr(app, "_transparent_mode", False))
     menu.add_command(
-        label="透明模式",
+        label=("✓ 透明模式" if transparent_on else "透明模式"),
         command=app._toggle_transparent_mode,
     )
     size_state = tk.NORMAL if app._is_mini else tk.DISABLED

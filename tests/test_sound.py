@@ -327,6 +327,88 @@ class TestStopPlayback(unittest.TestCase):
                     halt.assert_not_called()
                     play.assert_not_called()
 
+    def test_play_file_windows_after_keeps_pending_until_start(self):
+        """Windows root.after 调度后不应立刻清 pending。"""
+        from services import sound as sound_mod
+
+        sound_mod.stop_playback()
+        gen = sound_mod._bump_play_gen()
+        sound_mod._set_pending_play(30.0)
+        scheduled = []
+
+        class _Root:
+            def after(self, ms, fn):
+                scheduled.append(fn)
+                return "aid"
+
+        with mock.patch.object(
+                sound_mod, "prepare_playable_path", return_value="/tmp/a.mp3"
+        ):
+            with mock.patch.object(sound_mod.platform, "system", return_value="Windows"):
+                with mock.patch.object(
+                        sound_mod, "_play_windows", return_value=True
+                ) as play:
+                    ok = sound_mod.play_file(
+                        "/tmp/a.mp3",
+                        play_gen=gen,
+                        root=_Root(),
+                        clear_pending_on_start=True,
+                    )
+                    self.assertTrue(ok)
+                    self.assertEqual(len(scheduled), 1)
+                    # 调度后、_start 前仍视为播放中
+                    self.assertTrue(sound_mod.is_sound_playing())
+                    play.assert_not_called()
+                    scheduled[0]()
+                    play.assert_called_once()
+                    # 开播后 pending 已清（_play_windows 为 mock，未 mark until）
+                    with sound_mod._play_proc_lock:
+                        self.assertEqual(sound_mod._pending_until, 0.0)
+
+    def test_play_finish_defers_pending_on_windows_schedule(self):
+        """play_finish_sound 在 Windows 调度路径返回 True，异步 finally 勿清 pending。"""
+        from services import sound as sound_mod
+
+        sound_mod.stop_playback()
+        gen = sound_mod._bump_play_gen()
+        sound_mod._set_pending_play(30.0)
+
+        class _Root:
+            def after(self, ms, fn):
+                return "aid"
+
+        with mock.patch.object(
+                sound_mod, "play_file", return_value=True
+        ) as pf:
+            with mock.patch.object(sound_mod.platform, "system", return_value="Windows"):
+                deferred = sound_mod.play_finish_sound(
+                    _Root(),
+                    muted=False,
+                    sound_id=sound_mod.SOUND_ID_SOFT,
+                    play_gen=gen,
+                )
+        self.assertTrue(deferred)
+        pf.assert_called_once()
+        self.assertTrue(pf.call_args.kwargs.get("clear_pending_on_start"))
+        # 未在 play_finish_sound 内清 pending
+        self.assertTrue(sound_mod.is_sound_playing())
+
+    def test_mci_timeout_bumps_gen(self):
+        from services import sound as sound_mod
+
+        sound_mod.stop_playback()
+        gen0 = sound_mod._play_gen
+        with mock.patch.object(sound_mod, "_ensure_mci_worker"):
+            sound_mod._mci_cmd_q = mock.Mock()
+            # wait 超时
+            with mock.patch("services.sound.threading.Event") as Evt:
+                evt = mock.Mock()
+                evt.wait.return_value = False
+                Evt.return_value = evt
+                r = sound_mod._mci_call("play", {"path": "x.mp3"}, timeout=0.01)
+        self.assertTrue(r.get("timeout"))
+        self.assertGreater(sound_mod._play_gen, gen0)
+
 
 class TestPurgeOrphanSounds(unittest.TestCase):
     def test_purge_keeps_history_and_current(self):

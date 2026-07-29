@@ -202,6 +202,35 @@ def target_from_duration(
     return now + duration, duration
 
 
+def remaining_seconds(
+    target_time: datetime,
+    now: Optional[datetime] = None,
+) -> float:
+    """目标时刻相对 now 的剩余秒数，下限 0。"""
+    if now is None:
+        now = datetime.now()
+    return max(0.0, (target_time - now).total_seconds())
+
+
+def target_from_remaining(
+    remaining: float,
+    now: Optional[datetime] = None,
+) -> datetime:
+    """从冻结的剩余秒数恢复目标时刻。"""
+    if now is None:
+        now = datetime.now()
+    try:
+        rem = max(0.0, float(remaining))
+    except (TypeError, ValueError):
+        rem = 0.0
+    return now + timedelta(seconds=rem)
+
+
+def inputs_locked_for_state(state: str) -> bool:
+    """running 与 paused 时锁定到期时间与快捷预设。"""
+    return state in (STATE_RUNNING, STATE_PAUSED)
+
+
 def format_remaining(total_seconds: int) -> str:
     """剩余秒数格式化为 HH:MM:SS。"""
     total = int(total_seconds)
@@ -261,15 +290,18 @@ def parse_mini_geometry(geo: str) -> Optional[Tuple[int, int]]:
 
 
 def parse_mini_size(geo: str) -> Optional[Tuple[int, int]]:
-    """从 Tk geometry `WxH+X+Y` 或 `WxH` 解析宽高。"""
+    """从 Tk geometry `WxH±X±Y` 或 `WxH` 解析宽高。
+
+    与 parse_mini_geometry 一致：支持负坐标（如 ``220x48-100+200``），
+    不能仅用 ``split('+')``，否则 ``-100`` 会并入高度段。
+    """
     if not geo or not isinstance(geo, str):
         return None
     try:
-        size_part = geo.split("+", 1)[0]
-        if "x" not in size_part:
+        m = re.match(r"^\s*(\d+)x(\d+)", geo.strip())
+        if not m:
             return None
-        w_str, h_str = size_part.split("x", 1)
-        w, h = int(w_str), int(h_str)
+        w, h = int(m.group(1)), int(m.group(2))
         if w <= 0 or h <= 0:
             return None
         return w, h
@@ -493,12 +525,29 @@ def merge_config(
 
 
 def save_config_dict(path: str, config: Dict[str, Any]) -> None:
-    """写入 JSON 配置。"""
+    """原子写入 JSON 配置（同目录临时文件 + os.replace）。"""
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(config if isinstance(config, dict) else {}, f, indent=2)
+    data = config if isinstance(config, dict) else {}
+    payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    tmp_path = path + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(payload)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except OSError:
+                pass
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            if os.path.isfile(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 # ------------------------------------------------------------------

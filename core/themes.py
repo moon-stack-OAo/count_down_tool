@@ -3,9 +3,13 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 DEFAULT_THEME_ID = "slate_cyan"
+
+# #RGB / #RRGGBB / #RRGGBBAA
+_HEX_COLOR_RE = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
 
 # 完整 colors 键与主程序 COLORS 兼容
 _SLATE_CYAN_COLORS = {
@@ -208,18 +212,37 @@ def is_valid_theme_id(theme_id: Any) -> bool:
     return isinstance(theme_id, str) and theme_id in THEMES
 
 
+def is_valid_hex_color(value: Any) -> bool:
+    """校验主题自定义色值（#RGB / #RRGGBB / #RRGGBBAA）。"""
+    return isinstance(value, str) and bool(_HEX_COLOR_RE.match(value.strip()))
+
+
+def sanitize_theme_custom(custom: Any) -> Optional[Dict[str, str]]:
+    """过滤非法 theme_custom 色值；无有效项返回 None。"""
+    if not isinstance(custom, dict):
+        return None
+    cleaned: Dict[str, str] = {}
+    for key, value in custom.items():
+        if not isinstance(key, str) or not key:
+            continue
+        if is_valid_hex_color(value):
+            cleaned[key] = value.strip()
+    return cleaned or None
+
+
 def resolve_theme(
     theme_id: Optional[str] = None,
     custom: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, str]:
     """
     解析主题颜色。
-    未知 id 回退 DEFAULT_THEME_ID；custom 为 dict 时覆盖对应键。
+    未知 id 回退 DEFAULT_THEME_ID；custom 为 dict 时仅合法 hex 覆盖对应键。
     """
     tid = theme_id if is_valid_theme_id(theme_id) else DEFAULT_THEME_ID
     colors = dict(THEMES[tid]["colors"])
-    if isinstance(custom, dict):
-        for key, value in custom.items():
-            if isinstance(key, str) and isinstance(value, str) and value:
+    sanitized = sanitize_theme_custom(custom)
+    if sanitized:
+        for key, value in sanitized.items():
+            if key in colors:
                 colors[key] = value
     return colors

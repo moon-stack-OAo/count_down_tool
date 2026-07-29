@@ -10,11 +10,22 @@ import logging
 import os
 import struct
 import tempfile
-from typing import Optional, Tuple
+import threading
+from typing import Dict, Optional, Tuple
 
 logger = logging.getLogger("count_down_tool")
 
 _MAGIC = b"CTENFDAM"
+
+# header 字段上限，防止恶意超大 length 导致 OOM
+_MAX_KEY_LEN = 256 * 1024  # 256 KiB
+_MAX_META_LEN = 1024 * 1024  # 1 MiB
+_MAX_IMAGE_SIZE = 16 * 1024 * 1024  # 16 MiB
+# 缓存治理：最多 N 个文件 / 总大小上限
+_CACHE_MAX_FILES = 64
+_CACHE_MAX_BYTES = 512 * 1024 * 1024  # 512 MiB
+_cache_global_lock = threading.Lock()
+_cache_key_locks: Dict[str, threading.Lock] = {}
 _CORE_KEY = bytes(
     [
         0x68,
@@ -721,18 +732,46 @@ def _decrypt_audio_chunk(chunk: bytearray, key_box: bytearray) -> None:
         chunk[i] ^= key_box[(key_box[j] + key_box[(key_box[j] + j) & 0xFF]) & 0xFF]
 
 
+def _file_size(f) -> int:
+    pos = f.tell()
+    f.seek(0, os.SEEK_END)
+    size = f.tell()
+    f.seek(pos, os.SEEK_SET)
+    return size
+
+
+def _read_u32_len(f, name: str, max_len: int, file_size: int) -> int:
+    """读取 uint32 长度字段并校验上限与剩余文件长度。"""
+    raw = f.read(4)
+    if len(raw) != 4:
+        raise ValueError(f"ncm 文件损坏：无法读取 {name}")
+    length = struct.unpack("<I", raw)[0]
+    if length > max_len:
+        raise ValueError(f"ncm {name} 过大: {length} > {max_len}")
+    remaining = file_size - f.tell()
+    if length > remaining:
+        raise ValueError(
+            f"ncm {name} 超出文件剩余长度: {length} > {remaining}"
+        )
+    return length
+
+
 def decrypt_ncm(path: str) -> Tuple[bytes, str]:
     """
     解密 ncm。
     返回 (audio_bytes, format_ext) 如 (b'...', 'mp3')。
+    TODO: 大音频可改为流式写缓存，避免整文件驻留内存。
     """
     with open(path, "rb") as f:
+        file_size = _file_size(f)
         if f.read(8) != _MAGIC:
             raise ValueError("不是有效的 ncm 文件")
         f.seek(2, os.SEEK_CUR)
 
-        key_len = struct.unpack("<I", f.read(4))[0]
+        key_len = _read_u32_len(f, "key_len", _MAX_KEY_LEN, file_size)
         key_data = bytearray(f.read(key_len))
+        if len(key_data) != key_len:
+            raise ValueError("ncm 文件损坏：key 数据不完整")
         for i in range(len(key_data)):
             key_data[i] ^= 0x64
         key_data = _pkcs7_unpad(_aes_ecb_decrypt(_CORE_KEY, bytes(key_data)))
@@ -741,8 +780,10 @@ def decrypt_ncm(path: str) -> Tuple[bytes, str]:
             key_data = key_data[17:]
         key_box = _build_key_box(key_data)
 
-        meta_len = struct.unpack("<I", f.read(4))[0]
+        meta_len = _read_u32_len(f, "meta_len", _MAX_META_LEN, file_size)
         meta_data = bytearray(f.read(meta_len))
+        if len(meta_data) != meta_len:
+            raise ValueError("ncm 文件损坏：meta 数据不完整")
         for i in range(len(meta_data)):
             meta_data[i] ^= 0x63
         # 跳过 "163 key(Don't modify):"
@@ -761,11 +802,16 @@ def decrypt_ncm(path: str) -> Tuple[bytes, str]:
         except Exception:
             logger.debug("解析 ncm meta 失败，默认 mp3", exc_info=True)
 
-        f.read(4)  # crc32
+        crc_raw = f.read(4)  # crc32
+        if len(crc_raw) != 4:
+            raise ValueError("ncm 文件损坏：缺少 crc")
         f.seek(5, os.SEEK_CUR)
-        image_size = struct.unpack("<I", f.read(4))[0]
-        f.read(image_size)
+        image_size = _read_u32_len(f, "image_size", _MAX_IMAGE_SIZE, file_size)
+        image_data = f.read(image_size)
+        if len(image_data) != image_size:
+            raise ValueError("ncm 文件损坏：封面数据不完整")
 
+        # 音频体仍整段读入内存；流式解密写盘见上方 TODO
         audio = bytearray()
         while True:
             chunk = bytearray(f.read(0x8000))
@@ -792,6 +838,87 @@ def _cache_key(path: str) -> str:
     return hashlib.sha1(raw.encode("utf-8", errors="ignore")).hexdigest()[:24]
 
 
+def _key_lock(key: str) -> threading.Lock:
+    with _cache_global_lock:
+        lock = _cache_key_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _cache_key_locks[key] = lock
+        return lock
+
+
+def _list_cache_files(cache_root: str):
+    """返回 [(path, mtime, size), ...]，忽略 .tmp。"""
+    items = []
+    try:
+        names = os.listdir(cache_root)
+    except OSError:
+        return items
+    for name in names:
+        if name.endswith(".tmp"):
+            continue
+        path = os.path.join(cache_root, name)
+        try:
+            if not os.path.isfile(path):
+                continue
+            st = os.stat(path)
+            items.append((path, st.st_mtime, st.st_size))
+        except OSError:
+            continue
+    return items
+
+
+def cleanup_ncm_cache(
+    cache_root: Optional[str] = None,
+    max_files: int = _CACHE_MAX_FILES,
+    max_bytes: int = _CACHE_MAX_BYTES,
+    keep_paths: Optional[set] = None,
+) -> int:
+    """
+    按数量/总大小上限清理缓存（删除最旧文件）。
+    返回删除的文件数。
+    """
+    root = cache_root if cache_root is not None else _cache_dir()
+    keep = keep_paths or set()
+    items = _list_cache_files(root)
+    # 旧文件优先删除
+    items.sort(key=lambda x: x[1])
+    total_bytes = sum(sz for _, _, sz in items)
+    removed = 0
+    # 先按数量，再按体积；保留 keep 中的路径
+    while items and (
+        len(items) > max_files or total_bytes > max_bytes
+    ):
+        path, _, size = items[0]
+        if path in keep:
+            # 把受保护项移到末尾，避免死循环
+            items.append(items.pop(0))
+            # 若全部受保护则退出
+            if all(p in keep for p, _, _ in items):
+                break
+            continue
+        items.pop(0)
+        try:
+            os.remove(path)
+            removed += 1
+            total_bytes -= size
+        except OSError:
+            continue
+    return removed
+
+
+def _find_cached(cache_root: str, key: str) -> Optional[str]:
+    for ext in (".mp3", ".flac", ".wav", ".m4a", ".aac", ".ogg"):
+        candidate = os.path.join(cache_root, key + ext)
+        if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+            try:
+                os.utime(candidate, None)
+            except OSError:
+                pass
+            return candidate
+    return None
+
+
 def resolve_ncm_play_path(path: str) -> Optional[str]:
     """
     将 .ncm 解密到缓存目录并返回可播放路径。
@@ -801,22 +928,28 @@ def resolve_ncm_play_path(path: str) -> Optional[str]:
         return None
     try:
         key = _cache_key(path)
-        # 先查已有缓存（任意扩展名）
         cache_root = _cache_dir()
-        for ext in (".mp3", ".flac", ".wav", ".m4a", ".aac", ".ogg"):
-            candidate = os.path.join(cache_root, key + ext)
-            if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
-                return candidate
+        hit = _find_cached(cache_root, key)
+        if hit:
+            return hit
 
-        audio, fmt = decrypt_ncm(path)
-        if not audio:
-            return None
-        out = os.path.join(cache_root, f"{key}.{fmt}")
-        tmp = out + ".tmp"
-        with open(tmp, "wb") as f:
-            f.write(audio)
-        os.replace(tmp, out)
-        return out
+        lock = _key_lock(key)
+        with lock:
+            # 双重检查，防并发双写
+            hit = _find_cached(cache_root, key)
+            if hit:
+                return hit
+
+            audio, fmt = decrypt_ncm(path)
+            if not audio:
+                return None
+            out = os.path.join(cache_root, f"{key}.{fmt}")
+            tmp = out + ".tmp"
+            with open(tmp, "wb") as f:
+                f.write(audio)
+            os.replace(tmp, out)
+            cleanup_ncm_cache(cache_root, keep_paths={out})
+            return out
     except Exception:
         logger.debug("ncm 解密失败: %s", path, exc_info=True)
         return None

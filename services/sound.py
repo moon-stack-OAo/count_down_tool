@@ -574,7 +574,10 @@ def _ensure_mci_worker() -> None:
 
 
 def _mci_call(op: str, args: Optional[dict] = None, timeout: float = 5.0) -> dict:
-    """向 MCI 工作线程投递命令并等待结果。"""
+    """向 MCI 工作线程投递命令并等待结果。
+
+    超时则 bump generation，使迟到的 play 结果被上层丢弃（避免卡死线程后叠播）。
+    """
     _ensure_mci_worker()
     if _mci_cmd_q is None:
         return {"ok": False}
@@ -583,6 +586,9 @@ def _mci_call(op: str, args: Optional[dict] = None, timeout: float = 5.0) -> dic
     _mci_cmd_q.put((op, args or {}, result_box, done_evt))
     if not done_evt.wait(timeout=timeout):
         logger.debug("MCI 命令超时 op=%s", op)
+        # 超时：作废进行中的播放代数，迟到的 play 不应再标记为播放中
+        if op == "play":
+            _bump_play_gen()
         return {"ok": False, "timeout": True}
     return result_box
 
@@ -745,11 +751,15 @@ def play_file(
     path: str,
     play_gen: Optional[int] = None,
     root=None,
+    *,
+    clear_pending_on_start: bool = False,
 ) -> bool:
     """播放一次完整文件。成功启动（或已调度到主线程）返回 True。
 
     play_gen 非空时：prepare（如 ncm 解密）结束后若已取消则不再开播。
     root 非空时：Windows 在主线程开播（winsound/部分驱动在后台线程不可靠）。
+    clear_pending_on_start：主线程实际开播成功/失败后再清 pending（调度窗口期内保持
+    is_sound_playing，避免停止试听按钮闪断）。
     """
     play_path = prepare_playable_path(path)
     if not play_path:
@@ -759,12 +769,17 @@ def play_file(
 
     def _start() -> bool:
         if _is_play_cancelled(play_gen):
+            if clear_pending_on_start:
+                _clear_pending_play(play_gen)
             return False
         # 仅停设备，不 bump generation（避免取消正在执行的异步试听任务）
         _halt_devices()
         if _is_play_cancelled(play_gen):
+            if clear_pending_on_start:
+                _clear_pending_play(play_gen)
             return False
         system = platform.system()
+        ok = False
         try:
             if system == "Windows":
                 ok = _play_windows(play_path)
@@ -774,15 +789,19 @@ def play_file(
                 ok = _play_linux(play_path)
             if _is_play_cancelled(play_gen):
                 _halt_devices()
-                return False
-            return bool(ok)
+                ok = False
         except Exception:
             logger.debug("播放文件失败: %s", path, exc_info=True)
-            return False
+            ok = False
+        # 主线程实际开播后再清 pending（成功有 _play_until；失败也要释放停止按钮）
+        if clear_pending_on_start:
+            _clear_pending_play(play_gen)
+        return bool(ok)
 
     # Windows：尽量在 Tk 主线程开播，避免设置窗/托盘异步线程里 winsound 无声
     if root is not None and platform.system() == "Windows":
         try:
+            # 调度后立刻返回 True，但不要清 pending——等 _start 内实际开播后再清
             root.after(0, _start)
             return True
         except Exception:
@@ -847,15 +866,27 @@ def _play_windows_mci(path: str, est_seconds: float = 0.0) -> bool:
     """用 Windows MCI 打开并播放（mpegvideo 覆盖 mp3 等常见格式）。
 
     全部经专用线程，保证后续 stop 能在同一线程掐断。
+    超时会 bump gen；此处再校验，丢弃迟到结果。
     """
     try:
         abs_path = os.path.abspath(path)
+        # 记录调用前 generation：超时 bump 后迟到的 ok 不得标记播放中
+        with _play_gen_lock:
+            gen_before = _play_gen
         r = _mci_call("play", {"path": abs_path}, timeout=8.0)
         if not r.get("ok"):
             logger.debug(
                 "MCI open/play 失败 err=%s path=%s", r.get("err"), path
             )
             return False
+        with _play_gen_lock:
+            if _play_gen != gen_before:
+                # 超时/stop 已作废本路，丢弃迟到 play
+                try:
+                    _mci_call("halt", timeout=2.0)
+                except Exception:
+                    pass
+                return False
         mci_len = float(r.get("length") or 0.0)
         _mark_mci_playing()
         # MCI mode 查询偶发不准，始终用时长兜底，保证菜单「停止试听」可点
@@ -1038,31 +1069,45 @@ def play_finish_sound(
     sound_id: str,
     custom_path: str = "",
     play_gen: Optional[int] = None,
-) -> None:
+) -> bool:
     """结束提示：静音跳过；文件类完整播一次；系统铃循环三次。
 
     play_gen 非空时：若 generation 已被 stop/新任务取消，则不启动播放。
+    返回 True 表示 pending 已交由主线程 _start 清理（异步 finally 勿再清），
+    避免 Windows after 调度窗口期内 is_sound_playing 闪断。
     """
     if muted:
-        return
+        return False
     if _is_play_cancelled(play_gen):
-        return
+        return False
     mode, path = resolve_play_path(sound_id, custom_path)
     if mode == "file" and path:
         # 解密等可能较慢：prepare/开播前在 play_file 内再检查 generation
         if _is_play_cancelled(play_gen):
-            return
-        if play_file(path, play_gen=play_gen, root=root):
-            _clear_pending_play(play_gen)
-            return
+            return False
+        # Windows 经 after 调度：pending 由 play_file._start 清；同步路径此处清
+        defer_pending = (
+            root is not None and platform.system() == "Windows"
+        )
+        if play_file(
+            path,
+            play_gen=play_gen,
+            root=root,
+            clear_pending_on_start=defer_pending,
+        ):
+            if not defer_pending:
+                _clear_pending_play(play_gen)
+            # defer 时 pending 仍由主线程 _start 负责
+            return bool(defer_pending)
         if _is_play_cancelled(play_gen):
-            return
+            return False
         logger.debug("文件播放失败，回退系统铃: %s", path)
     if _is_play_cancelled(play_gen):
-        return
+        return False
     # 系统默认音效：循环三次
     ring_system_bell_times(root, _SYSTEM_BELL_TIMES)
     _clear_pending_play(play_gen)
+    return False
 
 
 def _finish_async_pending(play_gen: Optional[int]) -> None:
@@ -1089,29 +1134,38 @@ def play_finish_sound_async(root, *, muted: bool, sound_id: str, custom_path: st
     _set_pending_play()
 
     def _run():
+        defer_pending = False
         try:
             if _is_play_cancelled(play_gen):
                 return
-            play_finish_sound(
-                root,
-                muted=muted,
-                sound_id=sound_id,
-                custom_path=custom_path,
-                play_gen=play_gen,
+            defer_pending = bool(
+                play_finish_sound(
+                    root,
+                    muted=muted,
+                    sound_id=sound_id,
+                    custom_path=custom_path,
+                    play_gen=play_gen,
+                )
             )
         finally:
-            _finish_async_pending(play_gen)
+            # 主线程 after 尚未执行时勿清 pending，否则停止试听会闪灰
+            if not defer_pending:
+                _finish_async_pending(play_gen)
 
     try:
         threading.Thread(target=_run, daemon=True).start()
     except Exception:
+        defer_pending = False
         try:
-            play_finish_sound(
-                root,
-                muted=muted,
-                sound_id=sound_id,
-                custom_path=custom_path,
-                play_gen=play_gen,
+            defer_pending = bool(
+                play_finish_sound(
+                    root,
+                    muted=muted,
+                    sound_id=sound_id,
+                    custom_path=custom_path,
+                    play_gen=play_gen,
+                )
             )
         finally:
-            _finish_async_pending(play_gen)
+            if not defer_pending:
+                _finish_async_pending(play_gen)

@@ -13,8 +13,9 @@ logger = logging.getLogger("count_down_tool")
 
 def apply_theme(app, theme_id: str) -> None:
     """切换预设主题并重建主界面（保留业务状态）。"""
+    # 同 theme_id 且已有色表：跳过全量重建，避免闪烁
     if theme_id == app._theme_id and app.COLORS:
-        pass
+        return
     # 主题切换会 destroy 子控件；设置窗是独立 Toplevel，须先关闭以免颜色过期
     try:
         from ui.settings_window import close_settings

@@ -502,6 +502,12 @@ def build_full_ui(app):
         command=app.reset,
     ).pack(side=tk.RIGHT)
 
+    # 主题重建会重复 build：先 unbind 再绑，避免快捷键叠加
+    for seq in ("<Escape>", "<m>", "<M>", "<t>", "<T>"):
+        try:
+            app.master.unbind(seq)
+        except tk.TclError:
+            pass
     app.master.bind("<Escape>", lambda e: app._hide_to_tray())
     app.master.bind("<m>", lambda e: app._toggle_mini_mode())
     app.master.bind("<M>", lambda e: app._toggle_mini_mode())

@@ -3,7 +3,13 @@
 
 from __future__ import annotations
 
+import logging
+import tkinter as tk
+
 from services.tray import refresh_tray_menu
+from services.windows_native import force_window_to_front
+
+logger = logging.getLogger("count_down_tool")
 
 
 def has_tray(app) -> bool:
@@ -11,6 +17,30 @@ def has_tray(app) -> bool:
     if getattr(app, "_status_menu_active", False):
         return True
     return bool(getattr(app, "tray_icon", None))
+
+
+def handle_external_show(app) -> None:
+    """响应二次启动 show 请求：把当前合理可见形态拉到前台。
+
+    Mini 保持 Mini 并置前；托盘隐藏则恢复完整窗；已在 Full 则置前。
+    """
+    try:
+        if getattr(app, "_is_mini", False) and getattr(app, "mini_window", None):
+            mini = app.mini_window
+            try:
+                if mini.winfo_exists():
+                    try:
+                        mini.deiconify()
+                    except tk.TclError:
+                        pass
+                    force_window_to_front(mini)
+                    return
+            except tk.TclError:
+                pass
+        # 托盘 / 隐藏 / Full：统一恢复完整窗
+        show_full_mode(app)
+    except Exception:
+        logger.debug("处理外部 show 请求失败", exc_info=True)
 
 
 def show_full_mode(app) -> None:

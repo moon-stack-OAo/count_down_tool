@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 import webbrowser
 from datetime import date
 from typing import Callable, Optional
@@ -17,7 +18,14 @@ logger = logging.getLogger("count_down_tool.updater")
 
 # 启动后延迟检查（毫秒）
 _STARTUP_DELAY_MS = 4000
+# 检查 / 下载安装单飞（防连点并发）
 _CHECKING = False
+_CHECK_LOCK = threading.Lock()
+_UPDATING = False
+_UPDATE_LOCK = threading.Lock()
+# 进度 UI 回调节流：至少间隔或百分比变化才 after
+_PROGRESS_UI_INTERVAL_S = 0.1
+# TODO: 下载取消 Event（用户点取消时 set，worker 轮询）
 
 # kind: busy | ok | error | update | info
 StatusCb = Optional[Callable[[str, str], None]]
@@ -50,6 +58,71 @@ def _emit_status(status_cb: StatusCb, message: str, kind: str = "info") -> None:
         logger.debug("更新状态回调失败", exc_info=True)
 
 
+def _set_checking(value: bool) -> None:
+    global _CHECKING
+    with _CHECK_LOCK:
+        _CHECKING = value
+
+
+def _try_begin_check() -> bool:
+    """尝试占用检查单飞；已在检查中则返回 False。"""
+    global _CHECKING
+    with _CHECK_LOCK:
+        if _CHECKING:
+            return False
+        _CHECKING = True
+        return True
+
+
+def _try_begin_update() -> bool:
+    """尝试占用下载/安装单飞；已在进行中则返回 False。"""
+    global _UPDATING
+    with _UPDATE_LOCK:
+        if _UPDATING:
+            return False
+        _UPDATING = True
+        return True
+
+
+def _end_update() -> None:
+    global _UPDATING
+    with _UPDATE_LOCK:
+        _UPDATING = False
+
+
+def _make_throttled_progress(app, progress_win, update_progress_fn) -> Callable[[int, int], None]:
+    """下载进度回调节流：100ms 或百分比变化再调度 UI（完成时强制刷新）。"""
+    state = {"last_t": 0.0, "last_pct": -1}
+
+    def _progress(received: int, total: int) -> None:
+        now = time.monotonic()
+        pct = -1
+        if total and total > 0:
+            try:
+                pct = int(max(0, min(100, (received * 100) // total)))
+            except Exception:
+                pct = -1
+        done = total > 0 and received >= total
+        elapsed = now - state["last_t"]
+        if (
+            not done
+            and elapsed < _PROGRESS_UI_INTERVAL_S
+            and pct == state["last_pct"]
+        ):
+            return
+        state["last_t"] = now
+        state["last_pct"] = pct
+        try:
+            app.master.after(
+                0,
+                lambda r=received, t=total: update_progress_fn(progress_win, r, t),
+            )
+        except Exception:
+            pass
+
+    return _progress
+
+
 def run_update_check(
         app,
         manual: bool = False,
@@ -61,8 +134,7 @@ def run_update_check(
     status_cb(message, kind)：设置中心等内联反馈；传入后手动检查不再弹 info/error。
     kind: busy | ok | error | update | info
     """
-    global _CHECKING
-    if _CHECKING:
+    if not _try_begin_check():
         if status_cb:
             _emit_status(status_cb, "正在检查更新，请稍候…", "busy")
         elif manual:
@@ -76,7 +148,6 @@ def run_update_check(
             except Exception:
                 pass
         return
-    _CHECKING = True
     _emit_status(status_cb, "正在检查更新…", "busy")
 
     def worker():
@@ -96,8 +167,7 @@ def run_update_check(
                 ),
             )
         except Exception:
-            global _CHECKING
-            _CHECKING = False
+            _set_checking(False)
             logger.debug("回传更新检查结果失败", exc_info=True)
 
     threading.Thread(target=worker, daemon=True, name="cdt-update-check").start()
@@ -140,8 +210,7 @@ def _on_check_done(
         manual: bool,
         status_cb: StatusCb = None,
 ) -> None:
-    global _CHECKING
-    _CHECKING = False
+    _set_checking(False)
     _mark_checked_today(app)
 
     if result.error:
@@ -248,8 +317,21 @@ def _prompt_update(app, result: core_update.UpdateCheckResult, notes: str) -> No
     show_update_available(app, result, notes, on_action=on_action)
 
 
+def _notify_update_busy(app) -> None:
+    """下载/安装已在进行时的轻量提示。"""
+    try:
+        from ui.app_dialogs import show_info
+
+        app.master.after(0, lambda: show_info(app, "正在下载或安装更新，请稍候…"))
+    except Exception:
+        logger.debug("更新忙碌提示失败", exc_info=True)
+
+
 def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
     if not result.asset_url:
+        return
+    if not _try_begin_update():
+        _notify_update_busy(app)
         return
 
     from ui.update_dialog import close_progress, show_update_progress, update_progress
@@ -259,6 +341,7 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
         "正在下载更新",
         "下载完成后将自动安装并重启，请稍候…",
     )
+    progress_cb = _make_throttled_progress(app, progress_win, update_progress)
 
     def worker():
         err: Optional[str] = None
@@ -273,18 +356,10 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
                 result.asset_name or f"count_down_tool-{result.latest_version}-win64.zip",
             )
 
-            def _progress(received: int, total: int) -> None:
-                try:
-                    app.master.after(
-                        0, lambda r=received, t=total: update_progress(progress_win, r, t)
-                    )
-                except Exception:
-                    pass
-
             core_update.download_file(
                 result.asset_url,
                 zip_path,
-                progress=_progress,
+                progress=progress_cb,
                 expected_size=int(getattr(result, "asset_size", 0) or 0),
             )
             core_update.apply_windows_update_from_zip(zip_path)
@@ -293,6 +368,9 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
             err = str(exc)
 
         def done():
+            # 成功退出前也释放标志（进程将结束；失败路径需允许重试）
+            if err:
+                _end_update()
             close_progress(progress_win)
             if err:
                 from ui.app_dialogs import show_error
@@ -311,13 +389,16 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
         try:
             app.master.after(0, done)
         except Exception:
-            pass
+            _end_update()
 
     threading.Thread(target=worker, daemon=True, name="cdt-update-win").start()
 
 
 def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
     if not result.asset_url:
+        return
+    if not _try_begin_update():
+        _notify_update_busy(app)
         return
 
     from ui.update_dialog import close_progress, show_update_progress, update_progress
@@ -327,6 +408,7 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
         "正在下载更新包",
         "将保存到「下载」文件夹，完成后可手动替换 App。",
     )
+    progress_cb = _make_throttled_progress(app, progress_win, update_progress)
 
     def worker():
         err: Optional[str] = None
@@ -336,20 +418,13 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
             name = result.asset_name or f"count_down_tool-{result.latest_version}.zip"
             dest = os.path.join(folder, name)
 
-            def _progress(received: int, total: int) -> None:
-                try:
-                    app.master.after(
-                        0, lambda r=received, t=total: update_progress(progress_win, r, t)
-                    )
-                except Exception:
-                    pass
-
-            core_update.download_file(result.asset_url, dest, progress=_progress)
+            core_update.download_file(result.asset_url, dest, progress=progress_cb)
         except Exception as exc:
             logger.exception("macOS 下载更新失败")
             err = str(exc)
 
         def done():
+            _end_update()
             close_progress(progress_win)
             if err:
                 from ui.app_dialogs import show_error
@@ -376,7 +451,7 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
         try:
             app.master.after(0, done)
         except Exception:
-            pass
+            _end_update()
 
     threading.Thread(target=worker, daemon=True, name="cdt-update-mac").start()
 

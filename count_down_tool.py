@@ -9,6 +9,7 @@
 import logging
 import os
 import platform
+import time
 import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox
@@ -35,7 +36,13 @@ from core.countdown_core import (
 )
 from core.themes import DEFAULT_THEME_ID, resolve_theme
 from services.tray import init_tray_icon, refresh_tray_menu, stop_tray
-from services.windows_native import acquire_single_instance, bring_existing_to_front
+from services.windows_native import (
+    acquire_single_instance,
+    bring_existing_to_front,
+    clear_stale_show_request,
+    consume_show_request,
+    request_show_existing,
+)
 from ui.full_window import build_full_ui, setup_styles
 from ui.mini_window import (
     create_mini_window,
@@ -107,6 +114,8 @@ class CountdownApp:
         # 进度条：start 时记录总时长；暂停时冻结当前进度
         self._duration_total_seconds = 0.0
         self._progress_value = 0.0
+        # 暂停时冻结的剩余秒数（权威数据）；None 表示未处于暂停冻结
+        self._paused_remaining = None
         self._time_spinboxes = []
         self._preset_chips = []
         self.progress_canvas = None
@@ -178,6 +187,9 @@ class CountdownApp:
             has_last = "last_mode" in getattr(self, "_loaded_keys", set())
             if (has_last and self._last_mode == "mini") or (not has_last):
                 self._switch_to_mini()
+        # 二次启动唤醒：轮询 show.request（跨平台文件标志）
+        self._show_poll_timer_id = None
+        self._start_show_request_poll()
         try:
             from services.updater import schedule_startup_check
 
@@ -348,6 +360,24 @@ class CountdownApp:
     def _show_full_mode(self):
         _mode.show_full_mode(self)
 
+    def _handle_external_show(self):
+        _mode.handle_external_show(self)
+
+    def _start_show_request_poll(self):
+        """定时检查次实例写入的 show 请求。"""
+        self._poll_show_request()
+
+    def _poll_show_request(self):
+        try:
+            if consume_show_request():
+                self._handle_external_show()
+        except Exception:
+            logger.debug("轮询 show 请求失败", exc_info=True)
+        try:
+            self._show_poll_timer_id = self.master.after(400, self._poll_show_request)
+        except Exception:
+            self._show_poll_timer_id = None
+
     def _has_tray(self):
         return _mode.has_tray(self)
 
@@ -356,12 +386,19 @@ class CountdownApp:
 
     def _quit_app(self):
         self._save_config()
+        tid = getattr(self, "_show_poll_timer_id", None)
+        if tid is not None:
+            try:
+                self.master.after_cancel(tid)
+            except Exception:
+                pass
+            self._show_poll_timer_id = None
         stop_tray(self)
         self._destroy_mini_window()
         self.master.destroy()
 
     def _show_time_picker(self):
-        # 仅 running 禁止改到期时间；paused / idle / finished 可开
+        # running / paused 禁止改到期时间；idle / finished 可开
         if self._inputs_locked():
             return
         show_time_picker(self)
@@ -431,7 +468,16 @@ class CountdownApp:
 def main():
     ok, _ = acquire_single_instance()
     if not ok:
+        # 先发 show 请求（主实例轮询恢复），再尝试直接置前
+        request_show_existing()
         brought = bring_existing_to_front()
+        if not brought:
+            # 给主实例一点时间消费请求；仍失败则提示
+            try:
+                time.sleep(0.5)
+            except Exception:
+                pass
+            brought = bring_existing_to_front()
         if not brought:
             try:
                 root = tk.Tk()
@@ -442,6 +488,8 @@ def main():
                 logger.warning("单实例提示失败", exc_info=True)
                 print(f"{APP_NAME} 已在运行中。")
         return
+
+    clear_stale_show_request()
 
     missing = []
     # macOS 用菜单栏，不依赖 pystray（避免与 Tk 双循环崩溃）

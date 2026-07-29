@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Mini 桌面小组件：创建 / 拖动 / 缩放 / 右键菜单。"""
+"""Mini 桌面小组件：创建 / 拖动 / 缩放 / 透明与几何持久化。
+
+设置（透明、字色、默认大小等）走托盘/菜单栏，Mini 本身无右键菜单。
+"""
 
 import logging
 import platform
@@ -13,9 +16,16 @@ from core.countdown_core import (
     parse_mini_geometry,
     parse_mini_size,
 )
-from services.windows_native import set_tool_window, start_native_window_drag
+from services.windows_native import MINI_WINDOW_TITLE, set_tool_window, start_native_window_drag
 
 logger = logging.getLogger("count_down_tool")
+
+# Windows -transparentcolor 专用色键：勿用 title_bar/字色，避免浅色主题或字色命中被抠
+# （纯白在部分环境也会误抠，故用极暗稀有色）
+_MINI_TRANSPARENT_KEY = "#010203"
+
+# 几何保存 debounce（ms）：拖动/缩放过程中合并写盘
+_GEO_SAVE_DEBOUNCE_MS = 400
 
 # 边缘热区宽度（像素）
 _RESIZE_BORDER = 6
@@ -102,8 +112,8 @@ def create_mini_window(app):
         return
 
     mini = tk.Toplevel(app.master)
-    # Mini 无边框小组件；设置/透明/字色等统一走系统托盘，不提供右键菜单。
-    mini.title("")
+    # Mini 无边框小组件；设置可枚举标题供二次启动 bring_to_front（视觉仍无标题栏）
+    mini.title(MINI_WINDOW_TITLE)
     system = platform.system()
     # mac：先隐藏，在首次 map 前设 MacWindowStyle，否则系统边框去不掉
     if system == "Darwin":
@@ -113,15 +123,17 @@ def create_mini_window(app):
             pass
     _apply_mini_borderless(mini, system)
     # macOS 透明：-transparent + systemTransparent（底板透明、文字不透明、去阴影）
-    # Windows 透明：-transparentcolor 色键抠底
+    # Windows 透明：-transparentcolor 专用稀有色键（勿用 title_bar，避免与字色/浅色主题冲突）
     if app._transparent_mode and system == "Darwin":
         bg = "systemTransparent"
+    elif app._transparent_mode and system == "Windows":
+        bg = _MINI_TRANSPARENT_KEY
     else:
         bg = app.COLORS["title_bar"]
     mini.configure(bg=bg)
     if app._transparent_mode:
         if system == "Windows":
-            mini.attributes("-transparentcolor", app.COLORS["title_bar"])
+            mini.attributes("-transparentcolor", _MINI_TRANSPARENT_KEY)
         elif system == "Darwin":
             try:
                 mini.attributes("-transparent", True)
@@ -310,6 +322,14 @@ def destroy_mini_window(app, capture_size=True):
     capture_size=False：仅保存位置，不覆盖 _mini_size（用于「恢复默认大小」）。
     """
     if app.mini_window:
+        # 取消未触发的 debounce，避免销毁后写盘
+        try:
+            tid = getattr(app, "_mini_geo_save_id", None)
+            if tid is not None:
+                app.master.after_cancel(tid)
+        except Exception:
+            pass
+        app._mini_geo_save_id = None
         try:
             if capture_size:
                 _capture_mini_geometry(app)
@@ -513,6 +533,7 @@ def mini_on_motion(app, event):
         y = app.mini_window.winfo_y() + event.y - app._drag_data["y"]
         app.mini_window.geometry(f"+{x}+{y}")
         app._mini_pos = (x, y)
+        _schedule_save_mini_geometry(app)
 
 
 def _do_resize(app, event):
@@ -553,8 +574,33 @@ def _do_resize(app, event):
         pass
 
 
+def _schedule_save_mini_geometry(app):
+    """debounce 写入 Mini 几何到配置，避免拖动过程中频繁 _save_config。"""
+    try:
+        tid = getattr(app, "_mini_geo_save_id", None)
+        if tid is not None:
+            app.master.after_cancel(tid)
+    except Exception:
+        pass
+    app._mini_geo_save_id = None
+
+    def _flush():
+        app._mini_geo_save_id = None
+        try:
+            _capture_mini_geometry(app)
+            app._save_config()
+        except Exception:
+            logger.warning("debounce 保存 Mini 几何失败", exc_info=True)
+
+    try:
+        master = app.master
+        app._mini_geo_save_id = master.after(_GEO_SAVE_DEBOUNCE_MS, _flush)
+    except Exception:
+        _flush()
+
+
 def mini_on_release(app, event=None):
-    """松手：保存位置与尺寸。"""
+    """松手：捕获几何并 debounce 写盘。"""
     if not app.mini_window:
         app._resize_data = None
         return
@@ -562,7 +608,7 @@ def mini_on_release(app, event=None):
     app._resize_data = None
     try:
         _capture_mini_geometry(app)
-        app._save_config()
+        _schedule_save_mini_geometry(app)
         if was_resize:
             apply_mini_content_scale(app, force=True)
     except Exception:

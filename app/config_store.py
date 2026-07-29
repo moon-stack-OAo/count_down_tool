@@ -19,7 +19,12 @@ from core.countdown_core import (
     resolve_mini_text_color,
     save_config_dict,
 )
-from core.themes import resolve_theme
+from core.themes import (
+    DEFAULT_THEME_ID,
+    is_valid_theme_id,
+    resolve_theme,
+    sanitize_theme_custom,
+)
 from services.autostart import is_autostart_enabled
 
 logger = logging.getLogger("count_down_tool")
@@ -83,10 +88,11 @@ def load_config(app) -> None:
         if lm in ("full", "mini"):
             app._last_mode = lm
         tid = config.get("theme_id")
-        if isinstance(tid, str) and tid:
+        if is_valid_theme_id(tid):
             app._theme_id = tid
-        custom = config.get("theme_custom")
-        app._theme_custom = custom if isinstance(custom, dict) else None
+        else:
+            app._theme_id = DEFAULT_THEME_ID
+        app._theme_custom = sanitize_theme_custom(config.get("theme_custom"))
         app.COLORS = resolve_theme(app._theme_id, app._theme_custom)
         app._mini_text = normalize_mini_text(config.get("mini_text"))
         from services.sound import (

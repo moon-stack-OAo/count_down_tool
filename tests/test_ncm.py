@@ -16,10 +16,13 @@ if _ROOT not in sys.path:
 from services.ncm import (
     _CORE_KEY,
     _MAGIC,
+    _MAX_KEY_LEN,
+    _MAX_META_LEN,
     _META_KEY,
     _aes_ecb_decrypt,
     _build_key_box,
     _decrypt_audio_chunk,
+    cleanup_ncm_cache,
     decrypt_ncm,
     is_ncm_file,
     resolve_ncm_play_path,
@@ -179,6 +182,110 @@ class TestNcmRoundtrip(unittest.TestCase):
             self.assertIsNone(resolve_ncm_play_path(path))
         finally:
             os.unlink(path)
+
+
+class TestNcmHeaderGuards(unittest.TestCase):
+    def _write_malicious(self, key_len: int) -> str:
+        # 仅 magic + gap + 超大 key_len，无后续 body
+        blob = bytearray()
+        blob.extend(_MAGIC)
+        blob.extend(b"\x00\x00")
+        blob.extend(struct.pack("<I", key_len))
+        # 故意不写 body，剩余长度远小于 key_len
+        blob.extend(b"\x00" * 8)
+        f = tempfile.NamedTemporaryFile(suffix=".ncm", delete=False)
+        try:
+            f.write(bytes(blob))
+            f.close()
+            return f.name
+        except Exception:
+            f.close()
+            raise
+
+    def test_oversized_key_len_rejected(self):
+        path = self._write_malicious(_MAX_KEY_LEN + 1)
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                decrypt_ncm(path)
+            self.assertIn("key_len", str(ctx.exception))
+            self.assertIsNone(resolve_ncm_play_path(path))
+        finally:
+            os.unlink(path)
+
+    def test_key_len_exceeds_remaining_rejected(self):
+        # 在上限内但超过文件剩余长度
+        path = self._write_malicious(1024)
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                decrypt_ncm(path)
+            msg = str(ctx.exception)
+            self.assertTrue("key_len" in msg or "剩余" in msg)
+        finally:
+            os.unlink(path)
+
+    def test_oversized_meta_len_rejected(self):
+        # 合法小 key，再写超大 meta_len
+        raw_key = b"0123456789abcdef"
+        key_payload = _pkcs7_pad(b"neteasecloudmusic" + raw_key)
+        key_enc = bytearray(_aes_ecb_encrypt(_CORE_KEY, key_payload))
+        for i in range(len(key_enc)):
+            key_enc[i] ^= 0x64
+        blob = bytearray()
+        blob.extend(_MAGIC)
+        blob.extend(b"\x00\x00")
+        blob.extend(struct.pack("<I", len(key_enc)))
+        blob.extend(key_enc)
+        blob.extend(struct.pack("<I", _MAX_META_LEN + 1))
+        blob.extend(b"\x00" * 4)
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".ncm", delete=False) as f:
+                f.write(bytes(blob))
+                path = f.name
+            with self.assertRaises(ValueError) as ctx:
+                decrypt_ncm(path)
+            self.assertIn("meta_len", str(ctx.exception))
+        finally:
+            if path and os.path.isfile(path):
+                os.unlink(path)
+
+
+class TestNcmCacheCleanup(unittest.TestCase):
+    def test_cleanup_by_file_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = []
+            for i in range(5):
+                p = os.path.join(tmp, f"cache{i}.mp3")
+                with open(p, "wb") as f:
+                    f.write(b"x" * 10)
+                # 保证 mtime 可区分
+                os.utime(p, (i + 1, i + 1))
+                paths.append(p)
+            keep = {paths[-1]}
+            removed = cleanup_ncm_cache(
+                cache_root=tmp, max_files=2, max_bytes=10**9, keep_paths=keep
+            )
+            self.assertGreaterEqual(removed, 3)
+            self.assertTrue(os.path.isfile(paths[-1]))
+            remaining = [p for p in paths if os.path.isfile(p)]
+            self.assertLessEqual(len(remaining), 2)
+            self.assertIn(paths[-1], remaining)
+
+    def test_cleanup_by_total_size(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for i in range(3):
+                p = os.path.join(tmp, f"big{i}.mp3")
+                with open(p, "wb") as f:
+                    f.write(b"y" * 100)
+                os.utime(p, (i + 1, i + 1))
+            removed = cleanup_ncm_cache(
+                cache_root=tmp, max_files=100, max_bytes=150
+            )
+            self.assertGreaterEqual(removed, 1)
+            total = 0
+            for name in os.listdir(tmp):
+                total += os.path.getsize(os.path.join(tmp, name))
+            self.assertLessEqual(total, 150)
 
 
 if __name__ == "__main__":

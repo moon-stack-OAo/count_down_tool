@@ -5,6 +5,7 @@ import atexit
 import logging
 import os
 import platform
+import time
 
 from core.countdown_core import APP_NAME, APP_NAME_EN, try_acquire_weak_lock, user_config_dir
 
@@ -13,9 +14,86 @@ logger = logging.getLogger("count_down_tool")
 # 单实例锁句柄（进程级）
 _instance_lock = None
 
+# 二次启动「show 请求」标志文件名（写在用户配置目录）
+SHOW_REQUEST_NAME = "show.request"
+# Mini 窗可枚举标题（无边框仍可 GetWindowText）
+MINI_WINDOW_TITLE = f"{APP_NAME} - Mini"
+
+
+def window_title_matches_app(title: str) -> bool:
+    """判断窗口标题是否属于本应用（避免误匹配无关窗口）。"""
+    if not title:
+        return False
+    t = title.strip()
+    if not t:
+        return False
+    if t == APP_NAME or t == APP_NAME_EN:
+        return True
+    if t == MINI_WINDOW_TITLE:
+        return True
+    # 本应用对话框：APP_NAME · xxx / APP_NAME - xxx
+    for prefix in (f"{APP_NAME} ·", f"{APP_NAME} -", f"{APP_NAME_EN} ·", f"{APP_NAME_EN} -"):
+        if t.startswith(prefix):
+            return True
+    return False
+
+
+def show_request_path() -> str:
+    """二次启动唤醒请求文件路径。"""
+    return os.path.join(user_config_dir(), SHOW_REQUEST_NAME)
+
+
+def request_show_existing() -> bool:
+    """次实例：写入 show 请求，通知主实例恢复到前台。"""
+    try:
+        path = show_request_path()
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        # 写入时间戳，便于主实例去抖/排查
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(str(time.time()))
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except OSError:
+                pass
+        return True
+    except Exception:
+        logger.debug("写入 show 请求失败", exc_info=True)
+        return False
+
+
+def consume_show_request() -> bool:
+    """主实例：若存在 show 请求则删除并返回 True。"""
+    path = show_request_path()
+    try:
+        if not os.path.isfile(path):
+            return False
+        os.remove(path)
+        return True
+    except FileNotFoundError:
+        return False
+    except Exception:
+        logger.debug("消费 show 请求失败", exc_info=True)
+        return False
+
+
+def clear_stale_show_request() -> None:
+    """启动时清理残留 show 请求，避免误唤醒。"""
+    try:
+        path = show_request_path()
+        if os.path.isfile(path):
+            os.remove(path)
+    except Exception:
+        logger.debug("清理残留 show 请求失败", exc_info=True)
+
 
 def bring_existing_to_front():
-    """已有实例时尝试置前（Windows）；失败静默。"""
+    """已有实例时尝试置前（Windows）；含隐藏窗；失败静默。
+
+    两轮枚举：先可见窗，再全部顶层窗（覆盖 Mini 工具窗 / 托盘 withdraw）。
+    """
     if platform.system() != "Windows":
         return False
     try:
@@ -23,29 +101,51 @@ def bring_existing_to_front():
         from ctypes import wintypes
 
         user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
         SW_RESTORE = 9
-        found = []
+        SW_SHOW = 5
+        visible = []
+        hidden = []
 
         @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
         def _enum(hwnd, _lparam):
-            if not user32.IsWindowVisible(hwnd):
-                return True
             length = user32.GetWindowTextLengthW(hwnd)
             if length <= 0:
                 return True
             buf = ctypes.create_unicode_buffer(length + 1)
             user32.GetWindowTextW(hwnd, buf, length + 1)
             title = buf.value or ""
-            if APP_NAME in title or APP_NAME_EN in title:
-                found.append(hwnd)
+            if not window_title_matches_app(title):
+                return True
+            if user32.IsWindowVisible(hwnd):
+                visible.append(hwnd)
+            else:
+                hidden.append(hwnd)
             return True
 
         user32.EnumWindows(_enum, 0)
+        # 可见优先；托盘 withdraw 时走 hidden（主窗仍有 APP_NAME 标题）
+        found = visible if visible else hidden
         if not found:
             return False
         hwnd = found[0]
-        user32.ShowWindow(hwnd, SW_RESTORE)
-        user32.SetForegroundWindow(hwnd)
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, SW_RESTORE)
+        else:
+            user32.ShowWindow(hwnd, SW_SHOW)
+        # 突破跨进程前台限制
+        fg = user32.GetForegroundWindow()
+        cur_tid = kernel32.GetCurrentThreadId()
+        fg_tid = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+        attached = False
+        if fg_tid and fg_tid != cur_tid:
+            attached = bool(user32.AttachThreadInput(cur_tid, fg_tid, True))
+        try:
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+        finally:
+            if attached:
+                user32.AttachThreadInput(cur_tid, fg_tid, False)
         return True
     except Exception:
         logger.debug("置前已有实例失败", exc_info=True)

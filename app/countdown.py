@@ -23,11 +23,14 @@ from core.countdown_core import (
     button_text_for_state,
     format_remaining,
     format_target_label,
+    inputs_locked_for_state,
     next_second_delay_ms,
     next_state,
     progress_ratio,
+    remaining_seconds,
     target_from_duration,
     target_from_hms,
+    target_from_remaining,
     validate_hms,
 )
 from services.tray import refresh_tray_menu
@@ -54,8 +57,12 @@ class CountdownController:
         return app._state
 
     def inputs_locked(self) -> bool:
-        """仅 running 时锁定到期时间与快捷预设；暂停后可改时间。"""
-        return self.app._state == STATE_RUNNING
+        """running 与 paused 均锁定到期时间与快捷预设。"""
+        return inputs_locked_for_state(self.app._state)
+
+    def clear_paused_remaining(self):
+        """清空暂停冻结的剩余秒数。"""
+        self.app._paused_remaining = None
 
     def apply_primary_button_style(self):
         """主按钮按状态切换样式：空闲 accent / 运行·暂停 warning / 完成 success。"""
@@ -233,22 +240,55 @@ class CountdownController:
             self.restart_countdown()
             return
         if app._state == STATE_RUNNING:
-            if app._countdown_timer_id is not None:
-                try:
-                    app.master.after_cancel(app._countdown_timer_id)
-                except Exception:
-                    logger.debug("暂停时取消倒计时定时器失败", exc_info=True)
-                app._countdown_timer_id = None
-            self.set_state(ACTION_PAUSE)
+            self.pause_countdown()
         elif app._state == STATE_PAUSED:
-            self.set_state(ACTION_RESUME)
-            if app.target_time:
-                self.update_countdown(app.target_time)
-            else:
-                self.start_countdown()
+            self.resume_countdown()
         else:
             self.start_countdown()
         app._sync_mini_state()
+
+    def pause_countdown(self):
+        """暂停：冻结剩余时间，取消 tick，UI 保持暂停瞬间的值。"""
+        app = self.app
+        if app._countdown_timer_id is not None:
+            try:
+                app.master.after_cancel(app._countdown_timer_id)
+            except Exception:
+                logger.debug("暂停时取消倒计时定时器失败", exc_info=True)
+            app._countdown_timer_id = None
+        now = datetime.now()
+        if app.target_time is not None:
+            rem = remaining_seconds(app.target_time, now)
+        else:
+            rem = 0.0
+        app._paused_remaining = rem
+        app.countdown_text = format_remaining(int(rem))
+        if app.countdown_label:
+            app.countdown_label.config(
+                text=app.countdown_text, style="Countdown.TLabel"
+            )
+        self.update_progress_from_remaining(rem)
+        self.set_state(ACTION_PAUSE)
+
+    def resume_countdown(self):
+        """继续：以冻结剩余重建 target_time，清空冻结值并重新 schedule tick。"""
+        app = self.app
+        rem = app._paused_remaining
+        app._paused_remaining = None
+        now = datetime.now()
+        if rem is not None:
+            app.target_time = target_from_remaining(rem, now)
+            if app.target_time_label:
+                app.target_time_label.config(
+                    text=format_target_label(app.target_time, now)
+                )
+            self.set_state(ACTION_RESUME)
+            self.update_countdown(app.target_time)
+        elif app.target_time:
+            self.set_state(ACTION_RESUME)
+            self.update_countdown(app.target_time)
+        else:
+            self.start_countdown()
 
     def apply_target_to_spinboxes(self, target):
         app = self.app
@@ -262,6 +302,7 @@ class CountdownController:
 
     def restart_countdown(self):
         app = self.app
+        self.clear_paused_remaining()
         if app._preset_duration is not None:
             now = datetime.now()
             target = now + app._preset_duration
@@ -286,9 +327,13 @@ class CountdownController:
 
     def start_countdown(self):
         app = self.app
+        if app._state == STATE_PAUSED and app._paused_remaining is not None:
+            self.resume_countdown()
+            return
         if not self.validate_inputs():
             self.set_state(ACTION_START_FAIL)
             return
+        self.clear_paused_remaining()
         app.target_time = self.get_target_time()
         if not app.target_time:
             self.set_state(ACTION_START_FAIL)
@@ -339,9 +384,9 @@ class CountdownController:
                 logger.debug("取消倒计时定时器失败", exc_info=True)
             app._countdown_timer_id = None
 
-        remaining = target_time - datetime.now()
-        rem_sec = remaining.total_seconds()
+        rem_sec = remaining_seconds(target_time, datetime.now())
         if rem_sec <= 0:
+            self.clear_paused_remaining()
             app.countdown_text = "已到时间!"
             app.countdown_label.config(text="已到时间!", style="Success.TLabel")
             app._progress_value = 1.0
@@ -442,6 +487,7 @@ class CountdownController:
         app._alarm_count = 0
         app._bell_count = 0
         app._preset_duration = None
+        self.clear_paused_remaining()
         app._duration_total_seconds = 0.0
         app._progress_value = 0.0
         if app._alarm_timer_id is not None:
@@ -468,16 +514,19 @@ class CountdownController:
         app._sync_mini_state()
 
     def set_preset_time(self, hours, minutes, seconds):
+        """快捷预设：写入目标后走状态机开始（与正常 START/RESTART 一致）。"""
         app = self.app
         if self.inputs_locked():
             return
         now = datetime.now()
         target, duration = target_from_duration(hours, minutes, seconds, now)
         app._preset_duration = duration
+        self.clear_paused_remaining()
 
         self.apply_target_to_spinboxes(target)
         app.target_time = target
-        app.target_time_label.config(text=format_target_label(target, now))
+        if app.target_time_label:
+            app.target_time_label.config(text=format_target_label(target, now))
 
         if app._countdown_timer_id is not None:
             try:
@@ -487,12 +536,10 @@ class CountdownController:
             app._countdown_timer_id = None
 
         self.record_duration_total(target, now)
-        app._state = STATE_RUNNING
-        app.running = True
-        if app.btn_start:
-            app.btn_start.config(text=button_text_for_state(STATE_RUNNING))
-        self.apply_primary_button_style()
-        self.apply_input_lock()
-        refresh_tray_menu(app)
+        # 禁止直接写 _state；idle→START，finished→RESTART（running/paused 已锁定）
+        if app._state == STATE_FINISHED:
+            self.set_state(ACTION_RESTART)
+        else:
+            self.set_state(ACTION_START)
         self.update_countdown(target)
         app._sync_mini_state()

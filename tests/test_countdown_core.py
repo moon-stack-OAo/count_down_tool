@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """countdown_core 单元测试。"""
 
+import json
 import os
 import sys
 import tempfile
@@ -32,6 +33,7 @@ from core.countdown_core import (
     button_text_for_state,
     format_remaining,
     format_target_label,
+    inputs_locked_for_state,
     is_process_alive,
     load_config_dict,
     merge_config,
@@ -47,11 +49,13 @@ from core.countdown_core import (
     parse_mini_size,
     progress_ratio,
     read_lock_pid,
+    remaining_seconds,
     resolve_mini_text_color,
     resource_path,
     save_config_dict,
     target_from_duration,
     target_from_hms,
+    target_from_remaining,
     try_acquire_weak_lock,
     validate_hms,
     write_lock_pid,
@@ -130,6 +134,61 @@ class TestTargetFromDuration(unittest.TestCase):
         now2 = datetime(2026, 7, 17, 15, 30, 0)
         target2 = now2 + duration
         self.assertEqual(target2, datetime(2026, 7, 17, 15, 35, 0))
+
+
+class TestRemainingFreeze(unittest.TestCase):
+    def test_remaining_seconds(self):
+        now = datetime(2026, 7, 17, 12, 0, 0)
+        target = datetime(2026, 7, 17, 12, 1, 40)
+        self.assertAlmostEqual(remaining_seconds(target, now), 100.0)
+        self.assertEqual(remaining_seconds(now, now), 0.0)
+        self.assertEqual(
+            remaining_seconds(datetime(2026, 7, 17, 11, 0, 0), now), 0.0
+        )
+
+    def test_target_from_remaining(self):
+        now = datetime(2026, 7, 17, 15, 0, 0)
+        self.assertEqual(
+            target_from_remaining(70, now),
+            datetime(2026, 7, 17, 15, 1, 10),
+        )
+        self.assertEqual(target_from_remaining(-3, now), now)
+
+    def test_pause_resume_preserves_remaining(self):
+        """暂停后墙钟前进，resume 用冻结 remaining 重建 target，剩余应不变。"""
+        t0 = datetime(2026, 7, 17, 12, 0, 0)
+        target = t0 + timedelta(seconds=100)
+        pause_at = t0 + timedelta(seconds=30)
+        frozen = remaining_seconds(target, pause_at)
+        self.assertAlmostEqual(frozen, 70.0)
+
+        resume_at = pause_at + timedelta(seconds=120)
+        new_target = target_from_remaining(frozen, resume_at)
+        rem_after = remaining_seconds(new_target, resume_at)
+        self.assertAlmostEqual(rem_after, frozen, delta=1.0)
+        self.assertAlmostEqual(rem_after, 70.0, delta=1.0)
+
+    def test_without_freeze_remaining_would_decay(self):
+        """对照：若不冻结而沿用原 target，暂停期间剩余会被扣掉。"""
+        t0 = datetime(2026, 7, 17, 12, 0, 0)
+        target = t0 + timedelta(seconds=100)
+        pause_at = t0 + timedelta(seconds=30)
+        resume_at = pause_at + timedelta(seconds=120)
+        rem_without_freeze = remaining_seconds(target, resume_at)
+        self.assertAlmostEqual(rem_without_freeze, 0.0)
+
+
+class TestInputsLocked(unittest.TestCase):
+    def test_running_and_paused_locked(self):
+        self.assertTrue(inputs_locked_for_state(STATE_RUNNING))
+        self.assertTrue(inputs_locked_for_state(STATE_PAUSED))
+
+    def test_idle_and_finished_unlocked(self):
+        self.assertFalse(inputs_locked_for_state(STATE_IDLE))
+        self.assertFalse(inputs_locked_for_state(STATE_FINISHED))
+
+    def test_unknown_unlocked(self):
+        self.assertFalse(inputs_locked_for_state("unknown"))
 
 
 class TestFormatRemaining(unittest.TestCase):
@@ -312,6 +371,23 @@ class TestConfigMergeLoadSave(unittest.TestCase):
                 f.write("not-json")
             self.assertEqual(load_config_dict(path), {})
 
+    def test_save_config_atomic_valid_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            # 先写一份旧配置，确保 replace 后仍合法
+            with open(path, "w", encoding="utf-8") as f:
+                f.write('{"old": true}')
+            payload = {"theme_id": "slate_cyan", "nested": {"a": 1}, "cn": "中文"}
+            save_config_dict(path, payload)
+            self.assertFalse(os.path.exists(path + ".tmp"))
+            with open(path, "r", encoding="utf-8") as f:
+                raw = f.read()
+            loaded = json.loads(raw)
+            self.assertEqual(loaded["theme_id"], "slate_cyan")
+            self.assertEqual(loaded["nested"]["a"], 1)
+            self.assertEqual(loaded["cn"], "中文")
+            self.assertNotIn("old", loaded)
+
 
 class TestMiniText(unittest.TestCase):
     def test_normalize_keeps_valid(self):
@@ -420,6 +496,12 @@ class TestParseMiniSize(unittest.TestCase):
 
     def test_size_only(self):
         self.assertEqual(parse_mini_size("300x80"), (300, 80))
+
+    def test_negative_coords(self):
+        """与 parse_mini_geometry 对齐：负坐标不得破坏宽高解析。"""
+        self.assertEqual(parse_mini_size("220x48-100+200"), (220, 48))
+        self.assertEqual(parse_mini_size("220x48+100-50"), (220, 48))
+        self.assertEqual(parse_mini_size("300x80-10-20"), (300, 80))
 
     def test_invalid(self):
         self.assertIsNone(parse_mini_size(""))

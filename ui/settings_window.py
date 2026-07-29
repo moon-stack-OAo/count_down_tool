@@ -744,6 +744,24 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
                 lambda e, w=row: w.config(bg=c.get("chip_hover", c["border"])),
             )
             row.bind("<Leave>", lambda e, w=row: w.config(bg=c["card"]))
+        # 历史行是新建控件，须重绑滚轮才能在列表上滚动
+        page = getattr(history_frame, "master", None)
+        canvas = None
+        try:
+            # card → content → body → page；向上找带 _settings_canvas 的祖先
+            w = history_frame
+            for _ in range(8):
+                if w is None:
+                    break
+                canvas = getattr(w, "_settings_canvas", None)
+                if canvas is not None:
+                    page = w
+                    break
+                w = getattr(w, "master", None)
+        except Exception:
+            canvas = None
+        if page is not None and canvas is not None:
+            _bind_wheel_tree(history_frame, canvas)
 
     def _refresh():
         muted = bool(getattr(app, "_sound_muted", False))

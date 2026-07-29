@@ -101,8 +101,8 @@ fi
 
 echo ""
 echo "Building application..."
+# 与 CI (.github/workflows/build.yml) 对齐：--windowed app bundle，不用 --onefile
 "$PYTHON" -m PyInstaller \
-    --onefile \
     --windowed \
     --name "count_down_tool" \
     $ICON_OPTION \
@@ -128,6 +128,8 @@ echo "Building application..."
     --hidden-import ui.mini_text_picker \
     --hidden-import ui.settings_window \
     --hidden-import ui.update_dialog \
+    --hidden-import ui.app_dialogs \
+    --hidden-import ui.window_chrome_dialog \
     --hidden-import ui.design \
     --hidden-import ui.design.tokens \
     --hidden-import services \

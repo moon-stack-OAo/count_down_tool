@@ -457,6 +457,12 @@ def show_time_picker(app):
             picker, shell, min_w, min_h, borderless=borderless
         )
         _activate_picker(picker)
+        # 按需 grab：模态输入，关闭时已 grab_release
+        try:
+            if not closed["done"] and picker.winfo_exists():
+                picker.grab_set()
+        except tk.TclError:
+            pass
 
     picker.after_idle(_ready)
     picker.after(50, _ready)

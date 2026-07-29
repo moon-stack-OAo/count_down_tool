@@ -92,6 +92,26 @@ def is_autostart_enabled() -> bool:
         return False
 
 
+def quote_shortcut_arg(arg: str) -> str:
+    """
+    为 Windows 快捷方式 Arguments 引用参数。
+    含空格/制表符/引号时加双引号，内部 " 转义为 \\".
+    """
+    s = str(arg)
+    if not s:
+        return '""'
+    if any(c in s for c in (' ', '\t', '"')):
+        return '"' + s.replace('"', '\\"') + '"'
+    return s
+
+
+def format_shortcut_arguments(args: List[str]) -> str:
+    """将参数列表格式化为快捷方式 Arguments 字符串。"""
+    if not args:
+        return ""
+    return " ".join(quote_shortcut_arg(a) for a in args)
+
+
 def _create_shortcut_windows(lnk_path: str, target: str, args: List[str], workdir: str) -> bool:
     """用 PowerShell + WScript.Shell 创建 .lnk。"""
     parent = os.path.dirname(lnk_path)
@@ -102,7 +122,7 @@ def _create_shortcut_windows(lnk_path: str, target: str, args: List[str], workdi
     def _ps_quote(s: str) -> str:
         return "'" + str(s).replace("'", "''") + "'"
 
-    arguments = " ".join(args) if args else ""
+    arguments = format_shortcut_arguments(args)
     script = (
         f"$ws = New-Object -ComObject WScript.Shell; "
         f"$s = $ws.CreateShortcut({_ps_quote(lnk_path)}); "

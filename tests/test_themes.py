@@ -14,9 +14,11 @@ from core.countdown_core import merge_config
 from core.themes import (
     DEFAULT_THEME_ID,
     THEMES,
+    is_valid_hex_color,
     is_valid_theme_id,
     list_themes,
     resolve_theme,
+    sanitize_theme_custom,
 )
 from services import autostart
 
@@ -88,6 +90,30 @@ class TestThemes(unittest.TestCase):
         colors = resolve_theme("warm_amber", custom=None)
         self.assertEqual(colors["accent"], THEMES["warm_amber"]["colors"]["accent"])
 
+    def test_invalid_custom_color_discarded(self):
+        base = THEMES["slate_cyan"]["colors"]["accent"]
+        colors = resolve_theme(
+            "slate_cyan",
+            custom={"accent": "not-a-color", "bg": "#ABCDEF", "unknown_key": "#000000"},
+        )
+        self.assertEqual(colors["accent"], base)
+        self.assertEqual(colors["bg"], "#ABCDEF")
+        self.assertNotIn("unknown_key", colors)
+
+    def test_is_valid_hex_color(self):
+        self.assertTrue(is_valid_hex_color("#fff"))
+        self.assertTrue(is_valid_hex_color("#112233"))
+        self.assertTrue(is_valid_hex_color("#11223344"))
+        self.assertFalse(is_valid_hex_color("red"))
+        self.assertFalse(is_valid_hex_color("#12"))
+        self.assertFalse(is_valid_hex_color(None))
+
+    def test_sanitize_theme_custom(self):
+        self.assertIsNone(sanitize_theme_custom(None))
+        self.assertIsNone(sanitize_theme_custom({"a": "bad"}))
+        cleaned = sanitize_theme_custom({"accent": "#ABC", "x": "nope"})
+        self.assertEqual(cleaned, {"accent": "#ABC"})
+
     def test_light_title_bar_not_pure_white(self):
         colors = resolve_theme("light")
         self.assertNotEqual(colors["title_bar"].upper(), "#FFFFFF")
@@ -157,6 +183,21 @@ class TestAutostartResolve(unittest.TestCase):
         path = autostart.startup_shortcut_path()
         self.assertTrue(path.endswith("Count Down Tool.lnk"))
         self.assertIn("Startup", path.replace("/", os.sep))
+
+    def test_quote_shortcut_arg_spaces(self):
+        self.assertEqual(autostart.quote_shortcut_arg("plain"), "plain")
+        quoted = autostart.quote_shortcut_arg(r"C:\Program Files\app\main.py")
+        self.assertTrue(quoted.startswith('"'))
+        self.assertTrue(quoted.endswith('"'))
+        self.assertIn("Program Files", quoted)
+
+    def test_format_shortcut_arguments_dev_path(self):
+        script = r"D:\Moon\tools\count down tool\count_down_tool.py"
+        args = autostart.format_shortcut_arguments([script])
+        self.assertEqual(args, f'"{script}"')
+
+    def test_format_shortcut_arguments_empty(self):
+        self.assertEqual(autostart.format_shortcut_arguments([]), "")
 
 
 if __name__ == "__main__":
