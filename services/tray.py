@@ -22,19 +22,31 @@ except ImportError:
     pystray = None
 
 
-def init_tray_icon(app, icon_path):
-    """创建状态菜单入口。macOS 走菜单栏；其它平台走 pystray 后台线程。"""
+def init_tray_icon(app, icon_path) -> bool:
+    """创建状态菜单入口。macOS 走菜单栏；其它平台走 pystray 后台线程。
+
+    返回是否成功启用托盘/菜单栏入口。失败时不抛异常，由调用方提示用户。
+    """
     app.tray_icon = None
     app._status_menu_active = False
+    app._tray_init_error = ""
 
     if platform.system() == "Darwin":
-        from services.mac_menu import init_mac_menubar
+        try:
+            from services.mac_menu import init_mac_menubar
 
-        init_mac_menubar(app)
-        return
+            init_mac_menubar(app)
+            return bool(getattr(app, "_status_menu_active", False))
+        except Exception as exc:
+            logger.exception("macOS 菜单栏创建失败")
+            app._tray_init_error = str(exc) or "菜单栏初始化失败"
+            app.tray_icon = None
+            app._status_menu_active = False
+            return False
 
     if not HAS_PYSTRAY:
-        return
+        app._tray_init_error = "未安装 pystray，托盘不可用"
+        return False
     try:
         image = load_tray_icon(icon_path)
         from ui.context_menus import tray_mini_menu_label, tray_window_menu_label
@@ -83,10 +95,13 @@ def init_tray_icon(app, icon_path):
         app.tray_icon = pystray.Icon(APP_NAME, image, APP_NAME, menu)
         app._status_menu_active = True
         threading.Thread(target=app.tray_icon.run, daemon=True).start()
-    except Exception:
+        return True
+    except Exception as exc:
         logger.exception("托盘图标创建失败")
         app.tray_icon = None
         app._status_menu_active = False
+        app._tray_init_error = str(exc) or "托盘初始化失败"
+        return False
 
 
 def refresh_tray_menu(app):

@@ -267,3 +267,61 @@ def center_dialog_later(win: tk.Misc, w: int, h: int, *, y_ratio: float = 1 / 3)
         win.after(150, _again)
     except tk.TclError:
         pass
+
+
+def ensure_dialog_visible(
+    win: tk.Misc,
+    w: int,
+    h: int,
+    *,
+    y_ratio: float = 1 / 3,
+    flash_topmost_ms: int = 450,
+) -> None:
+    """强制对话框可见：多次居中 + 短暂 topmost + Windows 置前。
+
+    用于设置中心等无边框窗，避免落在 0,0 / 副屏外 / 主窗后面导致「点了没反应」。
+    """
+    center_dialog_later(win, w, h, y_ratio=y_ratio)
+    try:
+        win.deiconify()
+    except tk.TclError:
+        pass
+    try:
+        win.lift()
+        win.attributes("-topmost", True)
+        win.focus_force()
+    except tk.TclError:
+        pass
+
+    if platform.system() == "Windows":
+        def _front():
+            try:
+                if not win.winfo_exists():
+                    return
+                from services.windows_native import force_window_to_front
+
+                force_window_to_front(win)
+            except Exception:
+                pass
+
+        try:
+            win.after(30, _front)
+            win.after(120, _front)
+        except tk.TclError:
+            pass
+
+    def _drop_topmost():
+        try:
+            if win.winfo_exists():
+                win.attributes("-topmost", False)
+                win.lift()
+        except tk.TclError:
+            pass
+
+    try:
+        win.after(max(100, int(flash_topmost_ms)), _drop_topmost)
+        # 再补两次居中，覆盖 DPI / 异步布局
+        win.after(200, lambda: center_dialog(win, w, h, y_ratio=y_ratio))
+        win.after(400, lambda: center_dialog(win, w, h, y_ratio=y_ratio))
+    except tk.TclError:
+        pass

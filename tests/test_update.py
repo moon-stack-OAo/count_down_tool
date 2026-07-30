@@ -131,6 +131,10 @@ class TestExtractAndScript(unittest.TestCase):
             self.assertIn("Copy-Item", body)
             self.assertIn("Get-Process", body)
             self.assertIn("Start-Process", body)
+            self.assertIn("Test-ExeReady", body)
+            self.assertIn(".new", body)
+            self.assertIn(".bak", body)
+            self.assertIn("count_down_tool_update.log", body)
             self.assertNotIn("tasklist", body)
             self.assertNotIn("find ", body.lower())
 

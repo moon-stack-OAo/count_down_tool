@@ -20,6 +20,63 @@ SHOW_REQUEST_NAME = "show.request"
 MINI_WINDOW_TITLE = f"{APP_NAME} - Mini"
 
 
+def path_has_mark_of_the_web(path: str) -> bool:
+    """检测 Windows Mark of the Web（从网络/压缩包拖出的 exe 常见）。
+
+    存在 Zone.Identifier 且 ZoneId>=3（Internet/Restricted）时返回 True。
+    非 Windows 或无法读取时返回 False。
+    """
+    if platform.system() != "Windows" or not path:
+        return False
+    try:
+        if not os.path.isfile(path):
+            return False
+    except OSError:
+        return False
+    ads = path + ":Zone.Identifier"
+    try:
+        with open(ads, "r", encoding="utf-8", errors="ignore") as f:
+            text = f.read()
+    except OSError:
+        try:
+            with open(ads, "r", encoding="utf-16", errors="ignore") as f:
+                text = f.read()
+        except OSError:
+            return False
+    # ZoneId=3 Internet；4 Restricted
+    for line in text.replace("\r\n", "\n").split("\n"):
+        s = line.strip()
+        if s.lower().startswith("zoneid="):
+            try:
+                zid = int(s.split("=", 1)[1].strip())
+            except ValueError:
+                continue
+            if zid >= 3:
+                return True
+    return False
+
+
+def try_remove_mark_of_the_web(path: str) -> bool:
+    """尝试删除 Zone.Identifier（等同「解除锁定」）。成功返回 True。"""
+    if platform.system() != "Windows" or not path:
+        return False
+    ads = path + ":Zone.Identifier"
+    try:
+        if os.path.isfile(path):
+            os.remove(ads)
+            return True
+    except OSError:
+        logger.debug("删除 Zone.Identifier 失败: %s", path, exc_info=True)
+    return False
+
+
+def frozen_executable_path() -> str:
+    """打包后的 exe 路径；开发态返回 sys.executable。"""
+    import sys
+
+    return os.path.abspath(sys.executable)
+
+
 def window_title_matches_app(title: str) -> bool:
     """判断窗口标题是否属于本应用（避免误匹配无关窗口）。"""
     if not title:

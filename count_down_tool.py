@@ -9,6 +9,7 @@
 import logging
 import os
 import platform
+import sys
 import time
 import tkinter as tk
 from datetime import datetime
@@ -41,7 +42,10 @@ from services.windows_native import (
     bring_existing_to_front,
     clear_stale_show_request,
     consume_show_request,
+    frozen_executable_path,
+    path_has_mark_of_the_web,
     request_show_existing,
+    try_remove_mark_of_the_web,
 )
 from ui.full_window import build_full_ui, setup_styles
 from ui.mini_window import (
@@ -178,7 +182,7 @@ class CountdownApp:
         self._setup_ui()
         self._on_time_changed()
         self.update_clock()
-        self._init_tray_icon()
+        tray_ok = self._init_tray_icon()
         self._set_window_rounded_corners()
         self._set_taskbar_visible()
         self._center_window_later()
@@ -190,12 +194,68 @@ class CountdownApp:
         # 二次启动唤醒：轮询 show.request（跨平台文件标志）
         self._show_poll_timer_id = None
         self._start_show_request_poll()
+        # 启动诊断：MOTW 解锁提示、托盘失败可见提示（延后避免挡启动动画）
+        try:
+            self.master.after(600, lambda: self._startup_health_hints(tray_ok))
+        except Exception:
+            logger.debug("调度启动健康提示失败", exc_info=True)
         try:
             from services.updater import schedule_startup_check
 
             schedule_startup_check(self)
         except Exception:
             logger.debug("调度启动更新检查失败", exc_info=True)
+
+    def _startup_health_hints(self, tray_ok: bool) -> None:
+        """启动后提示：网络解锁标记、托盘不可用。"""
+        try:
+            from ui.app_dialogs import show_info
+        except Exception:
+            return
+
+        # 1) Mark of the Web：从 zip/下载拖出的 exe 常见
+        if getattr(sys, "frozen", False) and platform.system() == "Windows":
+            try:
+                exe = frozen_executable_path()
+                if path_has_mark_of_the_web(exe):
+                    unlocked = try_remove_mark_of_the_web(exe)
+                    if unlocked:
+                        show_info(
+                            self,
+                            "已自动解除此程序的「来自网络」锁定标记。\n\n"
+                            "若托盘或设置仍异常，请完全退出后重新打开。\n"
+                            "建议：将 zip 完整解压到固定文件夹再运行，"
+                            "不要在压缩包窗口内直接拖出运行。",
+                            title="安全提示",
+                        )
+                    else:
+                        show_info(
+                            self,
+                            "检测到程序可能仍带有「来自网络」锁定标记"
+                            "（从压缩包拖出或下载后常见）。\n\n"
+                            "请右键本程序 → 属性 → 勾选「解除锁定」→ 确定，"
+                            "然后完全退出再重新打开。\n\n"
+                            "建议：将 zip 完整解压到固定文件夹再运行。",
+                            title="安全提示",
+                        )
+            except Exception:
+                logger.debug("MOTW 检测失败", exc_info=True)
+
+        # 2) 托盘失败：明确提示（勿静默）
+        if platform.system() != "Darwin" and not tray_ok:
+            detail = getattr(self, "_tray_init_error", "") or "未知原因"
+            try:
+                show_info(
+                    self,
+                    "系统托盘图标未能创建，托盘菜单将不可用。\n\n"
+                    f"详情：{detail}\n\n"
+                    "仍可通过完整窗口标题栏 ⚙ 打开设置。\n"
+                    "若 ⚙ 也无反应：结束全部倒计时进程后重试；"
+                    "检查 exe 是否已「解除锁定」。",
+                    title="托盘不可用",
+                )
+            except Exception:
+                logger.debug("托盘失败提示失败", exc_info=True)
 
     @staticmethod
     def _get_fonts(root=None):
@@ -355,7 +415,7 @@ class CountdownApp:
     # ------------------------------------------------------------------
 
     def _init_tray_icon(self):
-        init_tray_icon(self, _ICON_PATH)
+        return bool(init_tray_icon(self, _ICON_PATH))
 
     def _show_full_mode(self):
         _mode.show_full_mode(self)

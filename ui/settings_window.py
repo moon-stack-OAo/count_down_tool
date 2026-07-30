@@ -18,14 +18,13 @@ from ui.app_dialogs import ask_yes_no, show_error, show_info, temporary_withdraw
 from ui.design.tokens import (
     SETTINGS_HEIGHT,
     SETTINGS_WIDTH,
-    SPACE_LG,
     SPACE_MD,
     SPACE_SM,
     SPACE_XS,
 )
-from ui.time_picker import _activate_picker, _picker_parent
+from ui.time_picker import _picker_parent
 from ui.widgets import ThinScrollbar, make_pill
-from ui.window_chrome_dialog import center_dialog_later, use_borderless_chrome
+from ui.window_chrome_dialog import ensure_dialog_visible, use_borderless_chrome
 
 logger = logging.getLogger("count_down_tool")
 
@@ -44,12 +43,33 @@ def close_settings(app) -> None:
 
 
 def show_settings(app) -> None:
-    """打开设置中心（单例：已存在则置前）。"""
+    """打开设置中心（单例：已存在则置前）。失败时向用户提示。"""
+    try:
+        _show_settings_impl(app)
+    except Exception as exc:
+        logger.exception("打开设置中心失败")
+        app._settings_window = None
+        try:
+            show_error(
+                app,
+                "无法打开设置中心。\n\n"
+                f"详情：{exc}\n\n"
+                "建议：结束所有倒计时进程后重试；"
+                "若 exe 从压缩包拖出，请右键「解除锁定」或重新完整解压后再运行。",
+            )
+        except Exception:
+            logger.debug("设置失败提示也失败", exc_info=True)
+
+
+def _show_settings_impl(app) -> None:
+    """打开设置中心（单例：已存在则强制可见）。"""
     existing = getattr(app, "_settings_window", None)
     if existing is not None:
         try:
             if existing.winfo_exists():
-                _activate_picker(existing, topmost=False)
+                ensure_dialog_visible(
+                    existing, SETTINGS_WIDTH, SETTINGS_HEIGHT
+                )
                 return
         except tk.TclError:
             pass
@@ -197,9 +217,8 @@ def show_settings(app) -> None:
                 page.after_idle(sync)
             except tk.TclError:
                 pass
-    # overrideredirect 后系统常落到 0,0，延后多次居中
-    center_dialog_later(win, SETTINGS_WIDTH, SETTINGS_HEIGHT)
-    _activate_picker(win, topmost=False)
+    # 强制可见：多次居中 + 短暂 topmost，避免「点了没反应」
+    ensure_dialog_visible(win, SETTINGS_WIDTH, SETTINGS_HEIGHT)
     # 暴露刷新，供内部切换主题后重绘勾选（主题会 close 窗，一般用不到）
     win._settings_refresh = _refresh_all  # type: ignore[attr-defined]
 
