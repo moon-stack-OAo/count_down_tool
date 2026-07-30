@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+## 1.3.34
+
+### 功能
+
+- **运行日志**：写入用户配置目录 `app.log`（约 2MB 轮转，最多 3 个备份）；默认 INFO；可用环境变量 `COUNT_DOWN_TOOL_LOG_LEVEL=DEBUG` 提高详细度
+
+### 优化
+
+- **Windows 打包脚本**：`build_exe.bat` 避免编码乱码，支持 `/nopause`，成功后清理 `build/` 与 `.spec`
+
 ## 1.3.33
 
 ### 文档
