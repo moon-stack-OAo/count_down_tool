@@ -111,7 +111,6 @@ fi
     $ADD_DATA_OPTION \
     --hidden-import core \
     --hidden-import core.countdown_core \
-    --hidden-import core.app_logging \
     --hidden-import core.themes \
     --hidden-import core.fonts \
     --hidden-import core.update \
