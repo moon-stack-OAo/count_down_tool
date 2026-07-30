@@ -727,10 +727,19 @@ def _build_key_box(key_data: bytes) -> bytearray:
     return box
 
 
-def _decrypt_audio_chunk(chunk: bytearray, key_box: bytearray) -> None:
+# 音频体流式解密块大小（仅驻留一块，不攒整曲）
+_AUDIO_CHUNK = 0x8000
+
+
+def _decrypt_audio_chunk(
+    chunk: bytearray, key_box: bytearray, offset: int = 0
+) -> None:
+    """按音频体全局偏移解密一块（密钥流以 256 为周期）。"""
     for i in range(len(chunk)):
-        j = (i + 1) & 0xFF
-        chunk[i] ^= key_box[(key_box[j] + key_box[(key_box[j] + j) & 0xFF]) & 0xFF]
+        j = (offset + i + 1) & 0xFF
+        chunk[i] ^= key_box[
+            (key_box[j] + key_box[(key_box[j] + j) & 0xFF]) & 0xFF
+        ]
 
 
 def _file_size(f) -> int:
@@ -757,71 +766,135 @@ def _read_u32_len(f, name: str, max_len: int, file_size: int) -> int:
     return length
 
 
+def _parse_ncm_header(f) -> Tuple[bytearray, str]:
+    """解析 ncm 头并定位到音频体起点。返回 (key_box, format_ext)。
+
+    封面只 seek 跳过，不读入内存。
+    """
+    file_size = _file_size(f)
+    if f.read(8) != _MAGIC:
+        raise ValueError("不是有效的 ncm 文件")
+    f.seek(2, os.SEEK_CUR)
+
+    key_len = _read_u32_len(f, "key_len", _MAX_KEY_LEN, file_size)
+    key_data = bytearray(f.read(key_len))
+    if len(key_data) != key_len:
+        raise ValueError("ncm 文件损坏：key 数据不完整")
+    for i in range(len(key_data)):
+        key_data[i] ^= 0x64
+    key_data = _pkcs7_unpad(_aes_ecb_decrypt(_CORE_KEY, bytes(key_data)))
+    # 前缀 "neteasecloudmusic"
+    if key_data.startswith(b"neteasecloudmusic"):
+        key_data = key_data[17:]
+    key_box = _build_key_box(key_data)
+
+    meta_len = _read_u32_len(f, "meta_len", _MAX_META_LEN, file_size)
+    meta_data = bytearray(f.read(meta_len))
+    if len(meta_data) != meta_len:
+        raise ValueError("ncm 文件损坏：meta 数据不完整")
+    for i in range(len(meta_data)):
+        meta_data[i] ^= 0x63
+    # 跳过 "163 key(Don't modify):"
+    b64 = bytes(meta_data)
+    if b64.startswith(b"163 key(Don't modify):"):
+        b64 = b64[22:]
+    meta_plain = _pkcs7_unpad(_aes_ecb_decrypt(_META_KEY, base64.b64decode(b64)))
+    if meta_plain.startswith(b"music:"):
+        meta_plain = meta_plain[6:]
+    fmt = "mp3"
+    try:
+        meta = json.loads(meta_plain.decode("utf-8", errors="ignore"))
+        raw_fmt = str(meta.get("format") or "mp3").strip().lower()
+        if raw_fmt in ("mp3", "flac", "wav", "m4a", "aac", "ogg"):
+            fmt = raw_fmt
+    except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError, AttributeError):
+        logger.debug("解析 ncm meta 失败，默认 mp3", exc_info=True)
+
+    crc_raw = f.read(4)  # crc32
+    if len(crc_raw) != 4:
+        raise ValueError("ncm 文件损坏：缺少 crc")
+    f.seek(5, os.SEEK_CUR)
+    image_size = _read_u32_len(f, "image_size", _MAX_IMAGE_SIZE, file_size)
+    # 封面不进内存：只校验长度并跳过
+    remaining = file_size - f.tell()
+    if image_size > remaining:
+        raise ValueError(
+            f"ncm image_size 超出文件剩余长度: {image_size} > {remaining}"
+        )
+    f.seek(image_size, os.SEEK_CUR)
+    return key_box, fmt
+
+
+def _stream_decrypt_audio(f, key_box: bytearray, out) -> int:
+    """从当前文件位置流式解密音频体到 out（file-like write）。返回写入字节数。"""
+    offset = 0
+    written = 0
+    while True:
+        raw = f.read(_AUDIO_CHUNK)
+        if not raw:
+            break
+        chunk = bytearray(raw)
+        _decrypt_audio_chunk(chunk, key_box, offset)
+        out.write(chunk)
+        n = len(chunk)
+        offset += n
+        written += n
+    return written
+
+
+def decrypt_ncm_to_file(path: str, dest_path: str) -> str:
+    """流式解密 ncm 到 dest_path，返回 format_ext（如 mp3）。
+
+    峰值内存约一块音频缓冲 + 头字段，不把整曲驻留在内存。
+    """
+    abs_dest = os.path.abspath(dest_path)
+    parent = os.path.dirname(abs_dest)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    tmp = abs_dest + ".tmp"
+    try:
+        with open(path, "rb") as src, open(tmp, "wb") as out:
+            key_box, fmt = _parse_ncm_header(src)
+            written = _stream_decrypt_audio(src, key_box, out)
+            out.flush()
+            try:
+                os.fsync(out.fileno())
+            except OSError:
+                pass
+        if written <= 0:
+            raise ValueError("ncm 解密结果为空")
+        os.replace(tmp, abs_dest)
+        return fmt
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError):
+        try:
+            if os.path.isfile(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def decrypt_ncm(path: str) -> Tuple[bytes, str]:
     """
     解密 ncm。
     返回 (audio_bytes, format_ext) 如 (b'...', 'mp3')。
-    TODO: 大音频可改为流式写缓存，避免整文件驻留内存。
+
+    实现上流式写临时文件再读回，避免解密过程中双份驻留；
+    调用方若只需落盘请用 decrypt_ncm_to_file / resolve_ncm_play_path。
     """
-    with open(path, "rb") as f:
-        file_size = _file_size(f)
-        if f.read(8) != _MAGIC:
-            raise ValueError("不是有效的 ncm 文件")
-        f.seek(2, os.SEEK_CUR)
-
-        key_len = _read_u32_len(f, "key_len", _MAX_KEY_LEN, file_size)
-        key_data = bytearray(f.read(key_len))
-        if len(key_data) != key_len:
-            raise ValueError("ncm 文件损坏：key 数据不完整")
-        for i in range(len(key_data)):
-            key_data[i] ^= 0x64
-        key_data = _pkcs7_unpad(_aes_ecb_decrypt(_CORE_KEY, bytes(key_data)))
-        # 前缀 "neteasecloudmusic"
-        if key_data.startswith(b"neteasecloudmusic"):
-            key_data = key_data[17:]
-        key_box = _build_key_box(key_data)
-
-        meta_len = _read_u32_len(f, "meta_len", _MAX_META_LEN, file_size)
-        meta_data = bytearray(f.read(meta_len))
-        if len(meta_data) != meta_len:
-            raise ValueError("ncm 文件损坏：meta 数据不完整")
-        for i in range(len(meta_data)):
-            meta_data[i] ^= 0x63
-        # 跳过 "163 key(Don't modify):"
-        b64 = bytes(meta_data)
-        if b64.startswith(b"163 key(Don't modify):"):
-            b64 = b64[22:]
-        meta_plain = _pkcs7_unpad(_aes_ecb_decrypt(_META_KEY, base64.b64decode(b64)))
-        if meta_plain.startswith(b"music:"):
-            meta_plain = meta_plain[6:]
-        fmt = "mp3"
+    fd, tmp = tempfile.mkstemp(suffix=".ncmdec")
+    try:
+        os.close(fd)
+        fmt = decrypt_ncm_to_file(path, tmp)
+        with open(tmp, "rb") as f:
+            audio = f.read()
+        return audio, fmt
+    finally:
         try:
-            meta = json.loads(meta_plain.decode("utf-8", errors="ignore"))
-            raw_fmt = str(meta.get("format") or "mp3").strip().lower()
-            if raw_fmt in ("mp3", "flac", "wav", "m4a", "aac", "ogg"):
-                fmt = raw_fmt
-        except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError, AttributeError):
-            logger.debug("解析 ncm meta 失败，默认 mp3", exc_info=True)
-
-        crc_raw = f.read(4)  # crc32
-        if len(crc_raw) != 4:
-            raise ValueError("ncm 文件损坏：缺少 crc")
-        f.seek(5, os.SEEK_CUR)
-        image_size = _read_u32_len(f, "image_size", _MAX_IMAGE_SIZE, file_size)
-        image_data = f.read(image_size)
-        if len(image_data) != image_size:
-            raise ValueError("ncm 文件损坏：封面数据不完整")
-
-        # 音频体仍整段读入内存；流式解密写盘见上方 TODO
-        audio = bytearray()
-        while True:
-            chunk = bytearray(f.read(0x8000))
-            if not chunk:
-                break
-            _decrypt_audio_chunk(chunk, key_box)
-            audio.extend(chunk)
-
-    return bytes(audio), fmt
+            if os.path.isfile(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
 
 
 def _cache_dir() -> str:
@@ -941,17 +1014,25 @@ def resolve_ncm_play_path(path: str) -> Optional[str]:
             if hit:
                 return hit
 
-            audio, fmt = decrypt_ncm(path)
-            if not audio:
-                return None
+            # 先写到固定后缀前：格式在头里才知道，用 .part 再 rename
+            part = os.path.join(cache_root, f"{key}.part")
+            fmt = decrypt_ncm_to_file(path, part)
             out = os.path.join(cache_root, f"{key}.{fmt}")
-            tmp = out + ".tmp"
-            with open(tmp, "wb") as f:
-                f.write(audio)
-            os.replace(tmp, out)
+            try:
+                if os.path.isfile(out):
+                    os.remove(out)
+            except OSError:
+                pass
+            os.replace(part, out)
             cleanup_ncm_cache(cache_root, keep_paths={out})
             return out
     except (OSError, ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError):
         # base64/binascii 错误亦属 ValueError
         logger.debug("ncm 解密失败: %s", path, exc_info=True)
+        try:
+            part = os.path.join(_cache_dir(), f"{_cache_key(path)}.part")
+            if os.path.isfile(part):
+                os.remove(part)
+        except OSError:
+            pass
         return None

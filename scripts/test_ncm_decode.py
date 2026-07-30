@@ -41,7 +41,7 @@ def main() -> int:
         print("错误: 文件不存在")
         return 1
 
-    from services.ncm import decrypt_ncm, is_ncm_file, resolve_ncm_play_path
+    from services.ncm import is_ncm_file, resolve_ncm_play_path
     from services.sound import is_audio_file, prepare_playable_path, play_file
 
     print(f"is_ncm_file     = {is_ncm_file(path)}")
@@ -50,25 +50,28 @@ def main() -> int:
         print("错误: 不是有效的 ncm（魔数 CTENFDAM 校验失败）")
         return 2
 
+    # 优先走缓存落盘（流式），再可选读回校验
     try:
-        audio, fmt = decrypt_ncm(path)
+        cached = resolve_ncm_play_path(path)
     except Exception as exc:
         print(f"错误: 解密失败: {exc}")
         return 3
 
-    print(f"format          = {fmt}")
-    print(f"audio_bytes     = {len(audio)}")
-    if len(audio) < 16:
-        print("警告: 音频数据过短，可能解密异常")
-    else:
-        head = audio[:8]
-        print(f"audio_header    = {head!r}")
-
-    cached = resolve_ncm_play_path(path)
     print(f"cache_path      = {cached}")
     if not cached or not os.path.isfile(cached):
         print("错误: 未生成缓存播放文件")
         return 4
+
+    size = os.path.getsize(cached)
+    fmt = os.path.splitext(cached)[1].lstrip(".") or "?"
+    print(f"format          = {fmt}")
+    print(f"audio_bytes     = {size}")
+    if size < 16:
+        print("警告: 音频数据过短，可能解密异常")
+    else:
+        with open(cached, "rb") as cf:
+            head = cf.read(8)
+        print(f"audio_header    = {head!r}")
 
     prepared = prepare_playable_path(path)
     print(f"playable_path   = {prepared}")

@@ -24,7 +24,7 @@ from ui.design.tokens import (
 )
 from ui.time_picker import _picker_parent
 from ui.widgets import ThinScrollbar, make_pill
-from ui.window_chrome_dialog import ensure_dialog_visible, use_borderless_chrome
+from ui.window_chrome_dialog import ensure_dialog_visible
 
 logger = logging.getLogger("count_down_tool")
 
@@ -106,8 +106,11 @@ def _show_settings_impl(app) -> None:
             app._settings_window = None
 
     win.protocol("WM_DELETE_WINDOW", _on_close)
-    # Windows：无边框 + 自绘标题栏；macOS 等保留原生边框
-    use_borderless_chrome(win, app, title="⚙  设置", on_close=_on_close)
+    # 使用系统原生边框/标题栏（避免无边框窗在部分机器上不可见或难置前）
+    try:
+        win.bind("<Escape>", lambda e: (_on_close(), "break")[1])
+    except tk.TclError:
+        pass
 
     # ===== 顶栏 Tab + 单页可滚动内容 =====
     shell = tk.Frame(win, bg=c["bg"])
@@ -467,6 +470,8 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
         import_custom_sound,
         is_audio_file,
         is_sound_playing,
+        normalize_sound_history,
+        path_is_file_quick,
         play_finish_sound_async,
         prune_sound_history,
         purge_orphan_sounds,
@@ -500,7 +505,7 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
         _tray_refresh()
 
     def _select_history(path: str):
-        if not path or not os.path.isfile(path):
+        if not path or not path_is_file_quick(path):
             show_error(app, "该历史音效文件已不存在。", parent=win)
             app._sound_history = [
                 h
@@ -715,7 +720,15 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
                 child.destroy()
             except tk.TclError:
                 pass
-        history = prune_sound_history(getattr(app, "_sound_history", []))
+        prev = normalize_sound_history(getattr(app, "_sound_history", []))
+        history = prune_sound_history(prev)
+        # 展示清理与配置同步：失效路径从内存与 config 去掉
+        if history != prev:
+            app._sound_history = history
+            try:
+                app._save_config()
+            except (OSError, TypeError, ValueError, AttributeError):
+                pass
         if not history:
             return
         tk.Label(

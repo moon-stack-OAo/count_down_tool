@@ -96,8 +96,10 @@ def load_config(app) -> None:
         app.COLORS = resolve_theme(app._theme_id, app._theme_custom)
         app._mini_text = normalize_mini_text(config.get("mini_text"))
         from services.sound import (
+            normalize_sound_history,
             normalize_sound_id,
             normalize_sound_path,
+            path_is_file_quick,
             prune_sound_history,
             touch_sound_history,
         )
@@ -110,13 +112,26 @@ def load_config(app) -> None:
         app._sound_path = normalize_sound_path(config.get("sound_path", ""))
         # 仅当配置里根本没有 sound_history 字段时，才用 sound_path 迁移进历史
         # （用户「清空历史」后是显式 []，不可再自动塞回）
+        # path_is_file_quick：避免失效网络盘在启动时卡住主线程
+        history_dirty = False
         if "sound_history" not in config:
             history = []
-            if app._sound_path and os.path.isfile(app._sound_path):
+            if app._sound_path and path_is_file_quick(app._sound_path):
                 history = touch_sound_history(history, app._sound_path)
+                history_dirty = bool(history)
         else:
-            history = prune_sound_history(config.get("sound_history"))
+            raw_history = normalize_sound_history(config.get("sound_history"))
+            history = prune_sound_history(raw_history)
+            # prune 掉失效/超时路径后写回，避免下次启动再探测挂死
+            if history != raw_history:
+                history_dirty = True
         app._sound_history = history
+        if history_dirty:
+            try:
+                cfg = merge_config(config, sound_history=history)
+                save_config_dict(app._config_file, cfg)
+            except (OSError, TypeError, ValueError):
+                logger.debug("回写 sound_history 配置失败", exc_info=True)
         if "check_update_on_start" in config:
             app._check_update_on_start = bool(config.get("check_update_on_start"))
         luc = config.get("last_update_check")

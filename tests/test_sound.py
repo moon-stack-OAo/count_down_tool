@@ -158,6 +158,26 @@ class TestHistory(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_prune_timeout_skips_hanging_path(self):
+        """isfile 挂起时 prune 应快速返回，不拖死调用方。"""
+        import time
+
+        from services import sound as sound_mod
+
+        def _slow_isfile(_p):
+            time.sleep(5.0)
+            return True
+
+        t0 = time.monotonic()
+        with mock.patch.object(sound_mod, "_PATH_EXIST_TIMEOUT_S", 0.05):
+            with mock.patch.object(sound_mod.os.path, "isfile", side_effect=_slow_isfile):
+                h = prune_sound_history(
+                    [{"path": r"\\dead-server\share\hang.mp3", "name": "hang"}]
+                )
+        elapsed = time.monotonic() - t0
+        self.assertEqual(h, [])
+        self.assertLess(elapsed, 1.5)
+
 
 class TestImport(unittest.TestCase):
     def test_import_copies_to_user_sounds(self):

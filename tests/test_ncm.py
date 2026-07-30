@@ -14,6 +14,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from services.ncm import (
+    _AUDIO_CHUNK,
     _CORE_KEY,
     _MAGIC,
     _MAX_KEY_LEN,
@@ -24,6 +25,7 @@ from services.ncm import (
     _decrypt_audio_chunk,
     cleanup_ncm_cache,
     decrypt_ncm,
+    decrypt_ncm_to_file,
     is_ncm_file,
     resolve_ncm_play_path,
 )
@@ -169,6 +171,29 @@ class TestNcmRoundtrip(unittest.TestCase):
             # 再次解析应命中缓存
             play2 = prepare_playable_path(path)
             self.assertEqual(play2, play)
+        finally:
+            os.unlink(path)
+
+    def test_stream_decrypt_multi_chunk(self):
+        """音频体跨多块时密钥偏移必须连续（> _AUDIO_CHUNK）。"""
+        audio = b"ID3" + os.urandom(_AUDIO_CHUNK + 1234)
+        blob = _build_ncm(audio, "flac")
+        with tempfile.NamedTemporaryFile(suffix=".ncm", delete=False) as f:
+            f.write(blob)
+            path = f.name
+        try:
+            out, fmt = decrypt_ncm(path)
+            self.assertEqual(fmt, "flac")
+            self.assertEqual(out, audio)
+            dest = path + ".out.flac"
+            try:
+                fmt2 = decrypt_ncm_to_file(path, dest)
+                self.assertEqual(fmt2, "flac")
+                with open(dest, "rb") as pf:
+                    self.assertEqual(pf.read(), audio)
+            finally:
+                if os.path.isfile(dest):
+                    os.unlink(dest)
         finally:
             os.unlink(path)
 

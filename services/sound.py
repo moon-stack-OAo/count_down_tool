@@ -17,7 +17,7 @@ import signal
 import subprocess
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from core.countdown_core import resource_path, user_config_dir
 
@@ -138,13 +138,62 @@ def normalize_sound_history(value) -> List[Dict[str, str]]:
     return out
 
 
+# 路径探测超时：网络盘/失效 UNC 上 isfile 可能挂死主线程（打开设置/读配置）
+_PATH_EXIST_TIMEOUT_S = 0.4
+
+
+def path_is_file_quick(
+        path: str,
+        timeout: Optional[float] = None,
+) -> bool:
+    """带超时的 isfile。超时或异常视为不存在，避免 UI 卡死。
+
+    timeout 默认读模块常量 _PATH_EXIST_TIMEOUT_S（便于测试 monkeypatch）。
+    超时后探测线程可能仍在后台挂起（daemon），属可接受代价。
+    """
+    if not path:
+        return False
+    if timeout is None:
+        t_limit = float(_PATH_EXIST_TIMEOUT_S)
+    else:
+        try:
+            t_limit = float(timeout)
+        except (TypeError, ValueError):
+            t_limit = float(_PATH_EXIST_TIMEOUT_S)
+    if t_limit <= 0:
+        try:
+            return os.path.isfile(path)
+        except OSError:
+            return False
+
+    box: Dict[str, bool] = {"ok": False}
+
+    def _check() -> None:
+        try:
+            box["ok"] = bool(os.path.isfile(path))
+        except OSError:
+            box["ok"] = False
+
+    th = threading.Thread(
+        target=_check,
+        name="CdtPathExist",
+        daemon=True,
+    )
+    th.start()
+    th.join(t_limit)
+    if th.is_alive():
+        logger.debug("路径探测超时(%.2fs): %s", t_limit, path)
+        return False
+    return bool(box.get("ok"))
+
+
 def prune_sound_history(history) -> List[Dict[str, str]]:
-    """去掉不存在的文件。"""
+    """去掉不存在的文件（路径探测带超时，防网络盘卡死）。"""
     items = normalize_sound_history(history)
     kept: List[Dict[str, str]] = []
     for it in items:
         p = it.get("path") or ""
-        if p and os.path.isfile(p):
+        if p and path_is_file_quick(p):
             kept.append(it)
     return kept
 
@@ -749,11 +798,11 @@ def stop_playback() -> None:
 
 
 def play_file(
-    path: str,
-    play_gen: Optional[int] = None,
-    root=None,
-    *,
-    clear_pending_on_start: bool = False,
+        path: str,
+        play_gen: Optional[int] = None,
+        root=None,
+        *,
+        clear_pending_on_start: bool = False,
 ) -> bool:
     """播放一次完整文件。成功启动（或已调度到主线程）返回 True。
 
@@ -955,8 +1004,8 @@ def _play_macos(path: str) -> bool:
     """macOS：优先 afplay；失败时若有 ffplay 则回退。"""
     est = _probe_macos_audio_seconds(path)
     for cmd in (
-        ["afplay", path],
-        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path],
+            ["afplay", path],
+            ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path],
     ):
         try:
             proc = subprocess.Popen(
@@ -979,9 +1028,9 @@ def _play_macos(path: str) -> bool:
 
 def _play_linux(path: str) -> bool:
     for cmd in (
-        ["paplay", path],
-        ["aplay", path],
-        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path],
+            ["paplay", path],
+            ["aplay", path],
+            ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path],
     ):
         try:
             proc = subprocess.Popen(
@@ -1064,12 +1113,12 @@ def cancel_system_bell() -> None:
 
 
 def play_finish_sound(
-    root,
-    *,
-    muted: bool,
-    sound_id: str,
-    custom_path: str = "",
-    play_gen: Optional[int] = None,
+        root,
+        *,
+        muted: bool,
+        sound_id: str,
+        custom_path: str = "",
+        play_gen: Optional[int] = None,
 ) -> bool:
     """结束提示：静音跳过；文件类完整播一次；系统铃循环三次。
 
@@ -1088,13 +1137,13 @@ def play_finish_sound(
             return False
         # Windows 经 after 调度：pending 由 play_file._start 清；同步路径此处清
         defer_pending = (
-            root is not None and platform.system() == "Windows"
+                root is not None and platform.system() == "Windows"
         )
         if play_file(
-            path,
-            play_gen=play_gen,
-            root=root,
-            clear_pending_on_start=defer_pending,
+                path,
+                play_gen=play_gen,
+                root=root,
+                clear_pending_on_start=defer_pending,
         ):
             if not defer_pending:
                 _clear_pending_play(play_gen)
