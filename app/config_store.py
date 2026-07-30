@@ -129,9 +129,9 @@ def load_config(app) -> None:
             try:
                 cfg = merge_config(config, autostart=real_autostart)
                 save_config_dict(app._config_file, cfg)
-            except Exception:
+            except (OSError, TypeError, ValueError):
                 logger.debug("回写 autostart 配置失败", exc_info=True)
-    except Exception:
+    except (OSError, TypeError, ValueError, KeyError, AttributeError, ImportError):
         logger.exception("读取配置失败")
         app._mini_pos = None
         app._mini_size = None
@@ -174,5 +174,5 @@ def save_config(app) -> None:
         if app._theme_custom is not None:
             config = merge_config(config, theme_custom=app._theme_custom)
         save_config_dict(app._config_file, config)
-    except Exception:
+    except (OSError, TypeError, ValueError, KeyError, AttributeError, ImportError):
         logger.exception("保存配置失败")

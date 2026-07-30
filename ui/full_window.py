@@ -404,7 +404,7 @@ def build_full_ui(app):
                 spin.invoke("buttonup")
             else:
                 spin.invoke("buttondown")
-        except Exception:
+        except tk.TclError:
             pass
         return "break"
 

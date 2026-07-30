@@ -47,6 +47,7 @@ def show_settings(app) -> None:
     try:
         _show_settings_impl(app)
     except Exception as exc:
+        # 设置窗边界：任意构建失败都需提示用户，保留宽捕获
         logger.exception("打开设置中心失败")
         app._settings_window = None
         try:
@@ -57,7 +58,7 @@ def show_settings(app) -> None:
                 "建议：结束所有倒计时进程后重试；"
                 "若 exe 从压缩包拖出，请右键「解除锁定」或重新完整解压后再运行。",
             )
-        except Exception:
+        except (tk.TclError, AttributeError, RuntimeError):
             logger.debug("设置失败提示也失败", exc_info=True)
 
 
@@ -95,7 +96,7 @@ def _show_settings_impl(app) -> None:
             from services.sound import stop_playback
 
             stop_playback()
-        except Exception:
+        except (ImportError, OSError, AttributeError, RuntimeError):
             pass
         try:
             win.destroy()
@@ -165,13 +166,13 @@ def _show_settings_impl(app) -> None:
         # 切页后滚回顶部，并按当前内容高度同步是否可滚
         try:
             pages[key]._settings_canvas.yview_moveto(0)  # type: ignore[attr-defined]
-        except Exception:
+        except (tk.TclError, AttributeError):
             pass
         try:
             sync = getattr(pages[key], "_settings_sync_scroll", None)
             if sync:
                 pages[key].after_idle(sync)
-        except Exception:
+        except (tk.TclError, AttributeError, TypeError):
             pass
 
     for key, label in tabs_spec:
@@ -199,7 +200,7 @@ def _show_settings_impl(app) -> None:
         for fn in list(refreshers):
             try:
                 fn()
-            except Exception:
+            except (tk.TclError, AttributeError, TypeError, ValueError, RuntimeError):
                 logger.debug("设置窗刷新失败", exc_info=True)
 
     _build_appearance_section(app, pages["appearance"]._settings_content, c, refreshers)
@@ -340,7 +341,7 @@ def _bind_wheel_tree(root: tk.Misc, canvas: tk.Canvas) -> None:
     try:
         # canvas 的 master 即 page
         page = canvas.master
-    except Exception:
+    except AttributeError:
         page = None
     scroll_state = getattr(page, "_settings_scroll_state", None) if page else None
     wheel = getattr(page, "_settings_wheel", None) if page else None
@@ -419,7 +420,7 @@ def _build_appearance_section(app, parent, c, refreshers) -> None:
         for fn in refreshers:
             try:
                 fn()
-            except Exception:
+            except (tk.TclError, AttributeError, TypeError, ValueError, RuntimeError):
                 pass
 
     def _refresh():
@@ -483,7 +484,7 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
             from services.tray import refresh_tray_menu
 
             refresh_tray_menu(app)
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError, tk.TclError):
             pass
 
     def _toggle_mute():
@@ -777,7 +778,7 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
                     page = w
                     break
                 w = getattr(w, "master", None)
-        except Exception:
+        except AttributeError:
             canvas = None
         if page is not None and canvas is not None:
             _bind_wheel_tree(history_frame, canvas)
@@ -867,7 +868,7 @@ def _build_system_section(app, parent, c, refreshers) -> None:
             from services.tray import refresh_tray_menu
 
             refresh_tray_menu(app)
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError, tk.TclError):
             pass
 
     def _toggle_check_update():
@@ -880,7 +881,7 @@ def _build_system_section(app, parent, c, refreshers) -> None:
             from services.tray import refresh_tray_menu
 
             refresh_tray_menu(app)
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError, tk.TclError):
             pass
 
     auto_lbl.bind("<Button-1>", lambda e: _toggle_autostart())
@@ -980,7 +981,7 @@ def _build_about_section(app, parent, c) -> None:
     def _open_releases():
         try:
             webbrowser.open(GITHUB_RELEASES_PAGE)
-        except Exception:
+        except (OSError, webbrowser.Error, AttributeError, TypeError, ValueError):
             logger.debug("打开发布页失败", exc_info=True)
 
     def _open_update():

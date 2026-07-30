@@ -45,7 +45,7 @@ def schedule_startup_check(app) -> None:
 
     try:
         app.master.after(_STARTUP_DELAY_MS, _kick)
-    except Exception:
+    except (RuntimeError, AttributeError):
         logger.debug("调度启动更新检查失败", exc_info=True)
 
 
@@ -55,6 +55,7 @@ def _emit_status(status_cb: StatusCb, message: str, kind: str = "info") -> None:
     try:
         status_cb(message, kind)
     except Exception:
+        # 回调由 UI 注入，异常类型不可控
         logger.debug("更新状态回调失败", exc_info=True)
 
 
@@ -100,7 +101,7 @@ def _make_throttled_progress(app, progress_win, update_progress_fn) -> Callable[
         if total and total > 0:
             try:
                 pct = int(max(0, min(100, (received * 100) // total)))
-            except Exception:
+            except (TypeError, ValueError, ZeroDivisionError, OverflowError):
                 pct = -1
         done = total > 0 and received >= total
         elapsed = now - state["last_t"]
@@ -117,8 +118,8 @@ def _make_throttled_progress(app, progress_win, update_progress_fn) -> Callable[
                 0,
                 lambda r=received, t=total: update_progress_fn(progress_win, r, t),
             )
-        except Exception:
-            pass
+        except (RuntimeError, AttributeError):
+            logger.debug("调度下载进度 UI 失败", exc_info=True)
 
     return _progress
 
@@ -145,8 +146,8 @@ def run_update_check(
 
             try:
                 app.master.after(0, _busy)
-            except Exception:
-                pass
+            except (RuntimeError, AttributeError):
+                logger.debug("调度忙碌提示失败", exc_info=True)
         return
     _emit_status(status_cb, "正在检查更新…", "busy")
 
@@ -166,7 +167,7 @@ def run_update_check(
                     app, result, manual=manual, status_cb=status_cb
                 ),
             )
-        except Exception:
+        except (RuntimeError, AttributeError):
             _set_checking(False)
             logger.debug("回传更新检查结果失败", exc_info=True)
 
@@ -177,7 +178,7 @@ def _mark_checked_today(app) -> None:
     app._last_update_check = date.today().isoformat()
     try:
         app._save_config()
-    except Exception:
+    except (OSError, TypeError, ValueError, AttributeError):
         logger.debug("保存 last_update_check 失败", exc_info=True)
 
 
@@ -189,6 +190,7 @@ def set_pending_update(app, result: Optional[core_update.UpdateCheckResult]) -> 
 
         refresh_update_badge(app)
     except Exception:
+        # UI 刷新边界，异常类型不可控
         logger.debug("刷新更新角标失败", exc_info=True)
 
 
@@ -274,6 +276,7 @@ def _notify_update_available(app, result: core_update.UpdateCheckResult) -> None
     try:
         icon.notify(message, title)
     except Exception:
+        # 托盘原生 API 边界
         logger.debug("托盘更新提示失败", exc_info=True)
 
 
@@ -291,8 +294,8 @@ def _prompt_update(app, result: core_update.UpdateCheckResult, notes: str) -> No
             app._ignored_update_version = ver
             try:
                 app._save_config()
-            except Exception:
-                pass
+            except (OSError, TypeError, ValueError, AttributeError):
+                logger.debug("保存忽略版本失败", exc_info=True)
             set_pending_update(app, None)
             return
 
@@ -301,8 +304,8 @@ def _prompt_update(app, result: core_update.UpdateCheckResult, notes: str) -> No
             app._ignored_update_version = ""
             try:
                 app._save_config()
-            except Exception:
-                pass
+            except (OSError, TypeError, ValueError, AttributeError):
+                logger.debug("清除忽略版本保存失败", exc_info=True)
 
         if action == "browser" or not result.asset_url:
             webbrowser.open(
@@ -363,7 +366,7 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
                 expected_size=int(getattr(result, "asset_size", 0) or 0),
             )
             core_update.apply_windows_update_from_zip(zip_path)
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError, TypeError) as exc:
             logger.exception("Windows 自动更新失败")
             err = str(exc)
 
@@ -384,12 +387,18 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
             try:
                 app._quit_app()
             except Exception:
-                app.master.destroy()
+                # 退出路径：尽量 destroy，保证替换脚本可接管
+                logger.debug("更新成功后退出失败，回退 destroy", exc_info=True)
+                try:
+                    app.master.destroy()
+                except Exception:
+                    logger.debug("destroy 失败", exc_info=True)
 
         try:
             app.master.after(0, done)
-        except Exception:
+        except (RuntimeError, AttributeError):
             _end_update()
+            logger.debug("回传 Windows 更新结果失败", exc_info=True)
 
     threading.Thread(target=worker, daemon=True, name="cdt-update-win").start()
 
@@ -419,7 +428,7 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
             dest = os.path.join(folder, name)
 
             core_update.download_file(result.asset_url, dest, progress=progress_cb)
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError, TypeError) as exc:
             logger.exception("macOS 下载更新失败")
             err = str(exc)
 
@@ -445,13 +454,14 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
                 import subprocess
 
                 subprocess.run(["open", "-R", dest], check=False)
-            except Exception:
-                pass
+            except (OSError, subprocess.SubprocessError):
+                logger.debug("Finder 定位下载文件失败", exc_info=True)
 
         try:
             app.master.after(0, done)
-        except Exception:
+        except (RuntimeError, AttributeError):
             _end_update()
+            logger.debug("回传 macOS 下载结果失败", exc_info=True)
 
     threading.Thread(target=worker, daemon=True, name="cdt-update-mac").start()
 
@@ -469,6 +479,7 @@ def tray_toggle_check_update_on_start(app, icon=None, item=None) -> None:
 
             refresh_tray_menu(app)
         except Exception:
-            pass
+            # 托盘刷新边界
+            logger.debug("刷新托盘菜单失败", exc_info=True)
 
     app.master.after(0, _do)

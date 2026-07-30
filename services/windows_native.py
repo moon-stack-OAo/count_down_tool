@@ -116,7 +116,7 @@ def request_show_existing() -> bool:
             except OSError:
                 pass
         return True
-    except Exception:
+    except OSError:
         logger.debug("写入 show 请求失败", exc_info=True)
         return False
 
@@ -131,7 +131,7 @@ def consume_show_request() -> bool:
         return True
     except FileNotFoundError:
         return False
-    except Exception:
+    except OSError:
         logger.debug("消费 show 请求失败", exc_info=True)
         return False
 
@@ -142,7 +142,7 @@ def clear_stale_show_request() -> None:
         path = show_request_path()
         if os.path.isfile(path):
             os.remove(path)
-    except Exception:
+    except OSError:
         logger.debug("清理残留 show 请求失败", exc_info=True)
 
 
@@ -204,7 +204,8 @@ def bring_existing_to_front():
             if attached:
                 user32.AttachThreadInput(cur_tid, fg_tid, False)
         return True
-    except Exception:
+    except (OSError, AttributeError, ValueError, TypeError):
+        # Win32/ctypes 边界：异常类型平台相关
         logger.debug("置前已有实例失败", exc_info=True)
         return False
 
@@ -260,7 +261,7 @@ def acquire_single_instance():
                     lock_fp.truncate()
                     lock_fp.write(str(os.getpid()))
                     lock_fp.flush()
-                except Exception:
+                except OSError:
                     pass
             except (BlockingIOError, OSError):
                 lock_fp.close()
@@ -271,14 +272,14 @@ def acquire_single_instance():
                     try:
                         import fcntl
                         fcntl.flock(lock_fp.fileno(), fcntl.LOCK_UN)
-                    except Exception:
+                    except (OSError, AttributeError, ImportError):
                         pass
                     lock_fp.close()
                     try:
                         os.remove(lock_path)
                     except OSError:
                         pass
-                except Exception:
+                except OSError:
                     logger.debug("释放锁文件失败", exc_info=True)
 
             _instance_lock = lock_fp
@@ -298,7 +299,8 @@ def acquire_single_instance():
         _instance_lock = lock_path
         atexit.register(_release_weak)
         return True, lock_path
-    except Exception:
+    except (OSError, AttributeError, ImportError, ValueError, TypeError):
+        # 单实例锁失败不得阻断启动
         logger.exception("单实例锁异常，继续启动")
         return True, None
 
@@ -307,6 +309,8 @@ def set_window_rounded_corners(master, corner_radius):
     """设置窗口圆角（DWM，失败则 GDI 回退）。"""
     if platform.system() != "Windows":
         return
+    import tkinter as tk
+
     try:
         import ctypes
         from ctypes import c_int, byref
@@ -323,7 +327,7 @@ def set_window_rounded_corners(master, corner_radius):
         )
         if result != 0:
             set_window_rounded_corners_fallback(master, corner_radius)
-    except Exception:
+    except (OSError, AttributeError, ValueError, TypeError, tk.TclError):
         logger.warning("DWM 圆角设置失败，尝试回退方案", exc_info=True)
         set_window_rounded_corners_fallback(master, corner_radius)
 
@@ -332,6 +336,8 @@ def set_window_rounded_corners_fallback(master, corner_radius):
     """回退方案：GDI 圆角。"""
     if platform.system() != "Windows":
         return
+    import tkinter as tk
+
     try:
         import ctypes
         from ctypes import wintypes
@@ -354,7 +360,7 @@ def set_window_rounded_corners_fallback(master, corner_radius):
         set_window_rgn.argtypes = [wintypes.HWND, wintypes.HRGN, wintypes.BOOL]
         set_window_rgn.restype = ctypes.c_int
         set_window_rgn(hwnd, rgn, True)
-    except Exception:
+    except (OSError, AttributeError, ValueError, TypeError, tk.TclError):
         logger.warning("GDI 圆角设置失败", exc_info=True)
 
 
@@ -386,13 +392,15 @@ def get_work_area(window=None):
                 ("dwFlags", wintypes.DWORD),
             ]
 
+        import tkinter as tk
+
         user32 = ctypes.windll.user32
         hwnd = 0
         if window is not None:
             try:
                 frame = window.wm_frame()
                 hwnd = int(frame, 16) if frame else int(window.winfo_id())
-            except Exception:
+            except (ValueError, TypeError, AttributeError, tk.TclError):
                 hwnd = 0
 
         MONITOR_DEFAULTTONEAREST = 2
@@ -413,22 +421,24 @@ def get_work_area(window=None):
             int(r.right - r.left),
             int(r.bottom - r.top),
         )
-    except Exception:
+    except (OSError, AttributeError, ValueError, TypeError):
         logger.debug("获取工作区失败", exc_info=True)
         return None
 
 
 def _tk_hwnd(window):
     """解析 Tk 顶层窗口 HWND（优先 wm_frame）。"""
+    import tkinter as tk
+
     try:
         frame = window.wm_frame()
         if frame:
             return int(frame, 16)
-    except Exception:
+    except (ValueError, TypeError, AttributeError, tk.TclError):
         pass
     try:
         return int(window.winfo_id())
-    except Exception:
+    except (ValueError, TypeError, AttributeError, tk.TclError):
         return 0
 
 
@@ -466,9 +476,9 @@ def set_taskbar_visible(master):
                 hwnd, 0, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
             )
-        except Exception:
-            pass
-    except Exception:
+        except (OSError, AttributeError, ValueError, TypeError):
+            logger.debug("SetWindowPos 刷新任务栏样式失败", exc_info=True)
+    except (OSError, AttributeError, ValueError, TypeError):
         logger.warning("任务栏可见性设置失败", exc_info=True)
 
 
@@ -480,10 +490,12 @@ def force_window_to_front(window):
     """
     if window is None:
         return
+    import tkinter as tk
+
     try:
         window.lift()
         window.focus_force()
-    except Exception:
+    except tk.TclError:
         pass
     if platform.system() != "Windows":
         return
@@ -499,7 +511,7 @@ def force_window_to_front(window):
 
         try:
             window.update_idletasks()
-        except Exception:
+        except tk.TclError:
             pass
 
         # 短暂置顶，突破 Z 序限制后再取消，避免常驻 topmost
@@ -507,7 +519,7 @@ def force_window_to_front(window):
             window.attributes("-topmost", True)
             window.attributes("-topmost", False)
             window.lift()
-        except Exception:
+        except tk.TclError:
             pass
 
         SW_SHOW = 5
@@ -531,7 +543,7 @@ def force_window_to_front(window):
         finally:
             if attached:
                 user32.AttachThreadInput(cur_tid, fg_tid, False)
-    except Exception:
+    except (OSError, AttributeError, ValueError, TypeError):
         logger.debug("强制窗口置前失败", exc_info=True)
 
 
@@ -539,6 +551,8 @@ def set_tool_window(window):
     """将窗口标为工具窗：不进任务栏 / Alt+Tab（桌面小组件用）。"""
     if platform.system() != "Windows":
         return
+    import tkinter as tk
+
     try:
         import ctypes
         from ctypes import wintypes
@@ -568,9 +582,9 @@ def set_tool_window(window):
                 hwnd, 0, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
             )
-        except Exception:
-            pass
-    except Exception:
+        except (OSError, AttributeError, ValueError, TypeError):
+            logger.debug("SetWindowPos 刷新工具窗样式失败", exc_info=True)
+    except (OSError, AttributeError, ValueError, TypeError, tk.TclError):
         logger.warning("工具窗样式设置失败", exc_info=True)
 
 
@@ -578,13 +592,15 @@ def start_native_window_drag(window):
     """Windows 原生拖动（ReleaseCapture + WM_NCLBUTTONDOWN）。"""
     if platform.system() != "Windows":
         return False
+    import tkinter as tk
+
     try:
         import ctypes
         hwnd = int(window.frame(), 16)
         ctypes.windll.user32.ReleaseCapture()
         ctypes.windll.user32.PostMessageW(hwnd, 0xA1, 2, 0)
         return True
-    except Exception:
+    except (OSError, AttributeError, ValueError, TypeError, tk.TclError):
         logger.debug("原生拖动失败", exc_info=True)
         return False
 
@@ -593,7 +609,9 @@ def set_transparent_color(window, color):
     """Windows 透明色键。"""
     if platform.system() != "Windows":
         return
+    import tkinter as tk
+
     try:
         window.attributes("-transparentcolor", color)
-    except Exception:
+    except tk.TclError:
         logger.debug("设置透明色失败", exc_info=True)

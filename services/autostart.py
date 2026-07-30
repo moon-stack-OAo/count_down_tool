@@ -87,7 +87,7 @@ def is_autostart_enabled() -> bool:
         return False
     try:
         return os.path.isfile(startup_shortcut_path())
-    except Exception:
+    except OSError:
         logger.debug("检测开机自启失败", exc_info=True)
         return False
 
@@ -155,7 +155,7 @@ def _create_shortcut_windows(lnk_path: str, target: str, args: List[str], workdi
             )
             return False
         return os.path.isfile(lnk_path)
-    except Exception:
+    except (OSError, subprocess.SubprocessError, TimeoutError):
         logger.exception("创建开机自启快捷方式异常")
         return False
 
@@ -179,6 +179,6 @@ def set_autostart(enabled: bool) -> bool:
 
         exe, args, workdir = resolve_launch_command()
         return _create_shortcut_windows(lnk, exe, args, workdir)
-    except Exception:
+    except (OSError, subprocess.SubprocessError, TimeoutError, TypeError, ValueError):
         logger.exception("设置开机自启失败")
         return False

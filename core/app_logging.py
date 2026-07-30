@@ -81,7 +81,8 @@ def setup_app_logging(
             sh.setLevel(resolved_level)
             sh.setFormatter(formatter)
             root.addHandler(sh)
-        except Exception:
+        except (OSError, ValueError, AttributeError):
+            # 无可用 stderr（如部分 windowed 环境）时忽略
             pass
 
     _configured = True
@@ -110,6 +111,6 @@ def reset_logging_for_tests() -> None:
     for h in list(root.handlers):
         try:
             h.close()
-        except Exception:
+        except (OSError, ValueError, AttributeError):
             pass
         root.removeHandler(h)

@@ -33,7 +33,7 @@ def use_borderless_chrome(
             return "break"
         try:
             on_close()
-        except Exception:
+        except (tk.TclError, AttributeError, RuntimeError):
             pass
         return "break"
 
@@ -160,16 +160,14 @@ def _apply_taskbar_visible(win: tk.Misc) -> None:
         return
     try:
         from services.windows_native import set_taskbar_visible
-    except Exception:
+    except ImportError:
         return
 
     def _set():
         try:
             if win.winfo_exists():
                 set_taskbar_visible(win)
-        except tk.TclError:
-            pass
-        except Exception:
+        except (tk.TclError, OSError, AttributeError, ValueError, TypeError):
             pass
 
     _set()
@@ -187,16 +185,14 @@ def _apply_rounded_corners(win: tk.Misc, app) -> None:
     radius = int(getattr(app, "CORNER_RADIUS", 16) or 16)
     try:
         from services.windows_native import set_window_rounded_corners
-    except Exception:
+    except ImportError:
         return
 
     def _set():
         try:
             if win.winfo_exists():
                 set_window_rounded_corners(win, radius)
-        except tk.TclError:
-            pass
-        except Exception:
+        except (tk.TclError, OSError, AttributeError, ValueError, TypeError):
             pass
 
     _set()
@@ -232,7 +228,7 @@ def center_dialog(win: tk.Misc, w: int, h: int, *, y_ratio: float = 1 / 3) -> No
             ox, oy, aw, ah = work
             x = ox + max(0, (aw - w) // 2)
             y = oy + max(0, int((ah - h) * y_ratio))
-    except Exception:
+    except (ImportError, OSError, AttributeError, TypeError, ValueError):
         pass
 
     if x is None:
@@ -301,7 +297,7 @@ def ensure_dialog_visible(
                 from services.windows_native import force_window_to_front
 
                 force_window_to_front(win)
-            except Exception:
+            except (ImportError, OSError, AttributeError, tk.TclError):
                 pass
 
         try:

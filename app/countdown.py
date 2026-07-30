@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+import tkinter as tk
 from tkinter import ttk
 
 from core.countdown_core import (
@@ -79,7 +80,7 @@ class CountdownController:
             style_name = "Accent.TButton"
         try:
             btn.config(style=style_name, text=button_text_for_state(state))
-        except Exception:
+        except tk.TclError:
             logger.debug("主按钮样式切换失败", exc_info=True)
 
     def apply_input_lock(self):
@@ -90,7 +91,7 @@ class CountdownController:
         for sb in getattr(app, "_time_spinboxes", None) or []:
             try:
                 sb.config(state=spin_state)
-            except Exception:
+            except tk.TclError:
                 logger.debug("设置 Spinbox 状态失败", exc_info=True)
 
         chips = getattr(app, "_preset_chips", None) or []
@@ -100,8 +101,8 @@ class CountdownController:
                 btn.unbind("<Enter>")
                 btn.unbind("<Leave>")
                 btn.unbind("<Button-1>")
-            except Exception:
-                pass
+            except tk.TclError:
+                logger.debug("预设 chip 解绑事件失败", exc_info=True)
             if locked:
                 try:
                     btn.config(
@@ -109,7 +110,7 @@ class CountdownController:
                         fg=c["text_muted"],
                         cursor="arrow",
                     )
-                except Exception:
+                except tk.TclError:
                     logger.debug("预设 chip 禁用样式失败", exc_info=True)
             else:
                 hms = getattr(btn, "_preset_hms", None)
@@ -133,7 +134,7 @@ class CountdownController:
                             "<Button-1>",
                             lambda e, h=hh, m=mm, s=ss: self.set_preset_time(h, m, s),
                         )
-                except Exception:
+                except tk.TclError:
                     logger.debug("预设 chip 启用失败", exc_info=True)
 
         # 设置卡锁定时整体弱化（不改布局，只调色）
@@ -151,7 +152,7 @@ class CountdownController:
                         bg_color=c.get("card", c["glass"]),
                         border_color=c.get("card_border", border),
                     )
-            except Exception:
+            except (tk.TclError, AttributeError, KeyError, TypeError):
                 logger.debug("设置卡锁定样式失败", exc_info=True)
 
     def record_duration_total(self, target_time, now=None):
@@ -211,7 +212,7 @@ class CountdownController:
                     track_id, fill=c.get("border", c.get("card_border", c["chip"]))
                 )
                 canvas.coords(track_id, 0, 0, w, h)
-        except Exception:
+        except (tk.TclError, TypeError, ValueError, KeyError, AttributeError):
             logger.debug("绘制进度条失败", exc_info=True)
 
     def on_time_changed(self, *args):
@@ -231,7 +232,8 @@ class CountdownController:
             target = target_from_hms(h, m, s, now)
             app.target_time = target
             app.target_time_label.config(text=format_target_label(target, now))
-        except ValueError:
+        except (ValueError, TypeError, tk.TclError):
+            # 输入中间态（空/非数字）时静默
             pass
 
     def toggle_countdown(self):
@@ -253,7 +255,7 @@ class CountdownController:
         if app._countdown_timer_id is not None:
             try:
                 app.master.after_cancel(app._countdown_timer_id)
-            except Exception:
+            except (tk.TclError, ValueError):
                 logger.debug("暂停时取消倒计时定时器失败", exc_info=True)
             app._countdown_timer_id = None
         now = datetime.now()
@@ -380,7 +382,7 @@ class CountdownController:
         if app._countdown_timer_id is not None:
             try:
                 app.master.after_cancel(app._countdown_timer_id)
-            except Exception:
+            except (tk.TclError, ValueError):
                 logger.debug("取消倒计时定时器失败", exc_info=True)
             app._countdown_timer_id = None
 
@@ -414,15 +416,17 @@ class CountdownController:
         app._bell_count = 0
         try:
             self.flash_visual()
-        except Exception:
+        except (tk.TclError, AttributeError, KeyError, TypeError):
             logger.warning("视觉闪烁失败", exc_info=True)
         try:
             self.notify_finished()
         except Exception:
+            # 托盘/系统通知边界：异常类型平台相关
             logger.warning("结束通知失败", exc_info=True)
         try:
             self.ring_bell()
         except Exception:
+            # 音效后端（winsound/afplay 等）边界
             logger.warning("提示音失败", exc_info=True)
 
     def notify_finished(self):
@@ -434,6 +438,7 @@ class CountdownController:
                 app.tray_icon.notify(message, title)
                 return
             except Exception:
+                # 托盘原生 API 边界
                 logger.debug("托盘 notify 失败", exc_info=True)
         try:
             def _tip():
@@ -442,7 +447,7 @@ class CountdownController:
                 show_info(app, message, title=title)
 
             app.master.after(0, _tip)
-        except Exception:
+        except (tk.TclError, RuntimeError, AttributeError):
             logger.debug("结束通知弹窗失败", exc_info=True)
 
     def ring_bell(self):
@@ -493,13 +498,13 @@ class CountdownController:
         if app._alarm_timer_id is not None:
             try:
                 app.master.after_cancel(app._alarm_timer_id)
-            except Exception:
+            except (tk.TclError, ValueError):
                 logger.debug("取消报警定时器失败", exc_info=True)
             app._alarm_timer_id = None
         if app._countdown_timer_id is not None:
             try:
                 app.master.after_cancel(app._countdown_timer_id)
-            except Exception:
+            except (tk.TclError, ValueError):
                 logger.debug("重置时取消倒计时定时器失败", exc_info=True)
             app._countdown_timer_id = None
         self.set_state(ACTION_RESET)
@@ -531,7 +536,7 @@ class CountdownController:
         if app._countdown_timer_id is not None:
             try:
                 app.master.after_cancel(app._countdown_timer_id)
-            except Exception:
+            except (tk.TclError, ValueError):
                 logger.debug("预设时取消倒计时定时器失败", exc_info=True)
             app._countdown_timer_id = None
 

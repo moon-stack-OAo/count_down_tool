@@ -51,7 +51,7 @@ def _activate_picker(win, *, topmost: bool = True):
             user32 = ctypes.windll.user32
             user32.BringWindowToTop(hwnd)
             user32.SetForegroundWindow(hwnd)
-        except Exception:
+        except (OSError, AttributeError, ValueError, TypeError, tk.TclError):
             logger.debug("时间选择器置前失败", exc_info=True)
 
 

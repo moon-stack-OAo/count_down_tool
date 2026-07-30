@@ -327,7 +327,7 @@ def destroy_mini_window(app, capture_size=True):
             tid = getattr(app, "_mini_geo_save_id", None)
             if tid is not None:
                 app.master.after_cancel(tid)
-        except Exception:
+        except (tk.TclError, ValueError):
             pass
         app._mini_geo_save_id = None
         try:
@@ -336,11 +336,11 @@ def destroy_mini_window(app, capture_size=True):
             else:
                 _remember_mini_pos(app)
             app._save_config()
-        except Exception:
+        except (OSError, tk.TclError, AttributeError, TypeError, ValueError):
             logger.warning("保存 Mini 窗口几何失败", exc_info=True)
         try:
             app.mini_window.destroy()
-        except Exception:
+        except tk.TclError:
             logger.warning("销毁 Mini 窗口失败", exc_info=True)
         app.mini_window = None
         app.mini_countdown_label = None
@@ -580,7 +580,7 @@ def _schedule_save_mini_geometry(app):
         tid = getattr(app, "_mini_geo_save_id", None)
         if tid is not None:
             app.master.after_cancel(tid)
-    except Exception:
+    except (tk.TclError, ValueError):
         pass
     app._mini_geo_save_id = None
 
@@ -589,13 +589,13 @@ def _schedule_save_mini_geometry(app):
         try:
             _capture_mini_geometry(app)
             app._save_config()
-        except Exception:
+        except (OSError, tk.TclError, AttributeError, TypeError, ValueError):
             logger.warning("debounce 保存 Mini 几何失败", exc_info=True)
 
     try:
         master = app.master
         app._mini_geo_save_id = master.after(_GEO_SAVE_DEBOUNCE_MS, _flush)
-    except Exception:
+    except tk.TclError:
         _flush()
 
 
@@ -611,7 +611,7 @@ def mini_on_release(app, event=None):
         _schedule_save_mini_geometry(app)
         if was_resize:
             apply_mini_content_scale(app, force=True)
-    except Exception:
+    except (OSError, tk.TclError, AttributeError, TypeError, ValueError):
         logger.warning("结束 Mini 操作时保存几何失败", exc_info=True)
     if was_resize:
         try:

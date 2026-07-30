@@ -16,12 +16,14 @@ def apply_theme(app, theme_id: str) -> None:
     # 同 theme_id 且已有色表：跳过全量重建，避免闪烁
     if theme_id == app._theme_id and app.COLORS:
         return
+    import tkinter as tk
+
     # 主题切换会 destroy 子控件；设置窗是独立 Toplevel，须先关闭以免颜色过期
     try:
         from ui.settings_window import close_settings
 
         close_settings(app)
-    except Exception:
+    except (tk.TclError, AttributeError, ImportError):
         logger.debug("关闭设置窗失败", exc_info=True)
     # 保存 UI 输入与倒计时显示
     saved_h = saved_m = saved_s = None
@@ -30,7 +32,7 @@ def apply_theme(app, theme_id: str) -> None:
             saved_h = app.hour_var.get()
             saved_m = app.minute_var.get()
             saved_s = app.second_var.get()
-    except Exception:
+    except (tk.TclError, AttributeError, TypeError, ValueError):
         pass
     saved_countdown = app.countdown_text
     saved_target = app.target_time
@@ -47,7 +49,7 @@ def apply_theme(app, theme_id: str) -> None:
     for child in list(app.master.winfo_children()):
         try:
             child.destroy()
-        except Exception:
+        except tk.TclError:
             logger.debug("销毁子控件失败", exc_info=True)
     app.btn_start = None
     app.current_time_label = None
@@ -84,7 +86,7 @@ def apply_theme(app, theme_id: str) -> None:
             )
     try:
         app._on_time_changed()
-    except Exception:
+    except (tk.TclError, AttributeError, TypeError, ValueError):
         logger.debug("主题切换后刷新目标时间失败", exc_info=True)
 
     # 主题重建后按状态恢复主按钮色、锁定与进度

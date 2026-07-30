@@ -39,7 +39,7 @@ def handle_external_show(app) -> None:
                 pass
         # 托盘 / 隐藏 / Full：统一恢复完整窗
         show_full_mode(app)
-    except Exception:
+    except (tk.TclError, AttributeError, RuntimeError):
         logger.debug("处理外部 show 请求失败", exc_info=True)
 
 

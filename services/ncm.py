@@ -682,7 +682,8 @@ def _aes_ecb_decrypt(key: bytes, data: bytes) -> bytes:
         from Crypto.Cipher import AES  # type: ignore
 
         return AES.new(key, AES.MODE_ECB).decrypt(data)
-    except Exception:
+    except (ImportError, ValueError, TypeError, AttributeError):
+        # 无 pycryptodome 或调用失败时回退内置 AES
         pass
     rks = _aes_key_expansion(key)
     out = bytearray()
@@ -799,7 +800,7 @@ def decrypt_ncm(path: str) -> Tuple[bytes, str]:
             raw_fmt = str(meta.get("format") or "mp3").strip().lower()
             if raw_fmt in ("mp3", "flac", "wav", "m4a", "aac", "ogg"):
                 fmt = raw_fmt
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError, AttributeError):
             logger.debug("解析 ncm meta 失败，默认 mp3", exc_info=True)
 
         crc_raw = f.read(4)  # crc32
@@ -950,6 +951,7 @@ def resolve_ncm_play_path(path: str) -> Optional[str]:
             os.replace(tmp, out)
             cleanup_ncm_cache(cache_root, keep_paths={out})
             return out
-    except Exception:
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError):
+        # base64/binascii 错误亦属 ValueError
         logger.debug("ncm 解密失败: %s", path, exc_info=True)
         return None

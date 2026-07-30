@@ -61,7 +61,7 @@ def _activate(win: tk.Misc) -> None:
             user32 = ctypes.windll.user32
             user32.BringWindowToTop(hwnd)
             user32.SetForegroundWindow(hwnd)
-        except Exception:
+        except (OSError, AttributeError, ValueError, TypeError, tk.TclError):
             logger.debug("弹窗置前失败", exc_info=True)
 
 
@@ -142,7 +142,7 @@ class _WithdrawGuard:
             # 让 WM 先处理 hide，再弹系统对话框
             if self._windows:
                 self._windows[0].update()
-        except Exception:
+        except tk.TclError:
             pass
         return self
 

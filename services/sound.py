@@ -297,7 +297,7 @@ def import_custom_sound(src_path: str) -> Optional[Tuple[str, str]]:
         shutil.copy2(play_src, tmp)
         os.replace(tmp, dest)
         return dest, display
-    except Exception:
+    except (OSError, shutil.Error, TypeError, ValueError):
         logger.debug("导入自定义音效失败: %s -> %s", src_path, dest, exc_info=True)
         return None
 
@@ -388,7 +388,8 @@ def _estimate_audio_seconds(path: str) -> float:
             with wave.open(path, "rb") as w:
                 rate = float(w.getframerate() or 1)
                 return max(0.3, w.getnframes() / rate + 0.2)
-        except Exception:
+        except (OSError, TypeError, ValueError, ZeroDivisionError, ImportError):
+            # wave.Error 等损坏/非标准 wav 时粗估回退
             pass
     return _DEFAULT_AUDIO_SECONDS
 
@@ -429,7 +430,7 @@ def _probe_macos_audio_seconds(path: str) -> float:
         sec = _parse_afinfo_duration(blob)
         if sec is not None:
             return sec
-    except Exception:
+    except (OSError, subprocess.SubprocessError, TimeoutError, TypeError, ValueError):
         logger.debug("afinfo 探测时长失败: %s", path, exc_info=True)
     return _estimate_audio_seconds(path)
 
@@ -487,7 +488,7 @@ def _ensure_mci_worker() -> None:
                             cmd, buf, 255, 0
                         )
                     )
-                except Exception:
+                except (OSError, AttributeError, TypeError, ValueError):
                     return -1, ""
                 return err, buf.value or ""
 
@@ -499,7 +500,7 @@ def _ensure_mci_worker() -> None:
                     try:
                         _send(f"stop {_WIN_MCI_ALIAS}")
                         _send(f"close {_WIN_MCI_ALIAS}")
-                    except Exception:
+                    except (OSError, AttributeError, TypeError, ValueError):
                         pass
                     break
                 op, args, result_box, done_evt = item
@@ -558,7 +559,7 @@ def _ensure_mci_worker() -> None:
                     else:
                         if result_box is not None:
                             result_box["ok"] = False
-                except Exception:
+                except (OSError, AttributeError, TypeError, ValueError, KeyError):
                     logger.debug("MCI worker 执行失败 op=%s", op, exc_info=True)
                     if result_box is not None:
                         result_box["ok"] = False
@@ -645,7 +646,7 @@ def _kill_proc_tree(proc: subprocess.Popen) -> None:
     try:
         if proc.poll() is not None:
             return
-    except Exception:
+    except (OSError, ValueError, AttributeError):
         return
     system = platform.system()
     if system == "Windows":
@@ -659,7 +660,7 @@ def _kill_proc_tree(proc: subprocess.Popen) -> None:
                 timeout=3,
             )
             return
-        except Exception:
+        except (OSError, subprocess.SubprocessError, TimeoutError):
             logger.debug("taskkill 失败 pid=%s", getattr(proc, "pid", None), exc_info=True)
     elif system in ("Darwin", "Linux"):
         # start_new_session=True 时 afplay/ffplay 自成会话，killpg 可一并掐断
@@ -671,12 +672,12 @@ def _kill_proc_tree(proc: subprocess.Popen) -> None:
                 try:
                     proc.wait(timeout=0.4)
                     return
-                except Exception:
+                except (OSError, subprocess.TimeoutExpired, ValueError):
                     pass
                 if proc.poll() is None:
                     try:
                         os.killpg(pgid, signal.SIGKILL)
-                    except Exception:
+                    except OSError:
                         logger.debug(
                             "killpg SIGKILL 失败 pid=%s pgid=%s",
                             pid,
@@ -685,11 +686,11 @@ def _kill_proc_tree(proc: subprocess.Popen) -> None:
                         )
                     try:
                         proc.wait(timeout=0.3)
-                    except Exception:
+                    except (OSError, subprocess.TimeoutExpired, ValueError):
                         pass
                     if proc.poll() is not None:
                         return
-            except Exception:
+            except OSError:
                 logger.debug(
                     "killpg 失败 pid=%s，回退 terminate/kill",
                     pid,
@@ -698,12 +699,12 @@ def _kill_proc_tree(proc: subprocess.Popen) -> None:
     try:
         if proc.poll() is None:
             proc.terminate()
-    except Exception:
+    except (OSError, ProcessLookupError, ValueError):
         logger.debug("终止播放进程失败", exc_info=True)
     try:
         if proc.poll() is None:
             proc.kill()
-    except Exception:
+    except (OSError, ProcessLookupError, ValueError):
         logger.debug("强制结束播放进程失败", exc_info=True)
 
 
@@ -719,12 +720,12 @@ def _halt_devices() -> None:
             # 连调两次：部分驱动首次 PURGE 不可靠
             winsound.PlaySound(None, winsound.SND_PURGE)
             winsound.PlaySound(None, winsound.SND_PURGE)
-        except Exception:
+        except (OSError, RuntimeError, AttributeError):
             logger.debug("winsound 停止失败", exc_info=True)
         # 必须在创建 MCI 设备的同一线程 stop/close，否则错误 263 且音频不停
         try:
             _mci_call("halt", timeout=3.0)
-        except Exception:
+        except (OSError, RuntimeError, TimeoutError, AttributeError):
             logger.debug("MCI halt 失败", exc_info=True)
 
     with _play_proc_lock:
@@ -790,7 +791,7 @@ def play_file(
             if _is_play_cancelled(play_gen):
                 _halt_devices()
                 ok = False
-        except Exception:
+        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError, TypeError):
             logger.debug("播放文件失败: %s", path, exc_info=True)
             ok = False
         # 主线程实际开播后再清 pending（成功有 _play_until；失败也要释放停止按钮）
@@ -804,7 +805,7 @@ def play_file(
             # 调度后立刻返回 True，但不要清 pending——等 _start 内实际开播后再清
             root.after(0, _start)
             return True
-        except Exception:
+        except (RuntimeError, AttributeError):
             logger.debug("调度主线程播放失败，回退同步", exc_info=True)
     return _start()
 
@@ -846,7 +847,7 @@ def _play_windows(path: str) -> bool:
             winsound.PlaySound(abs_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
             _mark_playing_until(est)
             return True
-        except Exception:
+        except (OSError, RuntimeError, AttributeError):
             logger.debug("winsound 播放失败", exc_info=True)
 
     if _play_windows_media_player(abs_path, est):
@@ -857,7 +858,7 @@ def _play_windows(path: str) -> bool:
         os.startfile(abs_path)  # type: ignore[attr-defined]
         _mark_playing_until(est)
         return True
-    except Exception:
+    except OSError:
         logger.debug("startfile 播放失败", exc_info=True)
         return False
 
@@ -884,7 +885,7 @@ def _play_windows_mci(path: str, est_seconds: float = 0.0) -> bool:
                 # 超时/stop 已作废本路，丢弃迟到 play
                 try:
                     _mci_call("halt", timeout=2.0)
-                except Exception:
+                except (OSError, RuntimeError, TimeoutError, AttributeError):
                     pass
                 return False
         mci_len = float(r.get("length") or 0.0)
@@ -892,7 +893,7 @@ def _play_windows_mci(path: str, est_seconds: float = 0.0) -> bool:
         # MCI mode 查询偶发不准，始终用时长兜底，保证菜单「停止试听」可点
         _mark_playing_until(max(est_seconds, mci_len, 1.0))
         return True
-    except Exception:
+    except (OSError, RuntimeError, TimeoutError, TypeError, ValueError, AttributeError):
         logger.debug("MCI 播放异常", exc_info=True)
         return False
 
@@ -945,7 +946,7 @@ def _play_windows_media_player(path: str, est_seconds: float = 0.0) -> bool:
         # 进程存活为主；时长兜底防止 poll 异常
         _mark_playing_until(max(est_seconds, 1.0))
         return True
-    except Exception:
+    except (OSError, subprocess.SubprocessError, TypeError, ValueError):
         logger.debug("MediaPlayer 播放失败", exc_info=True)
         return False
 
@@ -970,7 +971,7 @@ def _play_macos(path: str) -> bool:
         except FileNotFoundError:
             logger.debug("mac 播放器不可用: %s", cmd[0])
             continue
-        except Exception:
+        except (OSError, subprocess.SubprocessError, ValueError):
             logger.debug("mac 播放失败: %s", cmd[0], exc_info=True)
             continue
     return False
@@ -994,7 +995,7 @@ def _play_linux(path: str) -> bool:
             return True
         except FileNotFoundError:
             continue
-        except Exception:
+        except (OSError, subprocess.SubprocessError, ValueError):
             logger.debug("linux 播放失败: %s", cmd[0], exc_info=True)
     return False
 
@@ -1012,7 +1013,7 @@ def ring_system_bell(root) -> None:
         return
     try:
         root.bell()
-    except Exception:
+    except (RuntimeError, AttributeError):
         logger.debug("bell 失败", exc_info=True)
 
 
@@ -1038,7 +1039,7 @@ def ring_system_bell_times(root, times: int = _SYSTEM_BELL_TIMES) -> None:
         if left > 1:
             try:
                 root.after(_SYSTEM_BELL_INTERVAL_MS, lambda: _ring(left - 1))
-            except Exception:
+            except (RuntimeError, AttributeError):
                 for _ in range(left - 1):
                     with _bell_lock:
                         if gen != _bell_gen:
@@ -1047,7 +1048,7 @@ def ring_system_bell_times(root, times: int = _SYSTEM_BELL_TIMES) -> None:
 
     try:
         root.after(0, lambda: _ring(n))
-    except Exception:
+    except (RuntimeError, AttributeError):
         for _ in range(n):
             with _bell_lock:
                 if gen != _bell_gen:
@@ -1154,7 +1155,8 @@ def play_finish_sound_async(root, *, muted: bool, sound_id: str, custom_path: st
 
     try:
         threading.Thread(target=_run, daemon=True).start()
-    except Exception:
+    except RuntimeError:
+        # 线程创建失败时同步回退
         defer_pending = False
         try:
             defer_pending = bool(

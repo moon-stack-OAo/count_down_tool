@@ -371,7 +371,7 @@ def load_config_dict(path: str) -> Dict[str, Any]:
         if isinstance(loaded, dict):
             return loaded
         return {}
-    except Exception:
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
         return {}
 
 
@@ -546,7 +546,7 @@ def save_config_dict(path: str, config: Dict[str, Any]) -> None:
             except OSError:
                 pass
         os.replace(tmp_path, path)
-    except Exception:
+    except (OSError, TypeError, ValueError):
         try:
             if os.path.isfile(tmp_path):
                 os.remove(tmp_path)
@@ -587,7 +587,7 @@ def is_process_alive(pid: int) -> bool:
                 kernel32.CloseHandle(handle)
                 return True
             return False
-        except Exception:
+        except (OSError, AttributeError, ValueError, TypeError):
             return False
     try:
         os.kill(pid, 0)

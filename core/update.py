@@ -399,7 +399,7 @@ def fetch_release_body(tag_name: str, html_url: str, timeout: float = 15.0) -> s
         body = parse_release_body_from_atom(atom, tag_v)
         if body.strip():
             return body
-    except Exception as exc:
+    except (OSError, urllib.error.URLError, RuntimeError, ValueError, TypeError) as exc:
         logger.debug("Atom 取发布说明失败: %s", exc)
 
     # 2) 发布页 HTML
@@ -415,7 +415,7 @@ def fetch_release_body(tag_name: str, html_url: str, timeout: float = 15.0) -> s
         body = parse_release_body_from_html(page)
         if body.strip():
             return body
-    except Exception as exc:
+    except (OSError, urllib.error.URLError, RuntimeError, ValueError, TypeError) as exc:
         logger.debug("HTML 取发布说明失败: %s", exc)
 
     # 3) API（可能限流，失败则空说明，不影响版本检查）
@@ -428,7 +428,7 @@ def fetch_release_body(tag_name: str, html_url: str, timeout: float = 15.0) -> s
         body = str(data.get("body") or "").strip()
         if body:
             return body
-    except Exception as exc:
+    except (OSError, urllib.error.URLError, RuntimeError, ValueError, TypeError, json.JSONDecodeError) as exc:
         logger.debug("API 取发布说明失败: %s", exc)
 
     return ""
@@ -455,13 +455,13 @@ def fetch_latest_release(timeout: float = 15.0) -> ReleaseInfo:
             html_url=html_url,
             assets=_synthetic_assets(version),
         )
-    except Exception as web_exc:
+    except (OSError, urllib.error.URLError, RuntimeError, ValueError, TypeError) as web_exc:
         logger.info("网页方式检查更新失败，回退 API: %s", web_exc)
 
     # 2) API 回退（可能触发未认证限流）
     try:
         data = _http_get_json(GITHUB_API_LATEST, timeout=timeout)
-    except Exception as api_exc:
+    except (OSError, urllib.error.URLError, RuntimeError, ValueError, TypeError, json.JSONDecodeError) as api_exc:
         raise RuntimeError(_format_http_error(api_exc)) from api_exc
     tag = str(data.get("tag_name") or "")
     version = normalize_tag_version(tag)
@@ -494,7 +494,7 @@ def check_for_update(
     pk = platform_key(system)
     try:
         release = fetch_latest_release(timeout=timeout)
-    except Exception as exc:
+    except (OSError, urllib.error.URLError, RuntimeError, ValueError, TypeError) as exc:
         logger.info("检查更新失败: %s", exc)
         return UpdateCheckResult(
             current_version=current_version,
@@ -591,7 +591,7 @@ def download_file(
             raise RuntimeError(
                 f"落盘文件与发布大小不符（磁盘 {on_disk} / 期望 {expected_size}）"
             )
-    except Exception:
+    except (OSError, urllib.error.URLError, RuntimeError, ValueError, TypeError):
         try:
             if os.path.isfile(abs_dest):
                 os.remove(abs_dest)
@@ -829,7 +829,7 @@ def launch_windows_replace_and_exit_prep(
         startup = subprocess.STARTUPINFO()
         startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startup.wShowWindow = 0  # SW_HIDE
-    except Exception:
+    except (AttributeError, OSError, ValueError):
         startup = None
     # 用 -Command 执行脚本内容，避免 -File + 临时目录偶发策略问题
     # 仍 -WindowStyle Hidden，不弹控制台

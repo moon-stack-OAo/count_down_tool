@@ -164,7 +164,7 @@ def _register_windows(paths: Sequence[str]) -> int:
                 _registered_paths.append(path)
             else:
                 logger.warning("AddFontResourceExW 失败: %s", path)
-        except Exception as exc:
+        except (OSError, AttributeError, ValueError, TypeError) as exc:
             logger.warning("注册字体失败 %s: %s", path, exc)
     return ok
 
@@ -219,7 +219,7 @@ def _register_darwin(paths: Sequence[str]) -> int:
                     logger.warning("CTFontManager 注册失败: %s", path)
             finally:
                 cf.CFRelease(url)
-        except Exception as exc:
+        except (OSError, AttributeError, ValueError, TypeError) as exc:
             logger.warning("注册字体失败 %s: %s", path, exc)
     return ok
 
@@ -229,6 +229,9 @@ def _register_linux(paths: Sequence[str]) -> int:
     Linux：优先 fontconfig 用户目录软链/复制，再尝试 Tk -file。
     返回成功登记的路径数（尽力而为）。
     """
+    import shutil
+    import subprocess
+
     ok = 0
     fonts_dir = os.path.join(os.path.expanduser("~"), ".local", "share", "fonts", "count_down_tool")
     try:
@@ -237,26 +240,22 @@ def _register_linux(paths: Sequence[str]) -> int:
             dest = os.path.join(fonts_dir, os.path.basename(path))
             try:
                 if not os.path.isfile(dest) or os.path.getsize(dest) != os.path.getsize(path):
-                    import shutil
-
                     shutil.copy2(path, dest)
                 ok += 1
                 _registered_paths.append(dest)
-            except Exception as exc:
+            except (OSError, shutil.Error) as exc:
                 logger.warning("复制字体失败 %s: %s", path, exc)
         # 刷新 fontconfig（有则调用）
         try:
-            import subprocess
-
             subprocess.run(
                 ["fc-cache", "-f", fonts_dir],
                 check=False,
                 capture_output=True,
                 timeout=15,
             )
-        except Exception:
-            pass
-    except Exception as exc:
+        except (OSError, subprocess.SubprocessError, TimeoutError):
+            logger.debug("fc-cache 刷新失败", exc_info=True)
+    except OSError as exc:
         logger.warning("Linux 字体目录准备失败: %s", exc)
     return ok
 
@@ -293,15 +292,17 @@ def register_bundled_fonts(root=None, force: bool = False) -> int:
 
 def _try_tk_file_fonts(root, paths: Sequence[str]) -> None:
     """部分 Tk 构建支持 font create -file。"""
+    import tkinter as tk
+
     for i, path in enumerate(paths):
         name = f"_cdt_bundled_mono_{i}"
         try:
             root.tk.call("font", "create", name, "-file", path)
-        except Exception:
+        except tk.TclError:
             try:
                 # 已存在则跳过
                 root.tk.call("font", "configure", name, "-file", path)
-            except Exception:
+            except tk.TclError:
                 pass
 
 
@@ -321,14 +322,14 @@ def list_available_families(root=None) -> Optional[List[str]]:
             win.withdraw()
             created = True
         return list(tkfont.families(win))
-    except Exception as exc:
+    except (tk.TclError, RuntimeError, OSError) as exc:
         logger.debug("无法枚举系统字体: %s", exc)
         return None
     finally:
         if created and win is not None:
             try:
                 win.destroy()
-            except Exception:
+            except tk.TclError:
                 pass
 
 

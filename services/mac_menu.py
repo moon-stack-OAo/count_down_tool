@@ -58,7 +58,7 @@ def init_mac_menubar(app) -> bool:
         def _reopen(*_args):
             try:
                 app._show_full_mode()
-            except Exception:
+            except (tk.TclError, AttributeError, RuntimeError):
                 logger.debug("mac ReopenApplication 失败", exc_info=True)
 
         try:
@@ -68,7 +68,8 @@ def init_mac_menubar(app) -> bool:
 
         logger.info("macOS 使用菜单栏（未启用 pystray）")
         return True
-    except Exception:
+    except (tk.TclError, AttributeError, RuntimeError, ImportError):
+        # mac 菜单栏边界：初始化失败则降级，不阻断启动
         logger.exception("macOS 菜单栏初始化失败")
         app._status_menu_active = False
         return False

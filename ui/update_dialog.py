@@ -84,7 +84,7 @@ def show_update_available(app, result, notes: str, on_action: ActionCb = None) -
         if on_action:
             try:
                 on_action(action)
-            except Exception:
+            except (tk.TclError, AttributeError, RuntimeError, OSError, TypeError, ValueError):
                 logger.exception("更新对话框回调失败")
 
     win.protocol("WM_DELETE_WINDOW", lambda: _finish("later"))

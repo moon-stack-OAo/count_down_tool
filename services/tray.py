@@ -116,6 +116,7 @@ def refresh_tray_menu(app):
 
             refresh_mac_menubar(app)
         except Exception:
+            # 菜单栏原生边界
             logger.debug("刷新 mac 菜单栏失败", exc_info=True)
         return
 
@@ -129,6 +130,7 @@ def refresh_tray_menu(app):
             icon.menu = menu
         icon.update_menu()
     except Exception:
+        # pystray 原生菜单边界
         logger.debug("刷新托盘菜单失败", exc_info=True)
 
 
@@ -225,4 +227,5 @@ def stop_tray(app):
         try:
             app.tray_icon.stop()
         except Exception:
+            # 托盘停止原生边界
             logger.warning("停止托盘图标失败", exc_info=True)

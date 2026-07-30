@@ -196,20 +196,20 @@ class CountdownApp:
         # 启动诊断：MOTW 解锁提示、托盘失败可见提示（延后避免挡启动动画）
         try:
             self.master.after(600, lambda: self._startup_health_hints(tray_ok))
-        except Exception:
+        except tk.TclError:
             logger.debug("调度启动健康提示失败", exc_info=True)
         try:
             from services.updater import schedule_startup_check
 
             schedule_startup_check(self)
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError, OSError):
             logger.debug("调度启动更新检查失败", exc_info=True)
 
     def _startup_health_hints(self, tray_ok: bool) -> None:
         """启动后提示：网络解锁标记、托盘不可用。"""
         try:
             from ui.app_dialogs import show_info
-        except Exception:
+        except ImportError:
             return
 
         # 1) Mark of the Web：从 zip/下载拖出的 exe 常见
@@ -237,7 +237,7 @@ class CountdownApp:
                             "建议：将 zip 完整解压到固定文件夹再运行。",
                             title="安全提示",
                         )
-            except Exception:
+            except (OSError, AttributeError, TypeError, ValueError, tk.TclError):
                 logger.debug("MOTW 检测失败", exc_info=True)
 
         # 2) 托盘失败：明确提示（勿静默）
@@ -253,7 +253,7 @@ class CountdownApp:
                     "检查 exe 是否已「解除锁定」。",
                     title="托盘不可用",
                 )
-            except Exception:
+            except (tk.TclError, AttributeError, RuntimeError):
                 logger.debug("托盘失败提示失败", exc_info=True)
 
     @staticmethod
@@ -381,7 +381,7 @@ class CountdownApp:
         try:
             if os.path.exists(_ICON_PATH):
                 self.master.iconbitmap(_ICON_PATH)
-        except Exception:
+        except (OSError, tk.TclError):
             logger.warning("设置窗口图标失败", exc_info=True)
 
     # ------------------------------------------------------------------
@@ -430,11 +430,11 @@ class CountdownApp:
         try:
             if consume_show_request():
                 self._handle_external_show()
-        except Exception:
+        except (OSError, tk.TclError, AttributeError, RuntimeError):
             logger.debug("轮询 show 请求失败", exc_info=True)
         try:
             self._show_poll_timer_id = self.master.after(400, self._poll_show_request)
-        except Exception:
+        except tk.TclError:
             self._show_poll_timer_id = None
 
     def _has_tray(self):
@@ -449,7 +449,7 @@ class CountdownApp:
         if tid is not None:
             try:
                 self.master.after_cancel(tid)
-            except Exception:
+            except (tk.TclError, ValueError):
                 pass
             self._show_poll_timer_id = None
         stop_tray(self)
@@ -513,7 +513,7 @@ class CountdownApp:
         if self._error_timer_id is not None:
             try:
                 self.master.after_cancel(self._error_timer_id)
-            except Exception:
+            except (tk.TclError, ValueError):
                 logger.debug("取消错误提示定时器失败", exc_info=True)
             self._error_timer_id = None
         self.error_label.config(text=message)
@@ -537,7 +537,7 @@ def main():
             # 给主实例一点时间消费请求；仍失败则提示
             try:
                 time.sleep(0.5)
-            except Exception:
+            except OSError:
                 pass
             brought = bring_existing_to_front()
         if not brought:
@@ -546,7 +546,7 @@ def main():
                 root.withdraw()
                 messagebox.showinfo(APP_NAME, f"{APP_NAME} 已在运行中。")
                 root.destroy()
-            except Exception:
+            except (tk.TclError, RuntimeError, OSError):
                 logger.warning("单实例提示失败", exc_info=True)
                 print(f"{APP_NAME} 已在运行中。")
         return
