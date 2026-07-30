@@ -55,7 +55,11 @@ echo.
 echo ========================================
 if exist "%APP_DIR%\count_down_tool.exe" (
     if exist "%TOOL_DIR%\dist\%OUT_ZIP%" del /q "%TOOL_DIR%\dist\%OUT_ZIP%"
-    rem zip 内为 onedir 目录内容（exe + _internal 等），解压后直接运行 exe
+    rem 随包附带用户说明（与 exe 同层，不进 _internal）
+    if exist "%TOOL_DIR%\docs\readme.txt" (
+        copy /Y "%TOOL_DIR%\docs\readme.txt" "%APP_DIR%\readme.txt" >nul
+    )
+    rem zip 内为 onedir 目录内容（exe + _internal + readme），解压后直接运行 exe
     powershell -NoProfile -Command "Compress-Archive -Path '%APP_DIR%\*' -DestinationPath '%TOOL_DIR%\dist\%OUT_ZIP%' -Force"
     if not exist "%TOOL_DIR%\dist\%OUT_ZIP%" (
         echo   [ERROR] Failed to create zip

@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### 文档
+
+- Windows 发布包增加 `readme.txt`（完整解压、勿只拖 exe、配置目录、常见 DLL 错误）
+
 ## 1.3.32
 
 ### 修复

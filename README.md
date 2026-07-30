@@ -95,7 +95,8 @@ dist/count_down_tool-<version>-win64.zip
 ```
 
 **重要**：请将 zip **完整解压**到固定文件夹后运行其中的 `count_down_tool.exe`。  
-不要只从压缩包拖出单个 exe（会缺少 `_internal` 内 DLL，导致启动失败）。
+不要只从压缩包拖出单个 exe（会缺少 `_internal` 内 DLL，导致启动失败）。  
+Windows 发布包内附带 [`docs/readme.txt`](docs/readme.txt)（打进 zip 后文件名为 `readme.txt`）。
 
 ### macOS
 
@@ -125,6 +126,7 @@ count_down_tool/
 ├── count_down_tool.py       # 入口
 ├── requirements.txt
 ├── config.example.json
+├── docs/readme.txt           # Windows 发布包随附说明
 ├── core/                    # 纯逻辑：倒计时、主题、字体、更新
 ├── app/                     # 控制器、配置、主题/模式、窗口 chrome
 ├── ui/                      # Full / Mini / 设置中心 / 时间选择器

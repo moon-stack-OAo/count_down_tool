@@ -220,7 +220,12 @@ jobs:
           }
           $zipPath = "dist/$zipName"
           if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
-          # zip 根目录直接是 exe + _internal 等，用户解压后即可运行
+          # 随包附带用户说明（与 exe 同层）
+          $readmeSrc = "docs/readme.txt"
+          if (Test-Path -LiteralPath $readmeSrc) {
+            Copy-Item -LiteralPath $readmeSrc -Destination (Join-Path $appDir "readme.txt") -Force
+          }
+          # zip 根目录：exe + _internal + readme.txt
           Compress-Archive -Path (Join-Path $appDir '*') -DestinationPath $zipPath -Force
           Get-Item -LiteralPath $zipPath | Format-List Name, Length
 
