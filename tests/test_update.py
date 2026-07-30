@@ -79,6 +79,22 @@ class TestExtractAndScript(unittest.TestCase):
             with open(out, "rb") as f:
                 self.assertEqual(f.read(), payload)
 
+    def test_extract_onedir_layout(self):
+        """zip 含 exe + 附属文件（模拟 onedir）时应整包解压。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = os.path.join(tmp, "onedir.zip")
+            payload = b"MZ" + b"\0" * 1200
+            with zipfile.ZipFile(zpath, "w") as zf:
+                zf.writestr("count_down_tool.exe", payload)
+                zf.writestr("_internal/python311.dll", b"DLL" + b"\0" * 100)
+                zf.writestr("_internal/base_library.zip", b"PK" + b"\0" * 50)
+            out_dir = os.path.join(tmp, "out")
+            out = extract_windows_exe(zpath, out_dir)
+            self.assertTrue(os.path.isfile(out))
+            self.assertTrue(
+                os.path.isfile(os.path.join(os.path.dirname(out), "_internal", "python311.dll"))
+            )
+
     def test_extract_missing_exe_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
             zpath = os.path.join(tmp, "no_exe.zip")
@@ -132,8 +148,8 @@ class TestExtractAndScript(unittest.TestCase):
             self.assertIn("Get-Process", body)
             self.assertIn("Start-Process", body)
             self.assertIn("Test-ExeReady", body)
-            self.assertIn(".new", body)
-            self.assertIn(".bak", body)
+            self.assertIn("onedir", body.lower())
+            self.assertIn("sourceDir", body)
             self.assertIn("count_down_tool_update.log", body)
             self.assertNotIn("tasklist", body)
             self.assertNotIn("find ", body.lower())

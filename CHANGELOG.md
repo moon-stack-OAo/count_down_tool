@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+## 1.3.32
+
+### 修复
+
+- **Failed to load Python DLL（`%TEMP%\_MEI*\python311.dll`）**：Windows 分发由 PyInstaller **onefile 改为 onedir**。`python311.dll` 等与 exe 同目录加载，不再每次启动解压到临时目录
+- **自动更新**：解压完整目录并整目录同步安装；兼容旧版仅含单 exe 的 zip
+
+### 说明
+
+- 请**完整解压** zip 到固定文件夹后运行 `count_down_tool.exe`，不要只拖出单个 exe
+- 从 1.3.31 及更早（onefile）升级：建议手动下载 1.3.32 zip 完整解压覆盖，或删旧 exe 后使用新目录
+
 ## 1.3.31
 
 ### 修复

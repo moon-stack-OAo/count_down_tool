@@ -2,14 +2,14 @@
 
 ![Python](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
-![Windows](https://img.shields.io/badge/Windows%20(v1.3.31)-0078D6?logo=windows&logoColor=white)
-![macOS](https://img.shields.io/badge/macOS%20(v1.3.31)-000000?logo=apple&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.3.31-brightgreen.svg)
+![Windows](https://img.shields.io/badge/Windows%20(v1.3.32)-0078D6?logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS%20(v1.3.32)-000000?logo=apple&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.3.32-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 基于 **Python + Tkinter** 的深色主题桌面倒计时工具（完整模式 + Mini 小组件）。
 
-**当前版本：1.3.31**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.3.32**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ---
 
@@ -81,7 +81,7 @@ python count_down_tool.py
 
 ## 打包构建
 
-版本号读取自 `core.countdown_core.__version__`（当前 **1.3.31**）。CI 打 tag 时要求 tag 与代码版本一致。
+版本号读取自 `core.countdown_core.__version__`（当前 **1.3.32**）。CI 打 tag 时要求 tag 与代码版本一致。
 
 ### Windows
 
@@ -90,9 +90,12 @@ scripts\build_exe.bat
 ```
 
 ```text
-dist/count_down_tool.exe
+dist/count_down_tool/          # onedir：exe + _internal 等
 dist/count_down_tool-<version>-win64.zip
 ```
+
+**重要**：请将 zip **完整解压**到固定文件夹后运行其中的 `count_down_tool.exe`。  
+不要只从压缩包拖出单个 exe（会缺少 `_internal` 内 DLL，导致启动失败）。
 
 ### macOS
 
@@ -102,11 +105,11 @@ dist/count_down_tool-<version>-win64.zip
 
 | 文件                                         | 适用            |
 |--------------------------------------------|---------------|
-| `count_down_tool-<version>-win64.zip`      | 64 位 Windows  |
+| `count_down_tool-<version>-win64.zip`      | 64 位 Windows（onedir 目录） |
 | `count_down_tool-<version>-mac-arm64.zip`  | Apple Silicon |
 | `count_down_tool-<version>-mac-x86_64.zip` | Intel Mac     |
 
-解压后固定为 `count_down_tool.exe` / `count_down_tool.app`。未公证首次打开：
+解压后：Windows 为目录内 `count_down_tool.exe`；macOS 为 `count_down_tool.app`。未公证首次打开：
 
 ```bash
 xattr -cr "/Applications/count_down_tool.app"

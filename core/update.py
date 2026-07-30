@@ -602,26 +602,35 @@ def download_file(
 
 
 def extract_windows_exe(zip_path: str, dest_dir: str) -> str:
-    """从 win zip 中取出 count_down_tool.exe，返回 exe 绝对路径。"""
+    """从 win zip 解压完整应用（onedir 优先），返回 count_down_tool.exe 绝对路径。
+
+    支持：
+    - onedir 包：zip 内含 exe + _internal/ 等（推荐）
+    - 旧 onefile 包：zip 内仅单个 exe（兼容，但易触发 _MEI/python3xx.dll 问题）
+    """
     os.makedirs(dest_dir, exist_ok=True)
     with zipfile.ZipFile(zip_path, "r") as zf:
-        # 先校验 zip 本身
         bad = zf.testzip()
         if bad is not None:
             raise RuntimeError(f"更新包损坏（zip 校验失败: {bad}）")
-        names = zf.namelist()
-        exe_name = None
-        for n in names:
-            base = os.path.basename(n.replace("\\", "/"))
-            if base.lower() == "count_down_tool.exe":
-                exe_name = n
-                break
-        if not exe_name:
+        names = [n for n in zf.namelist() if n and not n.endswith("/")]
+        if not any(
+            os.path.basename(n.replace("\\", "/")).lower() == "count_down_tool.exe"
+            for n in names
+        ):
             raise FileNotFoundError("zip 中未找到 count_down_tool.exe")
-        target = os.path.join(dest_dir, "count_down_tool.exe")
-        with zf.open(exe_name) as src, open(target, "wb") as dst:
-            shutil.copyfileobj(src, dst)
-    abs_target = os.path.abspath(target)
+        zf.extractall(dest_dir)
+
+    candidates: List[str] = []
+    for root, _dirs, files in os.walk(dest_dir):
+        for fname in files:
+            if fname.lower() == "count_down_tool.exe":
+                candidates.append(os.path.join(root, fname))
+    if not candidates:
+        raise FileNotFoundError("解压后未找到 count_down_tool.exe")
+    # 优先路径最短（顶层 exe，避免嵌套多余目录）
+    candidates.sort(key=lambda p: (p.count(os.sep), len(p)))
+    abs_target = os.path.abspath(candidates[0])
     size = os.path.getsize(abs_target)
     if size < 1024:
         raise RuntimeError(f"解压得到的 exe 过小（{size} 字节），包可能损坏")
@@ -664,33 +673,32 @@ def write_windows_replace_script(
     zip_path: Optional[str] = None,
 ) -> str:
     """
-    生成静默 PowerShell：等待 PID 退出 → 分阶段替换 → 校验 → 延迟启动 → 清理。
+    生成静默 PowerShell：等待 PID 退出 → 整目录同步（onedir）→ 校验 → 启动 → 清理。
 
-    使用 target.new 中转再 rename，避免半截覆盖；复制后校验大小/MZ 魔数，
-    并等待文件可独占打开，降低杀软扫描导致 onefile 解压缺 python3xx.dll 的概率。
-    不再使用 bat + tasklist/find（易弹黑窗、find 误匹配死循环）。
+    将 source 所在目录的全部内容复制到 target 所在目录（覆盖），
+    避免只替换单个 onefile exe 后启动仍解压到 _MEI 导致缺 python3xx.dll。
+    不再使用 bat + tasklist/find。
     返回 script_path。
     """
     target_abs = os.path.abspath(target_exe)
     source_abs = os.path.abspath(source_exe)
     target_dir = os.path.dirname(target_abs) or "."
+    source_dir = os.path.dirname(source_abs) or "."
     zip_abs = os.path.abspath(zip_path) if zip_path else ""
     log_path = os.path.join(
         os.environ.get("TEMP") or os.environ.get("TMP") or tempfile.gettempdir(),
         "count_down_tool_update.log",
     )
-    # 延迟启动：给 Defender / 句柄释放时间，降低 onefile _MEI 加载失败
     lines = [
         "$ErrorActionPreference = 'Stop'",
         f"$target = {_ps_single_quoted(target_abs)}",
         f"$source = {_ps_single_quoted(source_abs)}",
         f"$targetDir = {_ps_single_quoted(target_dir)}",
+        f"$sourceDir = {_ps_single_quoted(source_dir)}",
         f"$pidWait = {int(pid)}",
         f"$zipPath = {_ps_single_quoted(zip_abs)}",
         f"$logPath = {_ps_single_quoted(log_path)}",
         "$self = $MyInvocation.MyCommand.Path",
-        "$staging = $target + '.new'",
-        "$backup = $target + '.bak'",
         "function Write-UpdateLog([string]$msg) {",
         "  try {",
         "    $line = ('[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg)",
@@ -711,15 +719,13 @@ def write_windows_replace_script(
         "  } catch { return $false }",
         "  return $true",
         "}",
-        "Write-UpdateLog 'update script start'",
-        # 等待旧进程退出（最多约 120 秒，避免永久卡住）
+        "Write-UpdateLog 'update script start (onedir sync)'",
         "$deadline = (Get-Date).AddSeconds(120)",
         "while ((Get-Date) -lt $deadline) {",
         "  $p = Get-Process -Id $pidWait -ErrorAction SilentlyContinue",
         "  if (-not $p) { break }",
         "  Start-Sleep -Milliseconds 500",
         "}",
-        # 再等同名进程（托盘残留等）
         "$nameDeadline = (Get-Date).AddSeconds(30)",
         "while ((Get-Date) -lt $nameDeadline) {",
         "  $left = @(Get-Process -Name 'count_down_tool' -ErrorAction SilentlyContinue |",
@@ -727,64 +733,53 @@ def write_windows_replace_script(
         "  if ($left.Count -eq 0) { break }",
         "  Start-Sleep -Milliseconds 500",
         "}",
-        "Start-Sleep -Seconds 3",
+        "Start-Sleep -Seconds 2",
         "if (-not (Test-ExeReady $source)) {",
         "  Write-UpdateLog 'source exe not ready'",
         "  exit 2",
         "}",
+        "if (-not (Test-Path -LiteralPath $sourceDir)) {",
+        "  Write-UpdateLog 'source dir missing'",
+        "  exit 2",
+        "}",
+        "if (-not (Test-Path -LiteralPath $targetDir)) {",
+        "  New-Item -ItemType Directory -Path $targetDir -Force | Out-Null",
+        "}",
         "$ss = (Get-Item -LiteralPath $source).Length",
-        "Write-UpdateLog ('source size={0}' -f $ss)",
+        "Write-UpdateLog ('source size={0} dir={1}' -f $ss, $sourceDir)",
         "$ok = $false",
-        "for ($i = 0; $i -lt 20; $i++) {",
+        "for ($i = 0; $i -lt 15; $i++) {",
         "  try {",
-        "    if (Test-Path -LiteralPath $staging) {",
-        "      Remove-Item -LiteralPath $staging -Force -ErrorAction SilentlyContinue",
-        "    }",
-        "    # 中转文件完整写入后再替换目标，避免半截覆盖导致缺 DLL",
-        "    Copy-Item -LiteralPath $source -Destination $staging -Force",
-        "    if (-not (Test-ExeReady $staging)) { throw 'staging not ready' }",
-        "    $st = (Get-Item -LiteralPath $staging).Length",
-        "    if ($st -ne $ss) { throw 'staging size mismatch' }",
-        "    if (Test-Path -LiteralPath $backup) {",
-        "      Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue",
-        "    }",
-        "    if (Test-Path -LiteralPath $target) {",
-        "      Move-Item -LiteralPath $target -Destination $backup -Force",
-        "    }",
-        "    Move-Item -LiteralPath $staging -Destination $target -Force",
-        "    if (-not (Test-ExeReady $target)) { throw 'target not ready after replace' }",
+        "    # 整目录覆盖：exe + _internal/python*.dll 等一并同步",
+        "    Copy-Item -Path (Join-Path $sourceDir '*') -Destination $targetDir -Recurse -Force",
+        "    if (-not (Test-ExeReady $target)) { throw 'target exe not ready' }",
         "    $ts = (Get-Item -LiteralPath $target).Length",
-        "    if ($ts -ne $ss) { throw 'target size mismatch' }",
+        "    if ($ts -lt 1024) { throw 'target exe too small' }",
         "    $ok = $true",
-        "    Write-UpdateLog ('replace ok size={0} attempt={1}' -f $ts, ($i + 1))",
+        "    Write-UpdateLog ('dir sync ok target_size={0} attempt={1}' -f $ts, ($i + 1))",
         "    break",
         "  } catch {",
-        "    Write-UpdateLog ('replace attempt {0} failed: {1}' -f ($i + 1), $_.Exception.Message)",
-        "    try {",
-        "      if ((Test-Path -LiteralPath $backup) -and -not (Test-Path -LiteralPath $target)) {",
-        "        Move-Item -LiteralPath $backup -Destination $target -Force -ErrorAction SilentlyContinue",
-        "      }",
-        "    } catch {}",
+        "    Write-UpdateLog ('sync attempt {0} failed: {1}' -f ($i + 1), $_.Exception.Message)",
         "  }",
         "  Start-Sleep -Seconds 1",
         "}",
         "if (-not $ok) {",
-        "  Write-UpdateLog 'replace failed'",
+        "  Write-UpdateLog 'dir sync failed'",
         "  exit 1",
         "}",
-        # 等待杀软/索引释放句柄，并确认可独占读（onefile 启动前关键）
-        "$readyDeadline = (Get-Date).AddSeconds(30)",
+        "$readyDeadline = (Get-Date).AddSeconds(20)",
         "while ((Get-Date) -lt $readyDeadline) {",
         "  if (Test-ExeReady $target) { break }",
         "  Start-Sleep -Milliseconds 500",
         "}",
-        "Start-Sleep -Seconds 5",
+        "Start-Sleep -Seconds 2",
         "Write-UpdateLog 'starting new process'",
         "Start-Process -FilePath $target -WorkingDirectory $targetDir",
         "Start-Sleep -Seconds 2",
-        "try { Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue } catch {}",
-        "try { Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue } catch {}",
-        "try { Remove-Item -LiteralPath $staging -Force -ErrorAction SilentlyContinue } catch {}",
+        # 清理临时源目录与 zip（勿删用户安装目录）
+        "if ($sourceDir -and ($sourceDir -ne $targetDir)) {",
+        "  try { Remove-Item -LiteralPath $sourceDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}",
+        "}",
         "if ($zipPath) {",
         "  try { Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue } catch {}",
         "}",

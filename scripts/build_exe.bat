@@ -20,13 +20,13 @@ if not exist "%PYTHON%" (
 
 echo.
 echo ========================================
-echo   Building Count Down Tool
+echo   Building Count Down Tool (onedir)
 echo ========================================
 echo.
 
 cd /d "%TOOL_DIR%"
 
-rem Read version into zip name; exe stays count_down_tool.exe (same as mac .app)
+rem Read version into zip name; app dir is dist\count_down_tool\
 set "VERSION="
 "%PYTHON%" -c "from core.countdown_core import __version__; print(__version__, end='')" > "%VER_FILE%"
 if errorlevel 1 (
@@ -42,19 +42,21 @@ if not defined VERSION (
     exit /b 1
 )
 set "OUT_ZIP=count_down_tool-%VERSION%-win64.zip"
+set "APP_DIR=%TOOL_DIR%\dist\count_down_tool"
 echo   Version: %VERSION%
-echo   Exe:     dist\count_down_tool.exe
+echo   App:     dist\count_down_tool\count_down_tool.exe
 echo   Zip:     dist\%OUT_ZIP%
 echo.
 
-"%PYTHON%" -m PyInstaller --onefile --windowed --icon="%ICON_FILE%" --name "count_down_tool" --add-data "%ICON_FILE%;assets" --add-data "%TOOL_DIR%\assets\sounds;assets/sounds" --add-data "%TOOL_DIR%\assets\fonts;assets/fonts" --hidden-import core --hidden-import core.countdown_core --hidden-import core.themes --hidden-import core.fonts --hidden-import core.update --hidden-import services.autostart --hidden-import app --hidden-import app.countdown --hidden-import app.config_store --hidden-import app.window_chrome --hidden-import app.theme --hidden-import app.mode --hidden-import ui --hidden-import ui.widgets --hidden-import ui.mini_window --hidden-import ui.time_picker --hidden-import ui.full_window --hidden-import ui.context_menus --hidden-import ui.mini_text_picker --hidden-import ui.settings_window --hidden-import ui.update_dialog --hidden-import ui.app_dialogs --hidden-import ui.window_chrome_dialog --hidden-import ui.design --hidden-import ui.design.tokens --hidden-import services --hidden-import services.tray --hidden-import services.updater --hidden-import services.sound --hidden-import services.ncm --hidden-import services.windows_native --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder --distpath "%TOOL_DIR%\dist" --workpath "%TOOL_DIR%\build" --specpath "%TOOL_DIR%" "%TOOL_DIR%\count_down_tool.py"
+rem onedir：DLL 与 exe 同目录，避免 onefile 解压到 %%TEMP%%\_MEI* 导致 python3xx.dll 加载失败
+"%PYTHON%" -m PyInstaller --noconfirm --clean --onedir --windowed --icon="%ICON_FILE%" --name "count_down_tool" --add-data "%ICON_FILE%;assets" --add-data "%TOOL_DIR%\assets\sounds;assets/sounds" --add-data "%TOOL_DIR%\assets\fonts;assets/fonts" --hidden-import core --hidden-import core.countdown_core --hidden-import core.themes --hidden-import core.fonts --hidden-import core.update --hidden-import services.autostart --hidden-import app --hidden-import app.countdown --hidden-import app.config_store --hidden-import app.window_chrome --hidden-import app.theme --hidden-import app.mode --hidden-import ui --hidden-import ui.widgets --hidden-import ui.mini_window --hidden-import ui.time_picker --hidden-import ui.full_window --hidden-import ui.context_menus --hidden-import ui.mini_text_picker --hidden-import ui.settings_window --hidden-import ui.update_dialog --hidden-import ui.app_dialogs --hidden-import ui.window_chrome_dialog --hidden-import ui.design --hidden-import ui.design.tokens --hidden-import services --hidden-import services.tray --hidden-import services.updater --hidden-import services.sound --hidden-import services.ncm --hidden-import services.windows_native --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder --distpath "%TOOL_DIR%\dist" --workpath "%TOOL_DIR%\build" --specpath "%TOOL_DIR%" "%TOOL_DIR%\count_down_tool.py"
 
 echo.
 echo ========================================
-if exist "%TOOL_DIR%\dist\count_down_tool.exe" (
+if exist "%APP_DIR%\count_down_tool.exe" (
     if exist "%TOOL_DIR%\dist\%OUT_ZIP%" del /q "%TOOL_DIR%\dist\%OUT_ZIP%"
-    rem PowerShell Compress-Archive: zip contains fixed name count_down_tool.exe
-    powershell -NoProfile -Command "Compress-Archive -LiteralPath '%TOOL_DIR%\dist\count_down_tool.exe' -DestinationPath '%TOOL_DIR%\dist\%OUT_ZIP%' -Force"
+    rem zip 内为 onedir 目录内容（exe + _internal 等），解压后直接运行 exe
+    powershell -NoProfile -Command "Compress-Archive -Path '%APP_DIR%\*' -DestinationPath '%TOOL_DIR%\dist\%OUT_ZIP%' -Force"
     if not exist "%TOOL_DIR%\dist\%OUT_ZIP%" (
         echo   [ERROR] Failed to create zip
         echo ========================================
@@ -66,8 +68,8 @@ if exist "%TOOL_DIR%\dist\count_down_tool.exe" (
     echo ========================================
     echo.
     echo   Cleaning build files...
-    rem 分发只保留 zip；exe 已打进 zip 内固定名 count_down_tool.exe
-    del /q "%TOOL_DIR%\dist\count_down_tool.exe" 2>nul
+    rem 分发只保留 zip
+    rd /s /q "%APP_DIR%" 2>nul
     rd /s /q "%TOOL_DIR%\build"
     del /q "%TOOL_DIR%\count_down_tool.spec" 2>nul
     echo   Done!
