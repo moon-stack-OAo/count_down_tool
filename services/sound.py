@@ -769,7 +769,8 @@ def _halt_devices() -> None:
             # 连调两次：部分驱动首次 PURGE 不可靠
             winsound.PlaySound(None, winsound.SND_PURGE)
             winsound.PlaySound(None, winsound.SND_PURGE)
-        except (OSError, RuntimeError, AttributeError):
+        except (ImportError, OSError, RuntimeError, AttributeError):
+            # ImportError：非 Windows 或伪造成 Windows 的测试环境无 winsound
             logger.debug("winsound 停止失败", exc_info=True)
         # 必须在创建 MCI 设备的同一线程 stop/close，否则错误 263 且音频不停
         try:
@@ -896,7 +897,7 @@ def _play_windows(path: str) -> bool:
             winsound.PlaySound(abs_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
             _mark_playing_until(est)
             return True
-        except (OSError, RuntimeError, AttributeError):
+        except (ImportError, OSError, RuntimeError, AttributeError):
             logger.debug("winsound 播放失败", exc_info=True)
 
     if _play_windows_media_player(abs_path, est):

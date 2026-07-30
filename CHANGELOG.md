@@ -12,6 +12,7 @@
 - **设置中心**：改用系统原生标题栏边框，去掉无边框自定义 chrome
 - **音效路径**：`path_is_file_quick` 超时探测，避免历史路径探测卡死；prune 后写回 `sound_history`
 - **NCM 解密**：流式解密写盘，避免整曲驻留内存
+- **macOS 测试/音效**：`winsound` 导入捕获 `ImportError`，避免在非 Windows（含伪造 platform 的测试）上 `ModuleNotFoundError`
 
 ### 优化
 
