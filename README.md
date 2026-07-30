@@ -74,6 +74,7 @@ python count_down_tool.py
 | Windows       | `%APPDATA%/count_down_tool/config.json` |
 | macOS / Linux | `~/.config/count_down_tool/config.json` |
 | 自定义音效         | 同目录 `sounds/`                           |
+| 运行日志          | 同目录 `app.log`（轮转备份 `app.log.1` 等）      |
 
 字段示例见 [`config.example.json`](config.example.json)。
 
@@ -104,11 +105,11 @@ Windows 发布包内附带 [`docs/readme.txt`](docs/readme.txt)（打进 zip 后
 ./scripts/build_mac_all.sh
 ```
 
-| 文件                                         | 适用            |
-|--------------------------------------------|---------------|
+| 文件                                         | 适用                      |
+|--------------------------------------------|-------------------------|
 | `count_down_tool-<version>-win64.zip`      | 64 位 Windows（onedir 目录） |
-| `count_down_tool-<version>-mac-arm64.zip`  | Apple Silicon |
-| `count_down_tool-<version>-mac-x86_64.zip` | Intel Mac     |
+| `count_down_tool-<version>-mac-arm64.zip`  | Apple Silicon           |
+| `count_down_tool-<version>-mac-x86_64.zip` | Intel Mac               |
 
 解压后：Windows 为目录内 `count_down_tool.exe`；macOS 为 `count_down_tool.app`。未公证首次打开：
 

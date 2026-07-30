@@ -136,6 +136,11 @@ def user_config_path() -> str:
     return os.path.join(user_config_dir(), "config.json")
 
 
+def user_log_path() -> str:
+    """运行日志路径（与配置同目录）。"""
+    return os.path.join(user_config_dir(), "app.log")
+
+
 def next_second_delay_ms(now: Optional[datetime] = None) -> int:
     """按墙钟对齐下一秒，避免 after(1000) 漂移。返回 1..1000。"""
     if now is None:

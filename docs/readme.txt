@@ -41,6 +41,12 @@
 自定义音效备份：同目录下的 sounds\ 文件夹。
 更新程序一般不会覆盖上述配置。
 
+运行日志（排查问题时请附上）：
+  %APPDATA%\count_down_tool\app.log
+  （体积过大时会自动轮转为 app.log.1 / app.log.2）
+  需要更详细日志时，启动前可设置环境变量：
+    COUNT_DOWN_TOOL_LOG_LEVEL=DEBUG
+
 
 五、基本使用
 ------------

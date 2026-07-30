@@ -27,6 +27,7 @@ from app.config_store import (
     save_config as _cfg_save,
 )
 from app.countdown import CountdownController
+from core.app_logging import setup_app_logging
 from core.countdown_core import (
     APP_NAME,
     STATE_IDLE,
@@ -56,10 +57,8 @@ from ui.mini_window import (
 )
 from ui.time_picker import show_time_picker
 
-logging.basicConfig(
-    level=logging.WARNING,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+# 尽早初始化，保证 main 前 import 阶段之外的运行日志可落盘
+setup_app_logging()
 logger = logging.getLogger("count_down_tool")
 
 _ICON_PATH = resource_path(os.path.join("assets", "count_down_tool.ico"))
@@ -526,8 +525,11 @@ class CountdownApp:
 
 
 def main():
+    setup_app_logging()
+    logger.info("应用启动")
     ok, _ = acquire_single_instance()
     if not ok:
+        logger.info("检测到已有实例，发送 show 请求")
         # 先发 show 请求（主实例轮询恢复），再尝试直接置前
         request_show_existing()
         brought = bring_existing_to_front()
@@ -564,13 +566,21 @@ def main():
         missing.append("pillow")
 
     if missing:
+        logger.warning("缺少可选依赖: %s", ", ".join(missing))
         print(f"警告: 缺少可选依赖: {', '.join(missing)}")
         print(f"pip install {' '.join(missing)}")
         print("程序仍可运行，但托盘功能可能不可用。\n")
 
     root = tk.Tk()
-    CountdownApp(root)
-    root.mainloop()
+    try:
+        CountdownApp(root)
+        logger.info("进入主循环")
+        root.mainloop()
+    except Exception:
+        logger.exception("主循环异常退出")
+        raise
+    finally:
+        logger.info("应用退出")
 
 
 if __name__ == "__main__":
