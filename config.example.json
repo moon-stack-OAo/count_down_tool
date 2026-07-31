@@ -3,6 +3,7 @@
   "mini_size": [236, 48],
   "transparent_mode": false,
   "last_mode": "full",
+  "startup_mode": "remember",
   "autostart": false,
   "theme_id": "slate_cyan",
   "theme_custom": {},

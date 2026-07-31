@@ -7,6 +7,12 @@
 
 ## 1.3.35
 
+### 功能
+
+- **设置中心 · 外观**：默认启动模式（记住上次 / 总是完整 / 总是 Mini，配置键 `startup_mode`）；入口打开 Mini 字体颜色选择器
+- **设置中心 · 系统**：打开配置目录；重置 Mini 位置与大小；显示/清除已忽略的更新版本
+- **设置中心 · 关于**：打开运行日志；复制版本信息到剪贴板
+
 ### 修复
 
 - **设置中心**：改用系统原生标题栏边框，去掉无边框自定义 chrome
@@ -14,6 +20,7 @@
 - **NCM 解密**：流式解密写盘，避免整曲驻留内存
 - **macOS 测试/音效**：`winsound` 导入捕获 `ImportError`，避免在非 Windows（含伪造 platform 的测试）上 `ModuleNotFoundError`
 - **暂停改时间**：仅 running 锁定输入；暂停后托盘/主窗可「选择时间」，确认后按新目标继续（与历史 1.3.x 说明一致）
+- **设置中心切换主题**：主题重建后立即以新主题重开设置窗并尽量回到原 Tab，避免打断设置
 
 ### 优化
 
@@ -25,7 +32,8 @@
 
 ### 功能
 
-- **运行日志**：写入用户配置目录 `app.log`（约 2MB 轮转，最多 3 个备份）；默认 INFO；可用环境变量 `COUNT_DOWN_TOOL_LOG_LEVEL=DEBUG` 提高详细度
+- **运行日志**：写入用户配置目录 `app.log`（约 2MB 轮转，最多 3 个备份）；默认 INFO；可用环境变量
+  `COUNT_DOWN_TOOL_LOG_LEVEL=DEBUG` 提高详细度
 
 ### 优化
 
@@ -41,7 +49,8 @@
 
 ### 修复
 
-- **Failed to load Python DLL（`%TEMP%\_MEI*\python311.dll`）**：Windows 分发由 PyInstaller **onefile 改为 onedir**。`python311.dll` 等与 exe 同目录加载，不再每次启动解压到临时目录
+- **Failed to load Python DLL（`%TEMP%\_MEI*\python311.dll`）**：Windows 分发由 PyInstaller **onefile 改为 onedir**。
+  `python311.dll` 等与 exe 同目录加载，不再每次启动解压到临时目录
 - **自动更新**：解压完整目录并整目录同步安装；兼容旧版仅含单 exe 的 zip
 
 ### 说明
@@ -53,7 +62,8 @@
 
 ### 修复
 
-- **Windows 自动更新后缺 DLL**：替换脚本改为 `exe.new` 中转再 rename、校验 MZ/大小与可独占打开，等待残留进程与杀软释放后再启动，降低 onefile 解压失败
+- **Windows 自动更新后缺 DLL**：替换脚本改为 `exe.new` 中转再 rename、校验 MZ/大小与可独占打开，等待残留进程与杀软释放后再启动，降低
+  onefile 解压失败
 - **从 zip 拖出运行导致托盘/设置异常**：启动检测 Mark of the Web，可删则自动解除锁定并提示；托盘创建失败改为弹窗说明；设置窗强制居中/短暂置顶，打开失败时提示
 
 ### 优化
@@ -89,7 +99,8 @@
 
 ### 修复
 
-- **Windows 更新黑窗 / FOUND 死循环**：替换脚本改为静默 PowerShell（`Get-Process`），去掉 `tasklist|find`；启动避免 `DETACHED_PROCESS` 导致脚本不执行
+- **Windows 更新黑窗 / FOUND 死循环**：替换脚本改为静默 PowerShell（`Get-Process`），去掉 `tasklist|find`；启动避免
+  `DETACHED_PROCESS` 导致脚本不执行
 - **设置中心空滚**：内容未超出视口时禁用滚轮并锁定 scrollregion
 
 ### 优化

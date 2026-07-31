@@ -34,6 +34,7 @@ from core.countdown_core import (
     format_target_label,
     next_second_delay_ms,
     resource_path,
+    should_start_mini,
     user_config_path,
 )
 from core.themes import DEFAULT_THEME_ID, resolve_theme
@@ -152,6 +153,7 @@ class CountdownApp:
         self._mini_layout_scale = None
         self._transparent_mode = False
         self._last_mode = "full"
+        self._startup_mode = "remember"
         self._drag_data = {"x": 0, "y": 0}
 
         # 主题 / 自启
@@ -185,11 +187,14 @@ class CountdownApp:
         self._set_window_rounded_corners()
         self._set_taskbar_visible()
         self._center_window_later()
-        # 启动模式：last_mode=mini 进 Mini；无配置时非 Darwin 保持旧行为进 Mini
-        if platform.system() != "Darwin":
-            has_last = "last_mode" in getattr(self, "_loaded_keys", set())
-            if (has_last and self._last_mode == "mini") or (not has_last):
-                self._switch_to_mini()
+        # 启动模式：startup_mode + last_mode（见 should_start_mini）
+        has_last = "last_mode" in getattr(self, "_loaded_keys", set())
+        if should_start_mini(
+            getattr(self, "_startup_mode", "remember"),
+            self._last_mode,
+            has_last_mode=has_last,
+        ):
+            self._switch_to_mini()
         # 二次启动唤醒：轮询 show.request（跨平台文件标志）
         self._show_poll_timer_id = None
         self._start_show_request_poll()

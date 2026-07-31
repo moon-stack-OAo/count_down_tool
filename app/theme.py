@@ -18,10 +18,14 @@ def apply_theme(app, theme_id: str) -> None:
         return
     import tkinter as tk
 
-    # 主题切换会 destroy 子控件；设置窗是独立 Toplevel，须先关闭以免颜色过期
+    # 主题切换会 destroy 子控件；设置窗颜色会过期，先记下状态再关，结束后重开
+    reopen_settings = False
+    settings_tab = None
     try:
-        from ui.settings_window import close_settings
+        from ui.settings_window import close_settings, get_settings_open_tab
 
+        settings_tab = get_settings_open_tab(app)
+        reopen_settings = settings_tab is not None
         close_settings(app)
     except (tk.TclError, AttributeError, ImportError):
         logger.debug("关闭设置窗失败", exc_info=True)
@@ -102,3 +106,12 @@ def apply_theme(app, theme_id: str) -> None:
 
     app._save_config()
     refresh_tray_menu(app)
+
+    # 设置中心此前打开：以新主题立即重开并尽量回到原 Tab，避免打断设置
+    if reopen_settings:
+        try:
+            from ui.settings_window import show_settings
+
+            show_settings(app, initial_tab=settings_tab)
+        except (tk.TclError, AttributeError, ImportError, RuntimeError):
+            logger.debug("主题切换后重开设置窗失败", exc_info=True)

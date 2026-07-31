@@ -16,6 +16,7 @@ from core.countdown_core import (
     merge_mini_text,
     normalize_mini_size,
     normalize_mini_text,
+    normalize_startup_mode,
     resolve_mini_text_color,
     save_config_dict,
 )
@@ -87,6 +88,7 @@ def load_config(app) -> None:
         lm = config.get("last_mode")
         if lm in ("full", "mini"):
             app._last_mode = lm
+        app._startup_mode = normalize_startup_mode(config.get("startup_mode"))
         tid = config.get("theme_id")
         if is_valid_theme_id(tid):
             app._theme_id = tid
@@ -159,6 +161,7 @@ def load_config(app) -> None:
         app._check_update_on_start = True
         app._last_update_check = ""
         app._ignored_update_version = ""
+        app._startup_mode = "remember"
 
 
 def save_config(app) -> None:
@@ -176,6 +179,9 @@ def save_config(app) -> None:
             config,
             transparent_mode=bool(app._transparent_mode),
             last_mode=mode,
+            startup_mode=normalize_startup_mode(
+                getattr(app, "_startup_mode", "remember")
+            ),
             theme_id=app._theme_id,
             autostart=bool(app._autostart),
             sound_muted=bool(getattr(app, "_sound_muted", False)),

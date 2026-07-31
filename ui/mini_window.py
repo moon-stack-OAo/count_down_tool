@@ -685,6 +685,18 @@ def reset_mini_size(app):
     app._save_config()
 
 
+def reset_mini_layout(app):
+    """恢复默认 Mini 尺寸与位置；当前为 Mini 时立即生效。"""
+    app._mini_size = None
+    app._mini_pos = None
+    if app.mini_window:
+        destroy_mini_window(app, capture_size=False)
+        # destroy 在 capture_size=False 时仍可能记住位置
+        app._mini_pos = None
+        create_mini_window(app)
+    app._save_config()
+
+
 def mini_close(app):
     """Mini 关闭：有托盘则隐藏到托盘，否则回到完整模式。"""
     if app._has_tray():

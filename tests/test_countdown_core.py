@@ -45,9 +45,11 @@ from core.countdown_core import (
     next_state,
     normalize_mini_size,
     normalize_mini_text,
+    normalize_startup_mode,
     parse_mini_geometry,
     parse_mini_size,
     progress_ratio,
+    should_start_mini,
     read_lock_pid,
     remaining_seconds,
     resolve_mini_text_color,
@@ -320,10 +322,10 @@ class TestConfigMergeLoadSave(unittest.TestCase):
         self.assertEqual(merged["mini_position"], [100, 200])
         self.assertEqual(cfg["mini_position"], [1, 2])
 
-    def test_merge_none_pos_no_overwrite(self):
+    def test_merge_none_pos_clears(self):
         cfg = {"mini_position": [1, 2], "x": 1}
         merged = merge_mini_position(cfg, None)
-        self.assertEqual(merged["mini_position"], [1, 2])
+        self.assertNotIn("mini_position", merged)
         self.assertEqual(merged["x"], 1)
 
     def test_merge_config_transparent_and_mode(self):
@@ -346,6 +348,60 @@ class TestConfigMergeLoadSave(unittest.TestCase):
     def test_merge_config_empty_base(self):
         merged = merge_config(None, last_mode="full")
         self.assertEqual(merged["last_mode"], "full")
+
+    def test_merge_config_startup_mode(self):
+        merged = merge_config(None, startup_mode="mini")
+        self.assertEqual(merged["startup_mode"], "mini")
+        again = merge_config(merged, startup_mode=None)
+        self.assertEqual(again["startup_mode"], "mini")
+
+
+class TestStartupMode(unittest.TestCase):
+    def test_normalize_startup_mode(self):
+        self.assertEqual(normalize_startup_mode("remember"), "remember")
+        self.assertEqual(normalize_startup_mode("full"), "full")
+        self.assertEqual(normalize_startup_mode("mini"), "mini")
+        self.assertEqual(normalize_startup_mode("nope"), "remember")
+        self.assertEqual(normalize_startup_mode(None), "remember")
+        self.assertEqual(normalize_startup_mode(1), "remember")
+
+    def test_should_start_mini_always(self):
+        self.assertFalse(
+            should_start_mini("full", "mini", has_last_mode=True, system="Windows")
+        )
+        self.assertTrue(
+            should_start_mini("mini", "full", has_last_mode=True, system="Darwin")
+        )
+
+    def test_should_start_mini_remember_windows(self):
+        self.assertTrue(
+            should_start_mini(
+                "remember", "mini", has_last_mode=True, system="Windows"
+            )
+        )
+        self.assertFalse(
+            should_start_mini(
+                "remember", "full", has_last_mode=True, system="Windows"
+            )
+        )
+        # 无 last_mode：非 Darwin 默认 Mini
+        self.assertTrue(
+            should_start_mini(
+                "remember", "full", has_last_mode=False, system="Windows"
+            )
+        )
+
+    def test_should_start_mini_remember_darwin(self):
+        self.assertFalse(
+            should_start_mini(
+                "remember", "mini", has_last_mode=True, system="Darwin"
+            )
+        )
+        self.assertFalse(
+            should_start_mini(
+                "remember", "full", has_last_mode=False, system="Darwin"
+            )
+        )
 
     def test_load_save_roundtrip(self):
         with tempfile.TemporaryDirectory() as tmp:

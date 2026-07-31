@@ -153,6 +153,112 @@ class TestMergeThemeAutostart(unittest.TestCase):
         self.assertEqual(merged["theme_custom"], {})
 
 
+class TestApplyThemeReopenSettings(unittest.TestCase):
+    """apply_theme：设置窗打开时关后以新主题重开并保留 Tab。"""
+
+    def test_apply_theme_reopens_settings_with_tab(self):
+        from app import theme as theme_mod
+
+        app = mock.MagicMock()
+        app._theme_id = "slate_cyan"
+        app.COLORS = {"bg": "#000"}
+        app._theme_custom = None
+        app._is_mini = False
+        app.countdown_text = "--:--:--"
+        app.target_time = None
+        app._state = "idle"
+        app.hour_var = None
+        app.btn_start = None
+        app.countdown_label = None
+        app.master = mock.MagicMock()
+        app.master.winfo_children.return_value = []
+
+        with mock.patch.object(
+            theme_mod, "resolve_theme", return_value={"bg": "#111"}
+        ), mock.patch.object(theme_mod, "refresh_tray_menu"), mock.patch(
+            "ui.settings_window.get_settings_open_tab", return_value="sound"
+        ) as m_tab, mock.patch(
+            "ui.settings_window.close_settings"
+        ) as m_close, mock.patch(
+            "ui.settings_window.show_settings"
+        ) as m_show:
+            theme_mod.apply_theme(app, "emerald")
+
+        m_tab.assert_called_once_with(app)
+        m_close.assert_called_once_with(app)
+        m_show.assert_called_once_with(app, initial_tab="sound")
+        self.assertEqual(app._theme_id, "emerald")
+        app._save_config.assert_called()
+
+    def test_apply_theme_skips_reopen_when_settings_closed(self):
+        from app import theme as theme_mod
+
+        app = mock.MagicMock()
+        app._theme_id = "slate_cyan"
+        app.COLORS = {"bg": "#000"}
+        app._theme_custom = None
+        app._is_mini = False
+        app.countdown_text = "--:--:--"
+        app.target_time = None
+        app._state = "idle"
+        app.hour_var = None
+        app.btn_start = None
+        app.countdown_label = None
+        app.master = mock.MagicMock()
+        app.master.winfo_children.return_value = []
+
+        with mock.patch.object(
+            theme_mod, "resolve_theme", return_value={"bg": "#111"}
+        ), mock.patch.object(theme_mod, "refresh_tray_menu"), mock.patch(
+            "ui.settings_window.get_settings_open_tab", return_value=None
+        ), mock.patch(
+            "ui.settings_window.close_settings"
+        ), mock.patch(
+            "ui.settings_window.show_settings"
+        ) as m_show:
+            theme_mod.apply_theme(app, "light")
+
+        m_show.assert_not_called()
+
+    def test_apply_theme_same_id_short_circuit(self):
+        from app import theme as theme_mod
+
+        app = mock.MagicMock()
+        app._theme_id = "emerald"
+        app.COLORS = {"bg": "#0a0"}
+
+        with mock.patch(
+            "ui.settings_window.close_settings"
+        ) as m_close, mock.patch(
+            "ui.settings_window.show_settings"
+        ) as m_show:
+            theme_mod.apply_theme(app, "emerald")
+
+        m_close.assert_not_called()
+        m_show.assert_not_called()
+        app._setup_ui.assert_not_called()
+
+    def test_get_settings_open_tab_and_normalize(self):
+        from ui.settings_window import (
+            _normalize_settings_tab,
+            get_settings_open_tab,
+        )
+
+        self.assertEqual(_normalize_settings_tab(None), "appearance")
+        self.assertEqual(_normalize_settings_tab("nope"), "appearance")
+        self.assertEqual(_normalize_settings_tab("system"), "system")
+
+        app = mock.MagicMock()
+        app._settings_window = None
+        self.assertIsNone(get_settings_open_tab(app))
+
+        win = mock.MagicMock()
+        win.winfo_exists.return_value = True
+        win._settings_tab = "about"
+        app._settings_window = win
+        self.assertEqual(get_settings_open_tab(app), "about")
+
+
 class TestAutostartResolve(unittest.TestCase):
     def test_resolve_frozen(self):
         # 用本机路径分隔符，避免 macOS 上反斜杠被当成文件名导致 dirname 错误

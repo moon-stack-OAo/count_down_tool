@@ -38,6 +38,7 @@ def _make_app(config_file: str, **overrides):
         "_mini_size": None,
         "_transparent_mode": False,
         "_last_mode": "full",
+        "_startup_mode": "remember",
         "_theme_id": DEFAULT_THEME_ID,
         "_theme_custom": None,
         "COLORS": resolve_theme(DEFAULT_THEME_ID),
@@ -93,7 +94,56 @@ class TestConfigStoreLoad(unittest.TestCase):
             self.assertTrue(app._check_update_on_start)
             self.assertEqual(app._last_update_check, "")
             self.assertEqual(app._ignored_update_version, "")
+            self.assertEqual(app._startup_mode, "remember")
             self.assertFalse(app._autostart)
+
+    def test_startup_mode_load_and_save(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"startup_mode": "mini", "last_mode": "full"}, f)
+            app = _make_app(path)
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.load_config(app)
+            self.assertEqual(app._startup_mode, "mini")
+            app._startup_mode = "full"
+            app._is_mini = False
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.save_config(app)
+            with open(path, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            self.assertEqual(saved.get("startup_mode"), "full")
+
+    def test_invalid_startup_mode_falls_back_remember(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"startup_mode": "nope"}, f)
+            app = _make_app(path)
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.load_config(app)
+            self.assertEqual(app._startup_mode, "remember")
+
+    def test_save_clears_mini_position_when_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"mini_position": [10, 20], "mini_size": [300, 60]}, f)
+            app = _make_app(path, _mini_pos=None, _mini_size=None)
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.save_config(app)
+            with open(path, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            self.assertNotIn("mini_position", saved)
+            self.assertNotIn("mini_size", saved)
 
     def test_valid_theme_id_applied(self):
         with tempfile.TemporaryDirectory() as tmp:

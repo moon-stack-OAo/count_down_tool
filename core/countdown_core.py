@@ -379,10 +379,15 @@ def merge_mini_position(
     config: Optional[Dict[str, Any]],
     mini_pos: Optional[Union[Tuple[int, int], list]],
 ) -> Dict[str, Any]:
-    """合并 mini 位置到配置副本，不丢其它字段。"""
+    """合并 mini 位置到配置副本，不丢其它字段。
+
+    mini_pos 为 None/空 时删除配置中的 mini_position（表示恢复默认位置）。
+    """
     result: Dict[str, Any] = dict(config) if isinstance(config, dict) else {}
     if mini_pos:
         result["mini_position"] = list(mini_pos)
+    else:
+        result.pop("mini_position", None)
     return result
 
 
@@ -501,6 +506,52 @@ def resolve_mini_text_color(
     return "#FFFFFF"
 
 
+# 默认启动模式：remember | full | mini
+STARTUP_MODE_REMEMBER = "remember"
+STARTUP_MODE_FULL = "full"
+STARTUP_MODE_MINI = "mini"
+VALID_STARTUP_MODES = (
+    STARTUP_MODE_REMEMBER,
+    STARTUP_MODE_FULL,
+    STARTUP_MODE_MINI,
+)
+
+
+def normalize_startup_mode(value: Any) -> str:
+    """解析 startup_mode；非法或缺省为 remember。"""
+    if isinstance(value, str) and value in VALID_STARTUP_MODES:
+        return value
+    return STARTUP_MODE_REMEMBER
+
+
+def should_start_mini(
+    startup_mode: Any,
+    last_mode: Any,
+    *,
+    has_last_mode: bool,
+    system: Optional[str] = None,
+) -> bool:
+    """根据启动偏好与 last_mode 决定是否进入 Mini。
+
+    - full：始终完整模式
+    - mini：始终 Mini
+    - remember：沿用 last_mode；无 last_mode 时非 Darwin 进 Mini（兼容旧行为），
+      Darwin 保持完整模式
+    """
+    mode = normalize_startup_mode(startup_mode)
+    if mode == STARTUP_MODE_FULL:
+        return False
+    if mode == STARTUP_MODE_MINI:
+        return True
+    # remember
+    sys_name = system if system is not None else platform.system()
+    if sys_name == "Darwin":
+        return False
+    if has_last_mode:
+        return last_mode == "mini"
+    return True
+
+
 def merge_config(
     config: Optional[Dict[str, Any]],
     **updates: Any,
@@ -511,6 +562,7 @@ def merge_config(
 
     常用字段：
     - mini_position / mini_size / transparent_mode / last_mode
+    - startup_mode: Optional[str]  # remember | full | mini
     - autostart: Optional[bool]
     - theme_id: Optional[str]
     - theme_custom: Optional[dict]（仅 non-None 时写入；可传 {} 清空自定义色）
