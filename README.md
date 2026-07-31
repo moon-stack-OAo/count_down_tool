@@ -2,14 +2,14 @@
 
 ![Python](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
-![Windows](https://img.shields.io/badge/Windows%20(v1.3.35)-0078D6?logo=windows&logoColor=white)
-![macOS](https://img.shields.io/badge/macOS%20(v1.3.35)-000000?logo=apple&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.3.35-brightgreen.svg)
+![Windows](https://img.shields.io/badge/Windows%20(v1.4.0)-0078D6?logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS%20(v1.4.0)-000000?logo=apple&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.4.0-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 基于 **Python + Tkinter** 的深色主题桌面倒计时工具（完整模式 + Mini 小组件）。
 
-**当前版本：1.3.35**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.4.0**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ---
 
@@ -18,7 +18,8 @@
 - **倒计时**：自定义到期时间（时/分/秒，可直接键入），实时剩余时间与进度条
 - **运行锁定**：进行中锁定到期时间与快捷预设；暂停后可改时间/选新目标再继续
 - **Mini 桌面小组件**：右下角迷你悬浮窗，始终置顶，可拖动；边缘/四角可缩放并记住大小
-- **设置中心**：外观（主题、默认启动模式、Mini 字色）/ 声音 / 系统（开机自启、**启动时**检查更新、配置目录、重置 Mini）/ 关于（**手动**检查更新、日志、复制版本）
+- **设置中心**：外观（主题、默认启动模式、Mini 字色）/ 声音 / 系统（开机自启、**启动时**检查更新、配置目录、重置 Mini）/ 关于（**手动
+  **检查更新、弹窗查看日志、复制版本）
 - **系统托盘**（Windows）/ **菜单栏「设置」**（macOS）— 常用快捷入口
 - **开机自启**（Windows）
 - **主题切换**：石板青蓝、暗夜紫、暖琥珀、翠绿、浅色
@@ -33,11 +34,15 @@
 - Python **3.11**（与 CI 一致；本地 3.10+ 一般可用）
 
 ```bash
+# 仅运行
 pip install -r requirements.txt
 python count_down_tool.py
+
+# 开发 / 测试 / 打包（含 pyinstaller、pytest）
+pip install -r requirements-dev.txt
 ```
 
-依赖：`pystray`、`Pillow`；打包另需 `pyinstaller`（见 `requirements.txt`）。
+依赖：`pystray`、`Pillow`（`requirements.txt`）；开发与打包另见 `requirements-dev.txt`。
 
 ---
 
@@ -74,7 +79,7 @@ python count_down_tool.py
 | Windows       | `%APPDATA%/count_down_tool/config.json` |
 | macOS / Linux | `~/.config/count_down_tool/config.json` |
 | 自定义音效         | 同目录 `sounds/`                           |
-| 运行日志          | 同目录 `app.log`（轮转备份 `app.log.1` 等）      |
+| 运行日志          | 同目录 `app.log`（轮转备份 `app.log.1` 等）       |
 
 字段示例见 [`config.example.json`](config.example.json)。
 
@@ -82,7 +87,23 @@ python count_down_tool.py
 
 ## 打包构建
 
-版本号读取自 `core.countdown_core.__version__`（当前 **1.3.35**）。CI 打 tag 时要求 tag 与代码版本一致。
+版本号读取自 `core.countdown_core.__version__`（当前 **1.4.0**）。CI 打 tag 时要求 tag 与代码版本一致。
+
+### 统一 PyInstaller 配置
+
+本地脚本与 CI 均通过 [`scripts/pyinstaller_common.py`](scripts/pyinstaller_common.py) 调用 PyInstaller：
+
+- **hiddenimports / add-data / onedir·windowed** 只在该文件维护
+- Windows：**onedir** + `pystray._win32`
+- macOS：**windowed** app bundle + `pystray._darwin` / `services.mac_menu`
+
+新增 `services.*` / `ui.*` / `core.*` 子包时，请把模块名追加到 `HIDDENIMPORTS_COMMON`（或平台列表）。
+
+```bash
+# 仅查看将要打包的 hiddenimports
+python scripts/pyinstaller_common.py list-hiddenimports --os windows
+python scripts/pyinstaller_common.py print-argv --os windows
+```
 
 ### Windows
 
@@ -125,7 +146,8 @@ open "/Applications/count_down_tool.app"
 ```
 count_down_tool/
 ├── count_down_tool.py       # 入口
-├── requirements.txt
+├── requirements.txt         # 运行时依赖
+├── requirements-dev.txt     # 开发/测试/打包依赖
 ├── config.example.json
 ├── docs/readme.txt           # Windows 发布包随附说明
 ├── core/                    # 纯逻辑：倒计时、主题、字体、更新
@@ -133,7 +155,7 @@ count_down_tool/
 ├── ui/                      # Full / Mini / 设置中心 / 时间选择器
 ├── services/                # 托盘、音效、ncm、自启、更新、原生
 ├── assets/                  # 图标、音效、字体
-├── scripts/                 # 打包与辅助脚本
+├── scripts/                 # 打包与辅助脚本（含 pyinstaller_common.py）
 ├── tests/
 └── .github/workflows/       # CI 多平台构建与 Release
 ```
@@ -143,11 +165,19 @@ count_down_tool/
 ## 运行测试
 
 ```bash
+# 需先安装开发依赖：pip install -r requirements-dev.txt
 # Windows
-.venv\Scripts\python.exe -m unittest discover -s tests -v
+.venv\Scripts\python.exe -m pytest tests/ -q
 
 # macOS / Linux
-python -m unittest discover -s tests -v
+python -m pytest tests/ -q
+```
+
+### 静态检查（Ruff）
+
+```bash
+# 需先安装开发依赖：pip install -r requirements-dev.txt
+ruff check .
 ```
 
 ---

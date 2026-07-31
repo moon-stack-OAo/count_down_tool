@@ -1,0 +1,56 @@
+[project]
+# 运行时依赖仍以 requirements.txt / requirements-dev.txt 为准；此处仅承载工具配置。
+name = "count-down-tool"
+requires-python = ">=3.11"
+
+[tool.ruff]
+# 与 README / CI 一致：Python 3.11
+target-version = "py311"
+line-length = 120
+# 排除虚拟环境、缓存与构建产物
+exclude = [
+    ".venv",
+    "venv",
+    ".git",
+    ".pytest_cache",
+    "__pycache__",
+    "build",
+    "dist",
+    ".idea",
+]
+
+[tool.ruff.lint]
+# 实用规则集：pycodestyle / pyflakes / isort / pyupgrade / bugbear / simplify
+# 后续可逐步收紧：去掉下方 ignore 中的 UP*/SIM* 项，分批修历史注解与风格问题。
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+]
+ignore = [
+    # 历史代码大量 Optional[X] / List[X] 等注解；全量改写成本高，后续可逐步 UP
+    "UP006",  # non-pep585-annotation (List -> list 等)
+    "UP007",  # non-pep604-annotation-union (Union -> |)
+    "UP045",  # non-pep604-annotation-optional (Optional -> | None)
+    "UP009",  # utf8-encoding-declaration（文件头 coding 声明）
+    "UP015",  # redundant-open-modes
+    "UP035",  # deprecated-import（typing 再导出等）
+    # simplify：多为风格偏好，批量改动易产生无关 diff
+    "SIM102", # collapsible-if
+    "SIM105", # suppressible-exception (contextlib.suppress)
+    "SIM109", # compare-with-tuple
+    "SIM108", # if-else-block-instead-of-if-exp（三元可读性因人而异）
+    "SIM114", # if-with-same-arms
+    "SIM115", # open-file-with-context-handler
+    "SIM117", # multiple-with-statements
+    # 入口/延迟导入、平台分支常见
+    "E402",   # module-import-not-at-top-of-file
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试与脚本允许更宽松的导入顺序/未使用（夹具、条件导入）
+"tests/**" = ["F401"]
+"scripts/**" = ["F401"]

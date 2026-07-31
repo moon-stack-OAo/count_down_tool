@@ -5,7 +5,6 @@ import platform
 import tkinter as tk
 
 from core.countdown_core import (
-    APP_NAME,
     MINI_TEXT_COLOR_KEYS,
     MINI_TEXT_DEFAULTS,
     button_text_for_state,

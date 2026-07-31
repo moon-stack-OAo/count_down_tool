@@ -7,10 +7,14 @@ import platform
 import tkinter as tk
 from typing import Callable
 
-from ui.widgets import init_circle_button, update_circle_button
+from ui.chrome_titlebar import (
+    DIALOG_TITLE_HEIGHT,
+    add_circle_button,
+    build_title_bar,
+)
 
 # 自绘标题栏高度（与主窗风格一致，对话框略矮）
-CHROME_TITLE_HEIGHT = 40
+CHROME_TITLE_HEIGHT = DIALOG_TITLE_HEIGHT
 
 
 def use_borderless_chrome(
@@ -46,7 +50,6 @@ def use_borderless_chrome(
         return False
 
     c = app.COLORS
-    font_family = app.FONTS["label"][0]
 
     try:
         win.overrideredirect(True)
@@ -71,76 +74,25 @@ def use_borderless_chrome(
         except tk.TclError:
             pass
 
-    title_bar = tk.Frame(win, bg=c["title_bar"], height=height_title)
-    title_bar.pack(fill=tk.X, side=tk.TOP)
-    title_bar.pack_propagate(False)
-
-    accent = tk.Frame(title_bar, bg=c["accent"], height=2)
-    accent.pack(side=tk.BOTTOM, fill=tk.X)
-
-    title_bar.bind("<Button-1>", _start_drag)
-    title_bar.bind("<B1-Motion>", _on_drag)
-
-    title_label = tk.Label(
-        title_bar,
-        text=f"  {title}",
-        bg=c["title_bar"],
-        fg=c["text"],
-        font=app._font("label", 10, bold=True),
+    chrome = build_title_bar(
+        win,
+        app,
+        title=title,
+        height=height_title,
+        on_drag_start=_start_drag,
+        on_drag_motion=_on_drag,
     )
-    title_label.pack(side=tk.LEFT, fill=tk.Y)
-    title_label.bind("<Button-1>", _start_drag)
-    title_label.bind("<B1-Motion>", _on_drag)
-
-    btn_frame = tk.Frame(title_bar, bg=c["title_bar"])
-    btn_frame.pack(side=tk.RIGHT, padx=(0, 10))
-    # 关闭按钮区不绑定拖动
-
-    btn_size = 16
-    close_btn = tk.Canvas(
-        btn_frame,
-        width=btn_size * 2,
-        height=btn_size * 2,
-        bg=c["title_bar"],
-        highlightthickness=0,
-        cursor="hand2" if close_enabled else "",
-    )
-    close_btn.pack(side=tk.RIGHT, padx=(6, 0))
-    items = init_circle_button(
-        close_btn,
-        btn_size,
-        btn_size,
-        btn_size - 1,
-        fill=c["btn_default"],
+    add_circle_button(
+        chrome.btn_frame,
+        app,
         text="×",
-        text_color=c["text_dim"] if close_enabled else c.get("text_muted", c["text_dim"]),
-        font_family=font_family,
+        command=_do_close if close_enabled else None,
+        hover_fill=c["btn_hover_close"],
+        enabled=close_enabled,
         font_size=12,
+        name="close",
+        chrome=chrome,
     )
-
-    if close_enabled:
-        close_btn.bind(
-            "<Enter>",
-            lambda e: update_circle_button(
-                close_btn,
-                items,
-                fill=c["btn_hover_close"],
-                text_color=c["white"],
-            ),
-        )
-        close_btn.bind(
-            "<Leave>",
-            lambda e: update_circle_button(
-                close_btn,
-                items,
-                fill=c["btn_default"],
-                text_color=c["text_dim"],
-            ),
-        )
-        close_btn.bind("<Button-1>", _do_close)
-    else:
-        # 下载中：× 仅占位，不响应
-        close_btn.bind("<Button-1>", lambda e: "break")
 
     win.bind("<Escape>", _do_close)
     try:

@@ -34,24 +34,12 @@ if [ ! -f "$PYTHON" ]; then
     exit 1
 fi
 
-if ! "$PYTHON" -m PyInstaller --version &> /dev/null; then
-    echo -e "${YELLOW}[WARNING]${NC} PyInstaller not found. Installing..."
-    "$PYTHON" -m pip install pyinstaller
-fi
-
-echo "Checking dependencies..."
-MISSING_DEPS=()
-if ! "$PYTHON" -c "import pystray" &> /dev/null; then
-    MISSING_DEPS+=("pystray")
-fi
-if ! "$PYTHON" -c "from PIL import Image" &> /dev/null; then
-    MISSING_DEPS+=("pillow")
-fi
-
-if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
-    echo -e "${YELLOW}[WARNING]${NC} Missing dependencies: ${MISSING_DEPS[*]}"
-    echo "Installing missing dependencies..."
-    "$PYTHON" -m pip install "${MISSING_DEPS[@]}"
+echo "Checking / installing dependencies (requirements-dev.txt)..."
+if ! "$PYTHON" -m PyInstaller --version &> /dev/null \
+    || ! "$PYTHON" -c "import pystray" &> /dev/null \
+    || ! "$PYTHON" -c "from PIL import Image" &> /dev/null; then
+    echo -e "${YELLOW}[WARNING]${NC} Missing build deps, installing from requirements-dev.txt..."
+    "$PYTHON" -m pip install -r "$TOOL_DIR/requirements-dev.txt"
 fi
 
 cd "$TOOL_DIR" || exit 1
@@ -75,78 +63,23 @@ if [ -f "count_down_tool.spec" ]; then
     rm -f count_down_tool.spec
 fi
 
-ICON_OPTION=""
 if [ -f "$TOOL_DIR/assets/count_down_tool.icns" ]; then
     echo "Found icon file: assets/count_down_tool.icns"
-    ICON_OPTION="--icon=$TOOL_DIR/assets/count_down_tool.icns"
 elif [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
     echo "Found icon file: count_down_tool.icns"
-    ICON_OPTION="--icon=$TOOL_DIR/count_down_tool.icns"
 else
     echo -e "${YELLOW}[WARNING]${NC} Icon file not found: count_down_tool.icns"
     echo "Building without custom icon. Run scripts/convert_icon.sh to create one."
 fi
 
-# macOS 上 --add-data 使用冒号分隔；目标目录 assets 与 resource_path 一致
-ADD_DATA_OPTION=""
-if [ -f "$TOOL_DIR/assets/count_down_tool.ico" ]; then
-    ADD_DATA_OPTION="--add-data=$TOOL_DIR/assets/count_down_tool.ico:assets"
-fi
-if [ -d "$TOOL_DIR/assets/sounds" ]; then
-    ADD_DATA_OPTION="$ADD_DATA_OPTION --add-data=$TOOL_DIR/assets/sounds:assets/sounds"
-fi
-if [ -d "$TOOL_DIR/assets/fonts" ]; then
-    ADD_DATA_OPTION="$ADD_DATA_OPTION --add-data=$TOOL_DIR/assets/fonts:assets/fonts"
-fi
-
 echo ""
 echo "Building application..."
-# 与 CI (.github/workflows/build.yml) 对齐：--windowed app bundle，不用 --onefile
-"$PYTHON" -m PyInstaller \
-    --windowed \
-    --name "count_down_tool" \
-    $ICON_OPTION \
-    $ADD_DATA_OPTION \
-    --hidden-import core \
-    --hidden-import core.countdown_core \
-    --hidden-import core.themes \
-    --hidden-import core.fonts \
-    --hidden-import core.update \
-    --hidden-import services.autostart \
-    --hidden-import app \
-    --hidden-import app.countdown \
-    --hidden-import app.config_store \
-    --hidden-import app.window_chrome \
-    --hidden-import app.theme \
-    --hidden-import app.mode \
-    --hidden-import ui \
-    --hidden-import ui.widgets \
-    --hidden-import ui.mini_window \
-    --hidden-import ui.time_picker \
-    --hidden-import ui.full_window \
-    --hidden-import ui.context_menus \
-    --hidden-import ui.mini_text_picker \
-    --hidden-import ui.settings_window \
-    --hidden-import ui.update_dialog \
-    --hidden-import ui.app_dialogs \
-    --hidden-import ui.window_chrome_dialog \
-    --hidden-import ui.design \
-    --hidden-import ui.design.tokens \
-    --hidden-import services \
-    --hidden-import services.tray \
-    --hidden-import services.updater \
-    --hidden-import services.mac_menu \
-    --hidden-import services.sound \
-    --hidden-import services.ncm \
-    --hidden-import services.windows_native \
-    --hidden-import pystray \
-    --hidden-import pystray._darwin \
-    --hidden-import PIL \
-    --hidden-import PIL._tkinter_finder \
+# PyInstaller 参数 / hiddenimports 统一维护于 scripts/pyinstaller_common.py
+# （windowed app bundle；与 CI 一致）
+"$PYTHON" "$SCRIPT_DIR/pyinstaller_common.py" build --os macos \
     --distpath "$TOOL_DIR/dist" \
     --workpath "$TOOL_DIR/build" \
-    --specpath "$TOOL_DIR" \
-    "$TOOL_DIR/count_down_tool.py"
+    --specpath "$TOOL_DIR"
 
 echo ""
 echo "========================================"

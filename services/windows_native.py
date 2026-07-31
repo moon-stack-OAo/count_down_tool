@@ -313,7 +313,7 @@ def set_window_rounded_corners(master, corner_radius):
 
     try:
         import ctypes
-        from ctypes import c_int, byref
+        from ctypes import byref, c_int
 
         hwnd = int(master.frame(), 16)
         DWMWA_WINDOW_CORNER_PREFERENCE = 33
@@ -501,7 +501,6 @@ def force_window_to_front(window):
         return
     try:
         import ctypes
-        from ctypes import wintypes
 
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32

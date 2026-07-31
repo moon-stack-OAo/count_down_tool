@@ -43,7 +43,7 @@ echo -e "${GREEN}✓${NC} Python 已就绪: $PYTHON"
 
 echo ""
 echo -e "${YELLOW}[2/5]${NC} 检查并安装依赖..."
-"$PYTHON" -m pip install --quiet pyinstaller pystray pillow
+"$PYTHON" -m pip install --quiet -r "$TOOL_DIR/requirements-dev.txt"
 echo -e "${GREEN}✓${NC} 依赖已安装"
 
 echo ""
@@ -85,70 +85,12 @@ ZIP_NAME="count_down_tool-${VERSION}-${ZIP_SUFFIX}.zip"
 echo "  版本: ${VERSION}  架构: ${ARCH}"
 echo "  产物 zip: ${ZIP_NAME}"
 
-ICON_OPTION=""
-if [ -f "$TOOL_DIR/assets/count_down_tool.icns" ]; then
-    ICON_OPTION="--icon=$TOOL_DIR/assets/count_down_tool.icns"
-elif [ -f "$TOOL_DIR/count_down_tool.icns" ]; then
-    ICON_OPTION="--icon=$TOOL_DIR/count_down_tool.icns"
-fi
-
-ADD_DATA_OPTION=""
-if [ -f "$TOOL_DIR/assets/count_down_tool.ico" ]; then
-    ADD_DATA_OPTION="--add-data=$TOOL_DIR/assets/count_down_tool.ico:assets"
-fi
-if [ -d "$TOOL_DIR/assets/sounds" ]; then
-    ADD_DATA_OPTION="$ADD_DATA_OPTION --add-data=$TOOL_DIR/assets/sounds:assets/sounds"
-fi
-if [ -d "$TOOL_DIR/assets/fonts" ]; then
-    ADD_DATA_OPTION="$ADD_DATA_OPTION --add-data=$TOOL_DIR/assets/fonts:assets/fonts"
-fi
-
-# 与 CI (.github/workflows/build.yml) 对齐：--windowed app bundle，不用 --onefile
-"$PYTHON" -m PyInstaller \
-    --windowed \
-    --name "count_down_tool" \
-    $ICON_OPTION \
-    $ADD_DATA_OPTION \
-    --hidden-import core \
-    --hidden-import core.countdown_core \
-    --hidden-import core.themes \
-    --hidden-import core.fonts \
-    --hidden-import core.update \
-    --hidden-import services.autostart \
-    --hidden-import app \
-    --hidden-import app.countdown \
-    --hidden-import app.config_store \
-    --hidden-import app.window_chrome \
-    --hidden-import app.theme \
-    --hidden-import app.mode \
-    --hidden-import ui \
-    --hidden-import ui.widgets \
-    --hidden-import ui.mini_window \
-    --hidden-import ui.time_picker \
-    --hidden-import ui.full_window \
-    --hidden-import ui.context_menus \
-    --hidden-import ui.mini_text_picker \
-    --hidden-import ui.settings_window \
-    --hidden-import ui.update_dialog \
-    --hidden-import ui.app_dialogs \
-    --hidden-import ui.window_chrome_dialog \
-    --hidden-import ui.design \
-    --hidden-import ui.design.tokens \
-    --hidden-import services \
-    --hidden-import services.tray \
-    --hidden-import services.updater \
-    --hidden-import services.mac_menu \
-    --hidden-import services.sound \
-    --hidden-import services.ncm \
-    --hidden-import services.windows_native \
-    --hidden-import pystray \
-    --hidden-import pystray._darwin \
-    --hidden-import PIL \
-    --hidden-import PIL._tkinter_finder \
+# PyInstaller 参数 / hiddenimports 统一维护于 scripts/pyinstaller_common.py
+# （图标、add-data、hiddenimports 均由 pyinstaller_common 处理）
+"$PYTHON" "$SCRIPT_DIR/pyinstaller_common.py" build --os macos \
     --distpath "$TOOL_DIR/dist" \
     --workpath "$TOOL_DIR/build" \
-    --specpath "$TOOL_DIR" \
-    "$TOOL_DIR/count_down_tool.py"
+    --specpath "$TOOL_DIR"
 
 echo ""
 echo "========================================"

@@ -11,8 +11,8 @@ import webbrowser
 from datetime import date
 from typing import Callable, Optional
 
-from core.countdown_core import APP_NAME, __version__
 from core import update as core_update
+from core.countdown_core import APP_NAME, __version__
 
 logger = logging.getLogger("count_down_tool.updater")
 
@@ -25,7 +25,8 @@ _UPDATING = False
 _UPDATE_LOCK = threading.Lock()
 # 进度 UI 回调节流：至少间隔或百分比变化才 after
 _PROGRESS_UI_INTERVAL_S = 0.1
-# TODO: 下载取消 Event（用户点取消时 set，worker 轮询）
+# 当前下载取消事件（用户关进度窗 / 点取消时 set，worker 轮询）
+_DOWNLOAD_CANCEL: Optional[threading.Event] = None
 
 # kind: busy | ok | error | update | info
 StatusCb = Optional[Callable[[str, str], None]]
@@ -86,9 +87,44 @@ def _try_begin_update() -> bool:
 
 
 def _end_update() -> None:
-    global _UPDATING
+    global _UPDATING, _DOWNLOAD_CANCEL
     with _UPDATE_LOCK:
         _UPDATING = False
+        _DOWNLOAD_CANCEL = None
+
+
+def _request_download_cancel() -> None:
+    """UI 关闭/取消时 set event；worker 轮询后清理半成品。"""
+    ev = _DOWNLOAD_CANCEL
+    if ev is not None:
+        ev.set()
+
+
+def _resolve_download_sha256(result: core_update.UpdateCheckResult) -> Optional[str]:
+    """
+    若 Release 存在对应 sha256 资产则返回哈希（下载后强制校验）；
+    若不存在则 warning 并返回 None（不阻断现有用户）。
+    """
+    name = (result.asset_name or "").strip()
+    url = (result.asset_url or "").strip()
+    if not name or not url:
+        return None
+    try:
+        digest = core_update.resolve_expected_sha256(
+            asset_name=name,
+            asset_url=url,
+            release=result.release,
+        )
+    except (OSError, RuntimeError, ValueError, TypeError) as exc:
+        logger.warning("解析 SHA256 校验源失败，将跳过哈希校验: %s", exc)
+        return None
+    if digest:
+        return digest
+    logger.warning(
+        "Release 未提供 %s 的 SHA256 资产，仅做大小校验（建议发布时附带 .sha256）",
+        name,
+    )
+    return None
 
 
 def _make_throttled_progress(app, progress_win, update_progress_fn) -> Callable[[int, int], None]:
@@ -331,6 +367,7 @@ def _notify_update_busy(app) -> None:
 
 
 def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
+    global _DOWNLOAD_CANCEL
     if not result.asset_url:
         return
     if not _try_begin_update():
@@ -339,15 +376,21 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
 
     from ui.update_dialog import close_progress, show_update_progress, update_progress
 
+    cancel_event = threading.Event()
+    _DOWNLOAD_CANCEL = cancel_event
+
     progress_win = show_update_progress(
         app,
         "正在下载更新",
         "下载完成后将自动安装并重启，请稍候…",
+        on_cancel=_request_download_cancel,
+        allow_cancel=True,
     )
     progress_cb = _make_throttled_progress(app, progress_win, update_progress)
 
     def worker():
         err: Optional[str] = None
+        cancelled = False
         try:
             tmp_dir = os.path.join(
                 os.environ.get("TEMP") or os.environ.get("TMP") or ".",
@@ -359,22 +402,33 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
                 result.asset_name or f"count_down_tool-{result.latest_version}-win64.zip",
             )
 
+            expected_sha = _resolve_download_sha256(result)
             core_update.download_file(
                 result.asset_url,
                 zip_path,
                 progress=progress_cb,
                 expected_size=int(getattr(result, "asset_size", 0) or 0),
+                expected_sha256=expected_sha,
+                cancel_event=cancel_event,
             )
+            if cancel_event.is_set():
+                raise core_update.DownloadCancelled("下载已取消")
             core_update.apply_windows_update_from_zip(zip_path)
+        except core_update.DownloadCancelled as exc:
+            logger.info("Windows 更新下载已取消: %s", exc)
+            cancelled = True
+            err = str(exc)
         except (OSError, RuntimeError, ValueError, TypeError) as exc:
             logger.exception("Windows 自动更新失败")
             err = str(exc)
 
         def done():
-            # 成功退出前也释放标志（进程将结束；失败路径需允许重试）
+            # 成功退出前也释放标志（进程将结束；失败/取消路径需允许重试）
             if err:
                 _end_update()
             close_progress(progress_win)
+            if cancelled:
+                return
             if err:
                 from ui.app_dialogs import show_error
 
@@ -404,6 +458,7 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
 
 
 def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
+    global _DOWNLOAD_CANCEL
     if not result.asset_url:
         return
     if not _try_begin_update():
@@ -412,22 +467,40 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
 
     from ui.update_dialog import close_progress, show_update_progress, update_progress
 
+    cancel_event = threading.Event()
+    _DOWNLOAD_CANCEL = cancel_event
+
     progress_win = show_update_progress(
         app,
         "正在下载更新包",
         "将保存到「下载」文件夹，完成后可手动替换 App。",
+        on_cancel=_request_download_cancel,
+        allow_cancel=True,
     )
     progress_cb = _make_throttled_progress(app, progress_win, update_progress)
 
     def worker():
         err: Optional[str] = None
+        cancelled = False
         dest = ""
         try:
             folder = core_update.default_download_dir()
             name = result.asset_name or f"count_down_tool-{result.latest_version}.zip"
             dest = os.path.join(folder, name)
 
-            core_update.download_file(result.asset_url, dest, progress=progress_cb)
+            expected_sha = _resolve_download_sha256(result)
+            core_update.download_file(
+                result.asset_url,
+                dest,
+                progress=progress_cb,
+                expected_size=int(getattr(result, "asset_size", 0) or 0),
+                expected_sha256=expected_sha,
+                cancel_event=cancel_event,
+            )
+        except core_update.DownloadCancelled as exc:
+            logger.info("macOS 更新下载已取消: %s", exc)
+            cancelled = True
+            err = str(exc)
         except (OSError, RuntimeError, ValueError, TypeError) as exc:
             logger.exception("macOS 下载更新失败")
             err = str(exc)
@@ -435,6 +508,8 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
         def done():
             _end_update()
             close_progress(progress_win)
+            if cancelled:
+                return
             if err:
                 from ui.app_dialogs import show_error
 

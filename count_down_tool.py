@@ -20,17 +20,27 @@ from app import theme as _theme
 from app import window_chrome as _chrome
 from app.config_store import (
     default_mini_size as _cfg_default_mini_size,
+)
+from app.config_store import (
     load_config as _cfg_load,
+)
+from app.config_store import (
     mini_size_limits as _cfg_mini_size_limits,
+)
+from app.config_store import (
     mini_text_fg as _cfg_mini_text_fg,
+)
+from app.config_store import (
     resolved_mini_size as _cfg_resolved_mini_size,
+)
+from app.config_store import (
     save_config as _cfg_save,
 )
 from app.countdown import CountdownController
+from app.state import CountdownRuntime, PersistedState
 from core.app_logging import setup_app_logging
 from core.countdown_core import (
     APP_NAME,
-    STATE_IDLE,
     format_target_label,
     next_second_delay_ms,
     resource_path,
@@ -100,6 +110,10 @@ class CountdownApp:
         if platform.system() != "Darwin":
             self.master.overrideredirect(True)
 
+        # 结构化状态：app._xxx 经 property 映射，保持 duck-type 兼容
+        self.state = PersistedState()
+        self._runtime = CountdownRuntime()
+
         self._set_icon()
 
         # 窗口拖动相关变量
@@ -107,38 +121,17 @@ class CountdownApp:
         self._drag_y = 0
 
         self.running = False
-        self._state = STATE_IDLE
-        self._countdown_timer_id = None
         self.btn_start = None
         self.tray_icon = None
         self._first_hide = True
-        self._error_timer_id = None
-        self._preset_duration = None
-        self._applying_preset = False
-        # 进度条：start 时记录总时长；暂停时冻结当前进度
-        self._duration_total_seconds = 0.0
-        self._progress_value = 0.0
-        # 暂停时冻结的剩余秒数（权威数据）；None 表示未处于暂停冻结
-        self._paused_remaining = None
         self._time_spinboxes = []
         self._preset_chips = []
         self.progress_canvas = None
 
-        # 报警相关
-        self._alarm_count = 0
-        self._alarm_timer_id = None
-        self._bell_count = 0
-
-        # 结束音效：muted / sound_id / sound_path / sound_history
-        self._sound_muted = False
-        self._sound_id = "soft"
-        self._sound_path = ""
-        self._sound_history = []
-
         self.FONTS = self._get_fonts(self.master)
         self._ctrl = CountdownController(self)
 
-        # Mini 模式相关
+        # Mini 模式相关（非持久化 UI 句柄）
         self._is_mini = False
         self.mini_window = None
         self.mini_countdown_label = None
@@ -151,29 +144,15 @@ class CountdownApp:
         self.mini_expand_btn = None
         self.mini_close_btn = None
         self._mini_layout_scale = None
-        self._transparent_mode = False
-        self._last_mode = "full"
-        self._startup_mode = "remember"
         self._drag_data = {"x": 0, "y": 0}
 
-        # 主题 / 自启
-        self._theme_id = DEFAULT_THEME_ID
-        self._theme_custom = None
-        self._autostart = False
-        # 自动更新
-        self._check_update_on_start = True
-        self._last_update_check = ""
-        self._ignored_update_version = ""
         self._pending_update_result = None  # 有更新时缓存，供标题 NEW 角标
-        self.COLORS = resolve_theme(self._theme_id)
+        self.COLORS = resolve_theme(self.state.theme_id)
 
         # 倒计时状态（完整和 mini 共享）
         self.target_time = None
         self.countdown_text = "--:--:--"
 
-        self._mini_pos = None  # 保存 Mini 窗口位置
-        self._mini_size = None  # 保存 Mini 窗口尺寸 (w, h)
-        self._mini_text = {}  # Mini 字色：主题色键，非 hex
         self._resize_data = None  # Mini 边缘缩放状态
         self._config_file = user_config_path()
         self._load_config()
@@ -260,6 +239,226 @@ class CountdownApp:
                 )
             except (tk.TclError, AttributeError, RuntimeError):
                 logger.debug("托盘失败提示失败", exc_info=True)
+
+    # ------------------------------------------------------------------
+    # 状态 property：app._xxx ↔ self.state / self._runtime（兼容 duck-type）
+    # ------------------------------------------------------------------
+
+    @property
+    def _theme_id(self):
+        return self.state.theme_id
+
+    @_theme_id.setter
+    def _theme_id(self, value):
+        self.state.theme_id = value
+
+    @property
+    def _theme_custom(self):
+        return self.state.theme_custom
+
+    @_theme_custom.setter
+    def _theme_custom(self, value):
+        self.state.theme_custom = value
+
+    @property
+    def _sound_muted(self):
+        return self.state.sound_muted
+
+    @_sound_muted.setter
+    def _sound_muted(self, value):
+        self.state.sound_muted = bool(value)
+
+    @property
+    def _sound_id(self):
+        return self.state.sound_id
+
+    @_sound_id.setter
+    def _sound_id(self, value):
+        self.state.sound_id = value
+
+    @property
+    def _sound_path(self):
+        return self.state.sound_path
+
+    @_sound_path.setter
+    def _sound_path(self, value):
+        self.state.sound_path = value
+
+    @property
+    def _sound_history(self):
+        return self.state.sound_history
+
+    @_sound_history.setter
+    def _sound_history(self, value):
+        self.state.sound_history = value if value is not None else []
+
+    @property
+    def _autostart(self):
+        return self.state.autostart
+
+    @_autostart.setter
+    def _autostart(self, value):
+        self.state.autostart = bool(value)
+
+    @property
+    def _check_update_on_start(self):
+        return self.state.check_update_on_start
+
+    @_check_update_on_start.setter
+    def _check_update_on_start(self, value):
+        self.state.check_update_on_start = bool(value)
+
+    @property
+    def _last_update_check(self):
+        return self.state.last_update_check
+
+    @_last_update_check.setter
+    def _last_update_check(self, value):
+        self.state.last_update_check = value if value is not None else ""
+
+    @property
+    def _ignored_update_version(self):
+        return self.state.ignored_update_version
+
+    @_ignored_update_version.setter
+    def _ignored_update_version(self, value):
+        self.state.ignored_update_version = value if value is not None else ""
+
+    @property
+    def _startup_mode(self):
+        return self.state.startup_mode
+
+    @_startup_mode.setter
+    def _startup_mode(self, value):
+        self.state.startup_mode = value
+
+    @property
+    def _last_mode(self):
+        return self.state.last_mode
+
+    @_last_mode.setter
+    def _last_mode(self, value):
+        self.state.last_mode = value
+
+    @property
+    def _transparent_mode(self):
+        return self.state.transparent_mode
+
+    @_transparent_mode.setter
+    def _transparent_mode(self, value):
+        self.state.transparent_mode = bool(value)
+
+    @property
+    def _mini_pos(self):
+        return self.state.mini_pos
+
+    @_mini_pos.setter
+    def _mini_pos(self, value):
+        self.state.mini_pos = value
+
+    @property
+    def _mini_size(self):
+        return self.state.mini_size
+
+    @_mini_size.setter
+    def _mini_size(self, value):
+        self.state.mini_size = value
+
+    @property
+    def _mini_text(self):
+        return self.state.mini_text
+
+    @_mini_text.setter
+    def _mini_text(self, value):
+        self.state.mini_text = value if value is not None else {}
+
+    @property
+    def _state(self):
+        return self._runtime.state
+
+    @_state.setter
+    def _state(self, value):
+        self._runtime.state = value
+
+    @property
+    def _countdown_timer_id(self):
+        return self._runtime.countdown_timer_id
+
+    @_countdown_timer_id.setter
+    def _countdown_timer_id(self, value):
+        self._runtime.countdown_timer_id = value
+
+    @property
+    def _preset_duration(self):
+        return self._runtime.preset_duration
+
+    @_preset_duration.setter
+    def _preset_duration(self, value):
+        self._runtime.preset_duration = value
+
+    @property
+    def _applying_preset(self):
+        return self._runtime.applying_preset
+
+    @_applying_preset.setter
+    def _applying_preset(self, value):
+        self._runtime.applying_preset = bool(value)
+
+    @property
+    def _duration_total_seconds(self):
+        return self._runtime.duration_total_seconds
+
+    @_duration_total_seconds.setter
+    def _duration_total_seconds(self, value):
+        self._runtime.duration_total_seconds = float(value) if value is not None else 0.0
+
+    @property
+    def _progress_value(self):
+        return self._runtime.progress_value
+
+    @_progress_value.setter
+    def _progress_value(self, value):
+        self._runtime.progress_value = float(value) if value is not None else 0.0
+
+    @property
+    def _paused_remaining(self):
+        return self._runtime.paused_remaining
+
+    @_paused_remaining.setter
+    def _paused_remaining(self, value):
+        self._runtime.paused_remaining = value
+
+    @property
+    def _alarm_count(self):
+        return self._runtime.alarm_count
+
+    @_alarm_count.setter
+    def _alarm_count(self, value):
+        self._runtime.alarm_count = int(value) if value is not None else 0
+
+    @property
+    def _alarm_timer_id(self):
+        return self._runtime.alarm_timer_id
+
+    @_alarm_timer_id.setter
+    def _alarm_timer_id(self, value):
+        self._runtime.alarm_timer_id = value
+
+    @property
+    def _bell_count(self):
+        return self._runtime.bell_count
+
+    @_bell_count.setter
+    def _bell_count(self, value):
+        self._runtime.bell_count = int(value) if value is not None else 0
+
+    @property
+    def _error_timer_id(self):
+        return self._runtime.error_timer_id
+
+    @_error_timer_id.setter
+    def _error_timer_id(self, value):
+        self._runtime.error_timer_id = value
 
     @staticmethod
     def _get_fonts(root=None):

@@ -5,8 +5,9 @@ import tkinter as tk
 from tkinter import ttk
 
 from core.countdown_core import APP_NAME, __version__
+from ui.chrome_titlebar import MAIN_TITLE_HEIGHT, add_circle_button, build_title_bar
 from ui.context_menus import bind_full_context_menu, bind_full_context_menu_tree
-from ui.widgets import RoundedFrame, init_circle_button, update_circle_button
+from ui.widgets import RoundedFrame
 
 
 def refresh_update_badge(app) -> None:
@@ -142,25 +143,18 @@ def setup_styles(app):
 def build_full_ui(app):
     """构建完整模式主界面，控件引用挂到 app 上。可重复调用（主题重建）。"""
     c = app.COLORS
-    font_family = app.FONTS["label"][0]
 
-    # ===== 标题栏 =====
-    title_bar = tk.Frame(app.master, bg=c["title_bar"], height=48)
-    title_bar.pack(fill=tk.X)
-    title_bar.pack_propagate(False)
-
-    title_line = tk.Frame(title_bar, bg=c["accent"], height=2)
-    title_line.pack(side=tk.BOTTOM, fill=tk.X)
-
-    title_bar.bind("<Button-1>", app._start_drag)
-    title_bar.bind("<B1-Motion>", app._on_drag)
-
-    title_label = tk.Label(title_bar, text=f"  ⏱  {APP_NAME}",
-                           bg=c["title_bar"], fg=c["text"],
-                           font=app._font("label", 10, bold=True))
-    title_label.pack(side=tk.LEFT, fill=tk.Y)
-    title_label.bind("<Button-1>", app._start_drag)
-    title_label.bind("<B1-Motion>", app._on_drag)
+    # ===== 标题栏（公共自绘组件）=====
+    chrome = build_title_bar(
+        app.master,
+        app,
+        title=f"⏱  {APP_NAME}",
+        height=MAIN_TITLE_HEIGHT,
+        on_drag_start=app._start_drag,
+        on_drag_motion=app._on_drag,
+    )
+    title_bar = chrome.frame
+    title_label = chrome.title_label
 
     def _on_update_from_title(_e=None):
         from services.updater import open_update_from_ui
@@ -195,87 +189,6 @@ def build_full_ui(app):
     update_badge.bind("<Button-1>", _on_update_from_title)
     refresh_update_badge(app)
 
-    btn_frame = tk.Frame(title_bar, bg=app.COLORS["title_bar"])
-    btn_frame.pack(side=tk.RIGHT, padx=(0, 10))
-
-    close_btn_size = 16
-    close_btn = tk.Canvas(btn_frame, width=close_btn_size * 2, height=close_btn_size * 2,
-                          bg=app.COLORS["title_bar"], highlightthickness=0, cursor="hand2")
-    close_btn.pack(side=tk.RIGHT, padx=(6, 0))
-    close_btn_items = init_circle_button(
-        close_btn, close_btn_size, close_btn_size, close_btn_size - 1,
-        fill=app.COLORS["btn_default"], text="×",
-        text_color=app.COLORS["text_dim"], font_family=font_family, font_size=12,
-    )
-    close_btn.bind("<Enter>",
-                   lambda e: update_circle_button(close_btn, close_btn_items,
-                                                  fill=app.COLORS["btn_hover_close"],
-                                                  text_color=app.COLORS["white"]))
-    close_btn.bind("<Leave>",
-                   lambda e: update_circle_button(close_btn, close_btn_items,
-                                                  fill=app.COLORS["btn_default"],
-                                                  text_color=app.COLORS["text_dim"]))
-    close_btn.bind("<Button-1>", lambda e: app._hide_to_tray())
-
-    min_btn_size = 16
-    min_btn = tk.Canvas(btn_frame, width=min_btn_size * 2, height=min_btn_size * 2,
-                        bg=app.COLORS["title_bar"], highlightthickness=0, cursor="hand2")
-    min_btn.pack(side=tk.RIGHT, padx=(6, 0))
-    min_btn_items = init_circle_button(
-        min_btn, min_btn_size, min_btn_size, min_btn_size - 1,
-        fill=app.COLORS["btn_default"], text="−",
-        text_color=app.COLORS["text_dim"], font_family=font_family, font_size=12,
-    )
-    min_btn.bind("<Enter>",
-                 lambda e: update_circle_button(min_btn, min_btn_items,
-                                                fill=app.COLORS["btn_hover_min"],
-                                                text_color=app.COLORS["white"]))
-    min_btn.bind("<Leave>",
-                 lambda e: update_circle_button(min_btn, min_btn_items,
-                                                fill=app.COLORS["btn_default"],
-                                                text_color=app.COLORS["text_dim"]))
-    min_btn.bind("<Button-1>", lambda e: app._switch_to_mini())
-
-    # 设置按钮：pack 在 min 左侧 → 视觉从左到右 ⚙ − ×
-    settings_btn_size = 16
-    settings_btn = tk.Canvas(
-        btn_frame,
-        width=settings_btn_size * 2,
-        height=settings_btn_size * 2,
-        bg=app.COLORS["title_bar"],
-        highlightthickness=0,
-        cursor="hand2",
-    )
-    settings_btn.pack(side=tk.RIGHT, padx=(6, 0))
-    settings_btn_items = init_circle_button(
-        settings_btn,
-        settings_btn_size,
-        settings_btn_size,
-        settings_btn_size - 1,
-        fill=app.COLORS["btn_default"],
-        text="⚙",
-        text_color=app.COLORS["text_dim"],
-        font_family=font_family,
-        font_size=10,
-    )
-    settings_btn.bind(
-        "<Enter>",
-        lambda e: update_circle_button(
-            settings_btn,
-            settings_btn_items,
-            fill=app.COLORS["accent"],
-            text_color=app.COLORS["white"],
-        ),
-    )
-    settings_btn.bind(
-        "<Leave>",
-        lambda e: update_circle_button(
-            settings_btn,
-            settings_btn_items,
-            fill=app.COLORS["btn_default"],
-            text_color=app.COLORS["text_dim"],
-        ),
-    )
     def _open_settings(_e=None):
         if hasattr(app, "_show_settings"):
             app._show_settings()
@@ -284,7 +197,37 @@ def build_full_ui(app):
 
             show_settings(app)
 
-    settings_btn.bind("<Button-1>", _open_settings)
+    # pack side=RIGHT：先 close → min → settings，视觉从左到右 ⚙ − ×
+    add_circle_button(
+        chrome.btn_frame,
+        app,
+        text="×",
+        command=lambda _e=None: app._hide_to_tray(),
+        hover_fill=c["btn_hover_close"],
+        font_size=12,
+        name="close",
+        chrome=chrome,
+    )
+    add_circle_button(
+        chrome.btn_frame,
+        app,
+        text="−",
+        command=lambda _e=None: app._switch_to_mini(),
+        hover_fill=c["btn_hover_min"],
+        font_size=12,
+        name="mini",
+        chrome=chrome,
+    )
+    add_circle_button(
+        chrome.btn_frame,
+        app,
+        text="⚙",
+        command=_open_settings,
+        hover_fill=c["accent"],
+        font_size=10,
+        name="settings",
+        chrome=chrome,
+    )
 
     # ===== 主内容区域 =====
     main_frame = tk.Frame(app.master, bg=c["bg"])

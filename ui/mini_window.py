@@ -8,6 +8,7 @@ import logging
 import platform
 import tkinter as tk
 from datetime import datetime
+
 from core.countdown_core import (
     STATE_FINISHED,
     STATE_RUNNING,

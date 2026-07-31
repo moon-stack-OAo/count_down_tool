@@ -19,8 +19,7 @@ from ui.design.tokens import (
     UPDATE_DIALOG_WIDTH,
 )
 from ui.time_picker import _activate_picker, _picker_parent
-from ui.window_chrome_dialog import center_dialog_later
-from ui.window_chrome_dialog import CHROME_TITLE_HEIGHT, use_borderless_chrome
+from ui.window_chrome_dialog import CHROME_TITLE_HEIGHT, center_dialog_later, use_borderless_chrome
 
 logger = logging.getLogger("count_down_tool")
 
@@ -193,8 +192,18 @@ def show_update_available(app, result, notes: str, on_action: ActionCb = None) -
     _activate_picker(win)
 
 
-def show_update_progress(app, title: str, message: str = "") -> tk.Toplevel:
-    """显示下载/安装进度窗。返回 window，附带 progressbar 与 message_label。"""
+def show_update_progress(
+    app,
+    title: str,
+    message: str = "",
+    *,
+    on_cancel: Optional[Callable[[], None]] = None,
+    allow_cancel: bool = False,
+) -> tk.Toplevel:
+    """显示下载/安装进度窗。返回 window，附带 progressbar 与 message_label。
+
+    allow_cancel=True 时允许关窗/取消按钮触发 on_cancel（下载中断）。
+    """
     parent = _picker_parent(app)
     c = app.COLORS
     win = tk.Toplevel(parent)
@@ -210,15 +219,45 @@ def show_update_progress(app, title: str, message: str = "") -> tk.Toplevel:
             win.transient(parent)
     except tk.TclError:
         pass
-    # 下载中禁止关窗误操作（× / Esc / 协议均 no-op）
-    win.protocol("WM_DELETE_WINDOW", lambda: None)
-    borderless = use_borderless_chrome(
-        win,
-        app,
-        title=title or "更新",
-        on_close=lambda: None,
-        close_enabled=False,
-    )
+
+    cancelled = {"done": False}
+
+    def _do_cancel():
+        if cancelled["done"]:
+            return
+        cancelled["done"] = True
+        if on_cancel:
+            try:
+                on_cancel()
+            except (tk.TclError, AttributeError, RuntimeError, OSError, TypeError, ValueError):
+                logger.exception("更新进度取消回调失败")
+        # 关闭由 updater 在 worker 结束后 close_progress；此处仅请求取消
+        try:
+            msg = getattr(win, "_progress_msg", None)
+            if msg is not None:
+                msg.config(text="正在取消下载…")
+        except tk.TclError:
+            pass
+
+    if allow_cancel:
+        win.protocol("WM_DELETE_WINDOW", _do_cancel)
+        borderless = use_borderless_chrome(
+            win,
+            app,
+            title=title or "更新",
+            on_close=_do_cancel,
+            close_enabled=True,
+        )
+    else:
+        # 下载中禁止关窗误操作（× / Esc / 协议均 no-op）
+        win.protocol("WM_DELETE_WINDOW", lambda: None)
+        borderless = use_borderless_chrome(
+            win,
+            app,
+            title=title or "更新",
+            on_close=lambda: None,
+            close_enabled=False,
+        )
 
     shell = tk.Frame(win, bg=c["bg"], padx=SPACE_LG, pady=SPACE_LG)
     shell.pack(fill=tk.BOTH, expand=True)
@@ -282,15 +321,30 @@ def show_update_progress(app, title: str, message: str = "") -> tk.Toplevel:
     )
     pct_lbl.pack(fill=tk.X)
 
+    if allow_cancel:
+        btn_row = tk.Frame(shell, bg=c["bg"])
+        btn_row.pack(fill=tk.X, pady=(SPACE_MD, 0))
+        _pill(
+            btn_row,
+            "取消",
+            app=app,
+            c=c,
+            primary=False,
+            command=_do_cancel,
+        ).pack(side=tk.RIGHT)
+
     win._progress_bar = bar  # type: ignore[attr-defined]
     win._progress_msg = msg_lbl  # type: ignore[attr-defined]
     win._progress_pct = pct_lbl  # type: ignore[attr-defined]
     win._progress_mode = "indeterminate"  # type: ignore[attr-defined]
+    win._progress_cancel = _do_cancel  # type: ignore[attr-defined]
 
     win.update_idletasks()
     w = UPDATE_DIALOG_WIDTH
     # 自绘标题栏已计入 reqheight；无边框不再加系统标题栏余量
     min_h = 140 + (CHROME_TITLE_HEIGHT if borderless else 0)
+    if allow_cancel:
+        min_h += 36
     h = max(min_h, win.winfo_reqheight() + 24)
     _center(win, w, h)
     _activate_picker(win)

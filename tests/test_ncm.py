@@ -46,8 +46,8 @@ def _aes_ecb_encrypt(key: bytes, data: bytes) -> bytes:
         pass
     # 用解密逆运算实现：先扩展密钥后正向 AES
     from services.ncm import (
-        _SBOX,
         _RCON,
+        _SBOX,
         _add_round_key,
         _mul,
     )

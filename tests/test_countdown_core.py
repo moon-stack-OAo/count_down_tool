@@ -26,6 +26,7 @@ from core.countdown_core import (
     BTN_RESTART,
     BTN_RESUME,
     BTN_START,
+    MINI_TEXT_DEFAULTS,
     STATE_FINISHED,
     STATE_IDLE,
     STATE_PAUSED,
@@ -49,19 +50,18 @@ from core.countdown_core import (
     parse_mini_geometry,
     parse_mini_size,
     progress_ratio,
-    should_start_mini,
     read_lock_pid,
     remaining_seconds,
     resolve_mini_text_color,
     resource_path,
     save_config_dict,
+    should_start_mini,
     target_from_duration,
     target_from_hms,
     target_from_remaining,
     try_acquire_weak_lock,
     validate_hms,
     write_lock_pid,
-    MINI_TEXT_DEFAULTS,
 )
 
 

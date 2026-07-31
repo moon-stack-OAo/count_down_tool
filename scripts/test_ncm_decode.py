@@ -42,7 +42,7 @@ def main() -> int:
         return 1
 
     from services.ncm import is_ncm_file, resolve_ncm_play_path
-    from services.sound import is_audio_file, prepare_playable_path, play_file
+    from services.sound import is_audio_file, play_file, prepare_playable_path
 
     print(f"is_ncm_file     = {is_ncm_file(path)}")
     print(f"is_audio_file   = {is_audio_file(path)}")

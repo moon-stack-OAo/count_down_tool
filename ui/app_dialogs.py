@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import logging
+import os
 import platform
 import tkinter as tk
 from typing import Optional
 
 from core.countdown_core import APP_NAME
-from ui.design.tokens import SPACE_LG, SPACE_MD, SPACE_SM
-from ui.widgets import make_pill
+from ui.design.tokens import SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XS
+from ui.widgets import ThinScrollbar, make_pill
 from ui.window_chrome_dialog import center_dialog_later, use_borderless_chrome
 
 logger = logging.getLogger("count_down_tool")
@@ -251,6 +252,231 @@ def show_info(app, message: str, *, title: str = "", parent=None) -> None:
 
 def show_error(app, message: str, *, title: str = "", parent=None) -> None:
     _show_message(app, "error", message, title=title or "出错了", parent=parent)
+
+
+# 日志查看：只读末尾，避免大文件占满内存
+_LOG_VIEW_MAX_BYTES = 256 * 1024
+_LOG_VIEW_WIDTH = 640
+_LOG_VIEW_HEIGHT = 480
+
+
+def _read_log_tail(path: str, max_bytes: int = _LOG_VIEW_MAX_BYTES) -> tuple[str, str]:
+    """读取日志末尾。返回 (正文, 状态说明)。"""
+    if not path or not os.path.isfile(path):
+        return "", "日志文件尚不存在（启动后写入过日志才会生成）。"
+    try:
+        size = os.path.getsize(path)
+    except OSError as exc:
+        return "", f"无法读取日志大小：{exc}"
+    try:
+        with open(path, "rb") as f:
+            if size > max_bytes:
+                f.seek(-max_bytes, os.SEEK_END)
+                raw = f.read()
+                # 丢弃可能被截断的首行半截
+                nl = raw.find(b"\n")
+                if 0 <= nl < len(raw) - 1:
+                    raw = raw[nl + 1 :]
+                note = f"仅显示末尾约 {max_bytes // 1024} KB（文件共 {size // 1024} KB）"
+            else:
+                raw = f.read()
+                note = f"共 {size} 字节"
+        text = raw.decode("utf-8", errors="replace")
+        if not text.strip():
+            return "", "日志文件为空。"
+        return text, note
+    except OSError as exc:
+        return "", f"读取失败：{exc}"
+
+
+def show_log_viewer(app, *, parent=None) -> None:
+    """弹窗显示 app.log 内容（可滚动、刷新、复制、打开所在目录）。"""
+    import subprocess
+
+    from core.countdown_core import user_log_path
+
+    parent = _dialog_parent(app, parent)
+    c = app.COLORS
+
+    existing = getattr(app, "_log_viewer_window", None)
+    if existing is not None:
+        try:
+            if existing.winfo_exists():
+                _activate(existing)
+                refresh = getattr(existing, "_log_refresh", None)
+                if callable(refresh):
+                    refresh()
+                return
+        except tk.TclError:
+            pass
+
+    log_path = user_log_path()
+    win = tk.Toplevel(parent)
+    win.title(f"{APP_NAME} · 运行日志")
+    win.configure(bg=c["bg"])
+    win.minsize(480, 320)
+    try:
+        win.attributes("-topmost", True)
+    except tk.TclError:
+        pass
+    try:
+        win.transient(parent)
+    except tk.TclError:
+        pass
+
+    def _close(_e=None):
+        try:
+            if getattr(app, "_log_viewer_window", None) is win:
+                app._log_viewer_window = None
+        except AttributeError:
+            pass
+        try:
+            win.destroy()
+        except tk.TclError:
+            pass
+        return "break"
+
+    win.protocol("WM_DELETE_WINDOW", _close)
+    use_borderless_chrome(win, app, title="运行日志", on_close=_close)
+
+    shell = tk.Frame(win, bg=c["bg"], padx=SPACE_LG, pady=SPACE_LG)
+    shell.pack(fill=tk.BOTH, expand=True)
+
+    tk.Label(
+        shell,
+        text=log_path,
+        font=app._font("label", 8),
+        bg=c["bg"],
+        fg=c["text_muted"],
+        anchor="w",
+        wraplength=_LOG_VIEW_WIDTH - 48,
+        justify=tk.LEFT,
+    ).pack(fill=tk.X)
+
+    status_lbl = tk.Label(
+        shell,
+        text="",
+        font=app._font("label", 9),
+        bg=c["bg"],
+        fg=c["text_dim"],
+        anchor="w",
+    )
+    status_lbl.pack(fill=tk.X, pady=(SPACE_XS, SPACE_SM))
+
+    body = tk.Frame(
+        shell, bg=c["card"], highlightbackground=c["border"], highlightthickness=1
+    )
+    body.pack(fill=tk.BOTH, expand=True)
+
+    try:
+        log_font = app._font("time", 9)
+    except (TypeError, AttributeError):
+        log_font = app._font("label", 9)
+
+    text = tk.Text(
+        body,
+        wrap=tk.NONE,
+        font=log_font,
+        bg=c.get("input_bg", c["card"]),
+        fg=c["text"],
+        insertbackground=c["accent"],
+        relief=tk.FLAT,
+        bd=0,
+        padx=SPACE_SM,
+        pady=SPACE_SM,
+        highlightthickness=0,
+        state=tk.DISABLED,
+    )
+
+    ysb = ThinScrollbar(
+        body,
+        command=text.yview,
+        bg=c.get("card", c["bg"]),
+        trough=c.get("border", "#1E293B"),
+        thumb=c.get("text_muted", "#64748B"),
+        thumb_hover=c.get("text_dim", "#94A3B8"),
+    )
+    text.configure(yscrollcommand=ysb.set)
+    ysb.pack(side=tk.RIGHT, fill=tk.Y)
+    text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    def _load():
+        body_text, note = _read_log_tail(log_path)
+        try:
+            status_lbl.config(text=note)
+            text.configure(state=tk.NORMAL)
+            text.delete("1.0", tk.END)
+            if body_text:
+                text.insert("1.0", body_text)
+                text.see(tk.END)
+            else:
+                text.insert("1.0", note)
+            text.configure(state=tk.DISABLED)
+        except tk.TclError:
+            pass
+
+    def _copy_all():
+        try:
+            content = text.get("1.0", "end-1c")
+            win.clipboard_clear()
+            win.clipboard_append(content)
+            win.update_idletasks()
+            status_lbl.config(text="已复制到剪贴板")
+        except tk.TclError as exc:
+            logger.debug("复制日志失败", exc_info=True)
+            status_lbl.config(text=f"复制失败：{exc}")
+
+    def _open_folder():
+        try:
+            folder = os.path.dirname(log_path) or log_path
+            if folder:
+                os.makedirs(folder, exist_ok=True)
+            system = platform.system()
+            if system == "Windows":
+                if os.path.isfile(log_path):
+                    subprocess.run(
+                        ["explorer", "/select,", os.path.abspath(log_path)],
+                        check=False,
+                    )
+                else:
+                    os.startfile(folder)  # type: ignore[attr-defined]
+            elif system == "Darwin":
+                if os.path.isfile(log_path):
+                    subprocess.run(["open", "-R", log_path], check=False)
+                else:
+                    subprocess.run(["open", folder], check=False)
+            else:
+                subprocess.run(["xdg-open", folder], check=False)
+        except (OSError, AttributeError, TypeError, ValueError, RuntimeError) as exc:
+            logger.debug("打开日志目录失败", exc_info=True)
+            status_lbl.config(text=f"打开目录失败：{exc}")
+
+    footer = tk.Frame(shell, bg=c["bg"])
+    footer.pack(fill=tk.X, pady=(SPACE_MD, 0))
+
+    make_pill(footer, "刷新", app=app, c=c, primary=False, command=_load).pack(
+        side=tk.LEFT, padx=(0, SPACE_SM)
+    )
+    make_pill(footer, "复制", app=app, c=c, primary=False, command=_copy_all).pack(
+        side=tk.LEFT, padx=(0, SPACE_SM)
+    )
+    make_pill(
+        footer, "打开所在目录", app=app, c=c, primary=False, command=_open_folder
+    ).pack(side=tk.LEFT)
+    make_pill(footer, "关闭", app=app, c=c, primary=True, command=_close).pack(
+        side=tk.RIGHT
+    )
+
+    win._log_refresh = _load  # type: ignore[attr-defined]
+    app._log_viewer_window = win
+    _load()
+
+    center_dialog_later(win, _LOG_VIEW_WIDTH, _LOG_VIEW_HEIGHT)
+    _activate(win)
+    try:
+        win.after(30, lambda: _activate(win))
+    except tk.TclError:
+        pass
 
 
 def ask_yes_no(

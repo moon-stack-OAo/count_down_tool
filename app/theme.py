@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+
 from core.countdown_core import STATE_FINISHED, button_text_for_state
 from core.themes import resolve_theme
 from services.tray import refresh_tray_menu

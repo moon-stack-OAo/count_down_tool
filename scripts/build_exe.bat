@@ -37,6 +37,18 @@ if errorlevel 1 (
     exit /b 1
 )
 
+rem 确保开发/打包依赖可用（pyinstaller 等）
+"%PYTHON%" -c "import PyInstaller" 2>nul
+if errorlevel 1 (
+    echo Installing dependencies from requirements-dev.txt...
+    "%PYTHON%" -m pip install -r "%TOOL_DIR%\requirements-dev.txt"
+    if errorlevel 1 (
+        echo [ERROR] Failed to install requirements-dev.txt
+        if "%NO_PAUSE%"=="0" pause
+        exit /b 1
+    )
+)
+
 set "VERSION="
 "%PYTHON%" -c "from core.countdown_core import __version__; print(__version__, end='')" > "%VER_FILE%"
 if errorlevel 1 (
@@ -59,8 +71,8 @@ echo   App:     dist\count_down_tool\count_down_tool.exe
 echo   Zip:     dist\%OUT_ZIP%
 echo.
 
-rem onedir: DLLs next to exe (avoid onefile %%TEMP%%\_MEI* / python3xx.dll load failures)
-"%PYTHON%" -m PyInstaller --noconfirm --clean --onedir --windowed --icon="%ICON_FILE%" --name "count_down_tool" --add-data "%ICON_FILE%;assets" --add-data "%TOOL_DIR%\assets\sounds;assets/sounds" --add-data "%TOOL_DIR%\assets\fonts;assets/fonts" --hidden-import core --hidden-import core.countdown_core --hidden-import core.app_logging --hidden-import core.themes --hidden-import core.fonts --hidden-import core.update --hidden-import services.autostart --hidden-import app --hidden-import app.countdown --hidden-import app.config_store --hidden-import app.window_chrome --hidden-import app.theme --hidden-import app.mode --hidden-import ui --hidden-import ui.widgets --hidden-import ui.mini_window --hidden-import ui.time_picker --hidden-import ui.full_window --hidden-import ui.context_menus --hidden-import ui.mini_text_picker --hidden-import ui.settings_window --hidden-import ui.update_dialog --hidden-import ui.app_dialogs --hidden-import ui.window_chrome_dialog --hidden-import ui.design --hidden-import ui.design.tokens --hidden-import services --hidden-import services.tray --hidden-import services.updater --hidden-import services.sound --hidden-import services.ncm --hidden-import services.windows_native --hidden-import pystray --hidden-import pystray._win32 --hidden-import PIL --hidden-import PIL._tkinter_finder --distpath "%TOOL_DIR%\dist" --workpath "%TOOL_DIR%\build" --specpath "%TOOL_DIR%" "%TOOL_DIR%\count_down_tool.py"
+rem PyInstaller 参数 / hiddenimports 统一维护于 scripts\pyinstaller_common.py（Windows onedir）
+"%PYTHON%" "%TOOL_DIR%\scripts\pyinstaller_common.py" build --os windows --distpath "%TOOL_DIR%\dist" --workpath "%TOOL_DIR%\build" --specpath "%TOOL_DIR%"
 if errorlevel 1 (
     echo.
     echo   [ERROR] PyInstaller failed

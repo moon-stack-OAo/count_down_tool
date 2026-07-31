@@ -4,9 +4,8 @@
 from __future__ import annotations
 
 import logging
-import os
 import platform
-from typing import Tuple
+from typing import Any, Tuple
 
 from core.countdown_core import (
     load_config_dict,
@@ -31,7 +30,7 @@ from services.autostart import is_autostart_enabled
 logger = logging.getLogger("count_down_tool")
 
 
-def default_mini_size(app) -> Tuple[int, int]:
+def default_mini_size(app: Any) -> Tuple[int, int]:
     """当前平台 Mini 默认尺寸。"""
     if platform.system() == "Darwin":
         return (
@@ -41,7 +40,7 @@ def default_mini_size(app) -> Tuple[int, int]:
     return app.MINI_WIDTH, app.MINI_HEIGHT
 
 
-def mini_size_limits(app) -> Tuple[int, int, int, int]:
+def mini_size_limits(app: Any) -> Tuple[int, int, int, int]:
     """Mini 可调尺寸上下限 (min_w, min_h, max_w, max_h)。"""
     if platform.system() == "Darwin":
         return (
@@ -58,7 +57,7 @@ def mini_size_limits(app) -> Tuple[int, int, int, int]:
     )
 
 
-def resolved_mini_size(app) -> Tuple[int, int]:
+def resolved_mini_size(app: Any) -> Tuple[int, int]:
     """用户保存尺寸或平台默认。"""
     min_w, min_h, max_w, max_h = mini_size_limits(app)
     normalized = normalize_mini_size(app._mini_size, min_w, min_h, max_w, max_h)
@@ -67,13 +66,13 @@ def resolved_mini_size(app) -> Tuple[int, int]:
     return default_mini_size(app)
 
 
-def mini_text_fg(app, role: str) -> str:
+def mini_text_fg(app: Any, role: str) -> str:
     """Mini 字色：从当前主题色板按角色解析 hex（不缓存）。"""
     return resolve_mini_text_color(app.COLORS, app._mini_text, role)
 
 
-def load_config(app) -> None:
-    """从磁盘读取配置并写入 app 字段。"""
+def load_config(app: Any) -> None:
+    """从磁盘读取配置并写入 app 字段（ConfigHost 兼容 duck-type）。"""
     app._loaded_keys = set()
     try:
         config = load_config_dict(app._config_file)
@@ -164,8 +163,8 @@ def load_config(app) -> None:
         app._startup_mode = "remember"
 
 
-def save_config(app) -> None:
-    """将 app 字段写回配置文件。"""
+def save_config(app: Any) -> None:
+    """将 app 字段写回配置文件（ConfigHost 兼容 duck-type）。"""
     try:
         from services.sound import normalize_sound_history
 

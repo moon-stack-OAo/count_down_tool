@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 import tkinter as tk
+from datetime import datetime
 from tkinter import ttk
 
 from core.countdown_core import (
@@ -38,11 +38,17 @@ from services.tray import refresh_tray_menu
 
 logger = logging.getLogger("count_down_tool")
 
+# 类型注解用 Protocol；运行时仍为 CountdownApp
+try:
+    from app.protocols import CountdownHost
+except ImportError:  # pragma: no cover
+    CountdownHost = object  # type: ignore[misc, assignment]
+
 
 class CountdownController:
     """持有 app 引用；状态字段仍挂在 app 上，保证外部 app.xxx 行为不变。"""
 
-    def __init__(self, app):
+    def __init__(self, app: CountdownHost):
         self.app = app
 
     def set_state(self, action: str) -> str:
@@ -58,7 +64,7 @@ class CountdownController:
         return app._state
 
     def inputs_locked(self) -> bool:
-        """running 与 paused 均锁定到期时间与快捷预设。"""
+        """仅 running 时锁定到期时间与快捷预设；paused 可改时间后按新目标继续。"""
         return inputs_locked_for_state(self.app._state)
 
     def clear_paused_remaining(self):
