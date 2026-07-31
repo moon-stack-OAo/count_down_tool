@@ -698,16 +698,23 @@ def mini_close(app):
         refresh_tray_menu(app)
         if app._first_hide:
             app._first_hide = False
+            import platform
+
+            if platform.system() == "Darwin":
+                tip = (
+                    "程序已隐藏到后台。\n"
+                    "可通过菜单栏「设置」、Dock 图标或再次打开应用恢复窗口。"
+                )
+            else:
+                tip = (
+                    "程序已最小化到系统托盘。\n"
+                    "右键托盘图标可切换 Mini 模式或退出。"
+                )
 
             def _tip():
                 from ui.app_dialogs import show_info
 
-                show_info(
-                    app,
-                    "程序已最小化到系统托盘。\n"
-                    "右键托盘图标可切换 Mini 模式或退出。",
-                    title="提示",
-                )
+                show_info(app, tip, title="提示")
 
             app.master.after(0, _tip)
     else:

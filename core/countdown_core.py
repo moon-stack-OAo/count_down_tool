@@ -232,8 +232,8 @@ def target_from_remaining(
 
 
 def inputs_locked_for_state(state: str) -> bool:
-    """running 与 paused 时锁定到期时间与快捷预设。"""
-    return state in (STATE_RUNNING, STATE_PAUSED)
+    """仅 running 时锁定到期时间与快捷预设；paused 可改时间后按新目标继续。"""
+    return state == STATE_RUNNING
 
 
 def format_remaining(total_seconds: int) -> str:

@@ -457,7 +457,7 @@ class CountdownApp:
         self.master.destroy()
 
     def _show_time_picker(self):
-        # running / paused 禁止改到期时间；idle / finished 可开
+        # 仅 running 禁止改到期时间；paused / idle / finished 可开
         if self._inputs_locked():
             return
         show_time_picker(self)

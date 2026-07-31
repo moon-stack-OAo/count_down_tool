@@ -410,6 +410,11 @@ def show_time_picker(app):
                 target = app.get_target_time()
                 if not target:
                     return
+                # 新目标覆盖冻结剩余
+                if hasattr(app, "_ctrl") and app._ctrl is not None:
+                    app._ctrl.clear_paused_remaining()
+                else:
+                    app._paused_remaining = None
                 app.target_time = target
                 app._record_duration_total(target)
                 app._set_state(ACTION_RESUME)

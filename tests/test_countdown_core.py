@@ -179,9 +179,9 @@ class TestRemainingFreeze(unittest.TestCase):
 
 
 class TestInputsLocked(unittest.TestCase):
-    def test_running_and_paused_locked(self):
+    def test_running_locked_paused_unlocked(self):
         self.assertTrue(inputs_locked_for_state(STATE_RUNNING))
-        self.assertTrue(inputs_locked_for_state(STATE_PAUSED))
+        self.assertFalse(inputs_locked_for_state(STATE_PAUSED))
 
     def test_idle_and_finished_unlocked(self):
         self.assertFalse(inputs_locked_for_state(STATE_IDLE))

@@ -231,6 +231,9 @@ class CountdownController:
             now = datetime.now()
             target = target_from_hms(h, m, s, now)
             app.target_time = target
+            # 暂停中改时间：丢弃冻结剩余，继续时按新 target 走
+            if app._state == STATE_PAUSED:
+                self.clear_paused_remaining()
             app.target_time_label.config(text=format_target_label(target, now))
         except (ValueError, TypeError, tk.TclError):
             # 输入中间态（空/非数字）时静默
@@ -541,9 +544,11 @@ class CountdownController:
             app._countdown_timer_id = None
 
         self.record_duration_total(target, now)
-        # 禁止直接写 _state；idle→START，finished→RESTART（running/paused 已锁定）
+        # 禁止直接写 _state；idle→START，finished→RESTART；paused→RESUME 按新目标
         if app._state == STATE_FINISHED:
             self.set_state(ACTION_RESTART)
+        elif app._state == STATE_PAUSED:
+            self.set_state(ACTION_RESUME)
         else:
             self.set_state(ACTION_START)
         self.update_countdown(target)
