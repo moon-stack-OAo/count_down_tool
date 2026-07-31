@@ -525,7 +525,7 @@ def _build_sound_section(app, parent, c, refreshers, win) -> None:
         _tray_refresh()
 
     def _import_sound():
-        # Windows 无边框设置窗会盖住系统文件框：选择期间先隐藏设置
+        # 选择文件期间先隐藏设置窗，避免挡住系统对话框；
         # parent 用 None，避免系统对话框挂在被隐藏的 Toplevel 上
         with temporary_withdraw(win):
             path = filedialog.askopenfilename(
@@ -862,6 +862,17 @@ def _build_system_section(app, parent, c, refreshers) -> None:
     )
     upd_lbl.pack(fill=tk.X)
 
+    tk.Label(
+        card,
+        text="手动检查请到「关于」页",
+        font=app._font("label", 9),
+        bg=c["card"],
+        fg=c["text_muted"],
+        anchor="w",
+        padx=SPACE_SM,
+        pady=(0, SPACE_XS),
+    ).pack(fill=tk.X)
+
     def _toggle_autostart():
         target = not is_autostart_enabled()
         ok = set_autostart(target)
@@ -939,7 +950,32 @@ def _build_about_section(app, parent, c) -> None:
         bg=c["card"],
         fg=c["text_dim"],
         anchor="w",
-    ).pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_XS, SPACE_MD))
+    ).pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_XS, SPACE_XS))
+
+    last_check_lbl = tk.Label(
+        card,
+        text="",
+        font=app._font("label", 9),
+        bg=c["card"],
+        fg=c["text_muted"],
+        anchor="w",
+    )
+    last_check_lbl.pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_MD))
+
+    def _refresh_last_check() -> None:
+        raw = str(getattr(app, "_last_update_check", "") or "").strip()
+        if raw:
+            # 配置存 ISO 日期；只展示日期部分
+            day = raw[:10] if len(raw) >= 10 else raw
+            text = f"上次检查：{day}"
+        else:
+            text = "尚未检查"
+        try:
+            last_check_lbl.config(text=text)
+        except tk.TclError:
+            pass
+
+    _refresh_last_check()
 
     btn_row = tk.Frame(card, bg=c["card"])
     btn_row.pack(fill=tk.X)
@@ -975,6 +1011,9 @@ def _build_about_section(app, parent, c) -> None:
             )
         except tk.TclError:
             return
+        # 检查结束后刷新「上次检查」（busy 阶段尚未写入）
+        if kind != "busy":
+            _refresh_last_check()
         # 有更新时露出「查看更新」
         try:
             if kind == "update":
