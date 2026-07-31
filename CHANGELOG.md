@@ -5,29 +5,9 @@
 
 ## [Unreleased]
 
-### 安全
-
-- **自动更新**：Windows 安装包解压防 Zip Slip（路径规范化 + 白名单）；有校验资产时强制 **SHA256**，无则告警后继续
-- **下载**：支持取消（进度窗关窗/取消按钮）；取消后清理半成品并释放更新占用
-
-### 工程
-
-- **模块再拆分**（公开 import 兼容）：
-  - `services/ncm/`、`services/sound/`、`core/update_impl/`、`ui/settings/`
-  - 门面：`core/update.py`、`ui/settings_window.py` 等保持原路径
-- **状态收敛**：`app/state.py`（`PersistedState` / `CountdownRuntime`）+ `app/protocols.py`；`app._xxx` 经 property 映射，配置 schema 不变
-- **自绘标题栏组件化**：`ui/chrome_titlebar.py`，完整窗与对话框共用
-- **依赖**：`requirements.txt`（运行时）/ `requirements-dev.txt`（pytest、pyinstaller、ruff）
-- **静态检查**：`pyproject.toml` + `ruff check .`；CI 测试前跑 ruff
-- **打包**：`scripts/pyinstaller_common.py` 统一 hiddenimports 与构建参数（本地脚本与 CI 共用）
-
-### 文档
-
-- README：开发依赖安装、Ruff、PyInstaller 维护说明；项目结构同步
-
 ## 1.4.0
 
-> 自 **1.3.0** 之后至本版的能力与修复统一发布为 **1.4.0**（原 1.3.1–1.3.35 条目已合并整理）。
+> 自 **1.3.0** 之后至本版的能力与修复统一发布为 **1.4.0**（原 1.3.1–1.3.35 条目已合并整理；含后续安全更新与工程拆分）。
 
 ### 功能
 
@@ -39,8 +19,14 @@
 - **运行日志**：用户目录 `app.log`（约 2MB 轮转、最多 3 备份）；`COUNT_DOWN_TOOL_LOG_LEVEL` 可调
 - **倒计时体验**：进度条；主按钮状态色；暂停冻结剩余时间；**仅 running 锁定**改时间，暂停后可选新目标再继续
 - **Mini**：可缩放并记忆尺寸；内容随窗缩放；字色按角色自定义；透明模式（Win 色键 / mac 系统透明）；快捷键 `T`
-- **更新**：检查 GitHub Release；启动检查 / 手动检查；忽略版本；Win 整目录安装；mac 下载安装包；标题 `NEW` 角标与托盘提示
+- **更新**：检查 GitHub Release；启动检查 / 手动检查；忽略版本；Win 整目录安装；mac 下载安装包；标题 `NEW` 角标与托盘提示；**下载可取消**
 - **菜单与入口**：完整窗右键；托盘（Windows）/ mac 菜单栏「设置」；时间选择器支持直接键入
+
+### 安全
+
+- **自动更新解压**：Windows 安装包防 Zip Slip（路径规范化 + 白名单）；解压后校验布局
+- **完整性**：有 Release 校验资产时强制 **SHA256**，无则告警后仅大小/zip 校验
+- **下载取消**：进度窗关窗/取消按钮中止下载，清理半成品并释放更新占用
 
 ### 修复
 
@@ -55,8 +41,13 @@
 ### 优化与工程
 
 - 结构拆分：`core/`、`app/`、`ui/`、`services/`；异常捕获收窄并补 debug 日志
-- 构建：产物 zip 带版本号；mac `.app` 写入真实版本与 ad-hoc 签名；arm64 / x86_64 分架构发布
-- 文档：README badges、Windows 包内 `readme.txt`、`scripts/clear_local_data.bat`
+- **模块再拆分**（公开 import 兼容）：`services/ncm/`、`services/sound/`、`core/update_impl/`、`ui/settings/`；门面路径保持不变
+- **状态收敛**：`app/state.py`（`PersistedState` / `CountdownRuntime`）+ `app/protocols.py`；`app._xxx` property 映射，配置 schema 不变
+- **自绘标题栏组件化**：`ui/chrome_titlebar.py`，完整窗与对话框共用
+- **依赖**：`requirements.txt`（运行时）/ `requirements-dev.txt`（pytest、pyinstaller、ruff）
+- **静态检查**：`pyproject.toml` + `ruff check .`；CI 测试前跑 ruff
+- **打包**：`scripts/pyinstaller_common.py` 统一 hiddenimports 与构建参数；产物 zip 带版本号；mac `.app` 写入真实版本与 ad-hoc 签名；arm64 / x86_64 分架构发布
+- 文档：README（开发依赖、Ruff、PyInstaller、项目结构）、Windows 包内 `readme.txt`、`scripts/clear_local_data.bat`
 - 单测与 CI 跨平台加固（startfile / killpg mock 等）
 
 ### 升级说明
