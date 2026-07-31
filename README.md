@@ -25,7 +25,7 @@
 - **主题切换**：石板青蓝、暗夜紫、暖琥珀、翠绿、浅色
 - **结束提醒**：内置预设音效 + 自定义文件（含 **`.ncm` 自动解密**）+ 历史记录；可静音
 - **透明 Mini**、跨平台 Windows / macOS / Linux
-- **检查更新**：可在启动时自动检查 GitHub Release，或在「关于」中手动检查；支持忽略版本
+- **检查更新**：可在启动时自动检查 GitHub Release，或在「关于」中手动检查；支持忽略版本；下载可取消；安装包解压路径校验（有 `.sha256` 时校验哈希）
 
 ---
 
@@ -145,19 +145,28 @@ open "/Applications/count_down_tool.app"
 
 ```
 count_down_tool/
-├── count_down_tool.py       # 入口
+├── count_down_tool.py       # 入口 + CountdownApp
 ├── requirements.txt         # 运行时依赖
 ├── requirements-dev.txt     # 开发/测试/打包依赖
+├── pyproject.toml           # Ruff 等工具配置
 ├── config.example.json
-├── docs/readme.txt           # Windows 发布包随附说明
-├── core/                    # 纯逻辑：倒计时、主题、字体、更新
-├── app/                     # 控制器、配置、主题/模式、窗口 chrome
-├── ui/                      # Full / Mini / 设置中心 / 时间选择器
-├── services/                # 托盘、音效、ncm、自启、更新、原生
-├── assets/                  # 图标、音效、字体
-├── scripts/                 # 打包与辅助脚本（含 pyinstaller_common.py）
+├── docs/readme.txt          # Windows 发布包随附说明
+├── core/                    # 纯逻辑：倒计时、主题、字体
+│   ├── update.py            # 更新 API 门面
+│   └── update_impl/         # 抓取 / 校验 / 下载 / 安全解压 / Win 替换
+├── app/                     # 控制器、配置、主题/模式、state、protocols
+├── ui/
+│   ├── chrome_titlebar.py   # 自绘标题栏公共组件
+│   ├── full_window.py / mini_window.py / …
+│   ├── settings_window.py   # 设置中心门面
+│   └── settings/            # 外观 / 声音 / 系统 / 关于 Tab
+├── services/
+│   ├── sound/ · ncm/        # 音效与 NCM（包内再拆，门面兼容）
+│   └── updater.py / tray.py / …
+├── assets/
+├── scripts/                 # 含 pyinstaller_common.py
 ├── tests/
-└── .github/workflows/       # CI 多平台构建与 Release
+└── .github/workflows/
 ```
 
 ---
@@ -189,8 +198,9 @@ ruff check .
 
 ## 技术栈
 
-- **GUI**：Tkinter
+- **GUI**：Tkinter（完整窗 / 对话框 Windows 自绘标题栏）
 - **托盘**：pystray（Windows；macOS 用菜单栏避免与 Tk 双循环冲突）
 - **图标 / 图像**：Pillow
-- **打包**：PyInstaller
-- **更新**：GitHub Releases API
+- **打包**：PyInstaller（`scripts/pyinstaller_common.py`）
+- **质量**：pytest、ruff
+- **更新**：GitHub Releases（可选 SHA256 资产校验）

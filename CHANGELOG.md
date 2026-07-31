@@ -5,6 +5,26 @@
 
 ## [Unreleased]
 
+### 安全
+
+- **自动更新**：Windows 安装包解压防 Zip Slip（路径规范化 + 白名单）；有校验资产时强制 **SHA256**，无则告警后继续
+- **下载**：支持取消（进度窗关窗/取消按钮）；取消后清理半成品并释放更新占用
+
+### 工程
+
+- **模块再拆分**（公开 import 兼容）：
+  - `services/ncm/`、`services/sound/`、`core/update_impl/`、`ui/settings/`
+  - 门面：`core/update.py`、`ui/settings_window.py` 等保持原路径
+- **状态收敛**：`app/state.py`（`PersistedState` / `CountdownRuntime`）+ `app/protocols.py`；`app._xxx` 经 property 映射，配置 schema 不变
+- **自绘标题栏组件化**：`ui/chrome_titlebar.py`，完整窗与对话框共用
+- **依赖**：`requirements.txt`（运行时）/ `requirements-dev.txt`（pytest、pyinstaller、ruff）
+- **静态检查**：`pyproject.toml` + `ruff check .`；CI 测试前跑 ruff
+- **打包**：`scripts/pyinstaller_common.py` 统一 hiddenimports 与构建参数（本地脚本与 CI 共用）
+
+### 文档
+
+- README：开发依赖安装、Ruff、PyInstaller 维护说明；项目结构同步
+
 ## 1.4.0
 
 > 自 **1.3.0** 之后至本版的能力与修复统一发布为 **1.4.0**（原 1.3.1–1.3.35 条目已合并整理）。
