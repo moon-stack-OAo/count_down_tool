@@ -9,6 +9,7 @@ import platform
 import tkinter as tk
 from datetime import datetime
 
+from app.timers import cancel_timer_attr
 from core.countdown_core import (
     STATE_FINISHED,
     STATE_RUNNING,
@@ -16,6 +17,7 @@ from core.countdown_core import (
     normalize_mini_size,
     parse_mini_geometry,
     parse_mini_size,
+    should_update_mini_countdown,
 )
 from services.windows_native import MINI_WINDOW_TITLE, set_tool_window, start_native_window_drag
 
@@ -324,13 +326,7 @@ def destroy_mini_window(app, capture_size=True):
     """
     if app.mini_window:
         # 取消未触发的 debounce，避免销毁后写盘
-        try:
-            tid = getattr(app, "_mini_geo_save_id", None)
-            if tid is not None:
-                app.master.after_cancel(tid)
-        except (tk.TclError, ValueError):
-            pass
-        app._mini_geo_save_id = None
+        cancel_timer_attr(app, "_mini_geo_save_id")
         try:
             if capture_size:
                 _capture_mini_geometry(app)
@@ -355,6 +351,9 @@ def destroy_mini_window(app, capture_size=True):
         app.mini_close_btn = None
         app._mini_layout_scale = None
         app._resize_data = None
+        # 重建后需强制同步
+        app._mini_sync_cache = None
+        app._mini_clock_hm = None
 
 
 def apply_mini_content_scale(app, width=None, height=None, force=False):
@@ -577,13 +576,7 @@ def _do_resize(app, event):
 
 def _schedule_save_mini_geometry(app):
     """debounce 写入 Mini 几何到配置，避免拖动过程中频繁 _save_config。"""
-    try:
-        tid = getattr(app, "_mini_geo_save_id", None)
-        if tid is not None:
-            app.master.after_cancel(tid)
-    except (tk.TclError, ValueError):
-        pass
-    app._mini_geo_save_id = None
+    cancel_timer_attr(app, "_mini_geo_save_id")
 
     def _flush():
         app._mini_geo_save_id = None
@@ -734,19 +727,62 @@ def mini_close(app):
         app._switch_to_full()
 
 
+def _countdown_color_role(state: str) -> str:
+    """状态 → Mini 倒计时字色角色。"""
+    if state == STATE_RUNNING:
+        return "countdown_running"
+    if state == STATE_FINISHED:
+        return "countdown_finished"
+    return "countdown_paused"
+
+
 def sync_mini_state(app):
-    """同步 mini 窗口的状态显示。"""
-    if app.mini_window and app.mini_countdown_label:
-        app.mini_countdown_label.config(text=app.countdown_text)
-        if app._state == STATE_RUNNING:
-            role = "countdown_running"
-        elif app._state == STATE_FINISHED:
-            role = "countdown_finished"
-        else:
-            role = "countdown_paused"
-        app.mini_countdown_label.config(fg=app.mini_text_fg(role))
-    if app.mini_window and getattr(app, "mini_time_label", None):
+    """同步 mini 窗口的状态显示（变更检测，避免每秒无意义 configure）。"""
+    if not app.mini_window:
+        return
+
+    text = app.countdown_text
+    state = app._state
+    role = _countdown_color_role(state)
+    try:
+        countdown_fg = app.mini_text_fg(role)
+        clock_fg = app.mini_text_fg("clock")
+    except (AttributeError, TypeError, KeyError, tk.TclError):
+        countdown_fg = None
+        clock_fg = None
+
+    # 缓存：(text, state, countdown_fg, clock_fg)；纯函数只比 (text, state)
+    prev_full = getattr(app, "_mini_sync_cache", None)
+    prev_ts = None
+    if isinstance(prev_full, tuple) and len(prev_full) >= 2:
+        prev_ts = (prev_full[0], prev_full[1])
+
+    need_countdown = should_update_mini_countdown(prev_ts, text, state)
+    # 同 state 下改字色（设置页）也需刷新
+    if (
+        not need_countdown
+        and prev_full is not None
+        and len(prev_full) >= 3
+        and prev_full[2] != countdown_fg
+    ):
+        need_countdown = True
+    need_clock_fg = (
+        prev_full is None
+        or len(prev_full) < 4
+        or prev_full[3] != clock_fg
+    )
+
+    if need_countdown and app.mini_countdown_label:
         try:
-            app.mini_time_label.config(fg=app.mini_text_fg("clock"))
+            app.mini_countdown_label.config(text=text, fg=countdown_fg)
         except tk.TclError:
             pass
+
+    if need_clock_fg and getattr(app, "mini_time_label", None):
+        try:
+            app.mini_time_label.config(fg=clock_fg)
+        except tk.TclError:
+            pass
+
+    if need_countdown or need_clock_fg:
+        app._mini_sync_cache = (text, state, countdown_fg, clock_fg)

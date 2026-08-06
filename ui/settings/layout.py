@@ -7,7 +7,7 @@ import platform
 import tkinter as tk
 
 from ui.design.tokens import SPACE_MD, SPACE_SM
-from ui.widgets import ThinScrollbar, make_pill
+from ui.widgets import ThinScrollbar, make_pill, make_settings_card
 
 
 def make_scroll_page(host: tk.Frame, app, c) -> tk.Frame:
@@ -179,16 +179,8 @@ def bind_wheel_tree(root: tk.Misc, canvas: tk.Canvas) -> None:
 
 
 def card(parent, c) -> tk.Frame:
-    card_f = tk.Frame(
-        parent,
-        bg=c["card"],
-        highlightbackground=c["border"],
-        highlightthickness=1,
-        padx=SPACE_MD,
-        pady=SPACE_SM,
-    )
-    card_f.pack(fill=tk.X, pady=(0, SPACE_MD))
-    return card_f
+    """设置分区卡片（委托通用 make_settings_card）。"""
+    return make_settings_card(parent, c)
 
 
 def pill(parent, text, *, app, c, primary=True, command=None):

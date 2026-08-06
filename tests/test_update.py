@@ -18,6 +18,7 @@ import urllib.error
 
 from core.update import (
     DownloadCancelled,
+    MissingUpdateSha256Error,
     ReleaseInfo,
     _format_http_error,
     _synthetic_assets,
@@ -34,6 +35,7 @@ from core.update import (
     parse_sha256_text,
     parse_version,
     platform_asset_suffix,
+    require_expected_sha256,
     select_asset,
     validate_windows_extract_layout,
     verify_file_sha256,
@@ -438,6 +440,179 @@ class TestSha256Helpers(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 verify_file_sha256(path, "b" * 64)
             self.assertFalse(os.path.isfile(path))
+
+    def test_require_expected_sha256_blocks_missing(self):
+        """无 sha256 / 非法格式：不可走安装路径。"""
+        with self.assertRaises(MissingUpdateSha256Error) as ctx:
+            require_expected_sha256(None, asset_name="pkg.zip")
+        self.assertIn("SHA256", str(ctx.exception))
+        with self.assertRaises(MissingUpdateSha256Error):
+            require_expected_sha256("", asset_name="pkg.zip")
+        with self.assertRaises(MissingUpdateSha256Error):
+            require_expected_sha256("not-a-hash", asset_name="pkg.zip")
+        with self.assertRaises(MissingUpdateSha256Error):
+            require_expected_sha256("abc", asset_name="pkg.zip")
+
+    def test_require_expected_sha256_accepts_valid(self):
+        """有有效 sha256：允许进入下载/安装路径（返回规范化哈希）。"""
+        h = "A" * 64
+        self.assertEqual(require_expected_sha256(h, asset_name="pkg.zip"), "a" * 64)
+        self.assertEqual(
+            require_expected_sha256("b" * 64),
+            "b" * 64,
+        )
+
+
+class TestInAppUpdateRequiresSha256(unittest.TestCase):
+    """应用内下载/安装入口：无 SHA256 不得调用 download_file / apply。"""
+
+    def _make_result(self, **kwargs):
+        release = ReleaseInfo(
+            version="9.9.9",
+            tag_name="v9.9.9",
+            body="notes",
+            html_url="https://github.com/example/releases/tag/v9.9.9",
+            assets=(
+                {
+                    "name": "count_down_tool-9.9.9-win64.zip",
+                    "browser_download_url": "https://example.com/w.zip",
+                    "size": 10,
+                },
+            ),
+        )
+        from core.update import UpdateCheckResult
+
+        base = dict(
+            has_update=True,
+            current_version="1.0.0",
+            latest_version="9.9.9",
+            release=release,
+            asset_name="count_down_tool-9.9.9-win64.zip",
+            asset_url="https://example.com/w.zip",
+            asset_size=10,
+            platform_key="windows",
+            error=None,
+        )
+        base.update(kwargs)
+        return UpdateCheckResult(**base)
+
+    def _attach_ui_actions(self, app, *, progress_win=None):
+        """services 经 app.ui_actions 触达 UI（不再 patch ui.* 模块路径）。"""
+        ui = mock.MagicMock()
+        ui.show_update_progress.return_value = progress_win or object()
+        app.ui_actions = ui
+        return ui
+
+    def test_windows_install_no_sha256_skips_download(self):
+        from services import updater as upd
+
+        app = mock.MagicMock()
+        app.master.after = mock.MagicMock(side_effect=lambda _ms, fn: fn())
+        ui = self._attach_ui_actions(app)
+        result = self._make_result()
+        with mock.patch.object(upd, "_try_begin_update", return_value=True), mock.patch.object(
+            upd.core_update,
+            "resolve_expected_sha256",
+            return_value=None,
+        ), mock.patch.object(
+            upd.core_update,
+            "download_file",
+        ) as dl, mock.patch.object(
+            upd.core_update,
+            "apply_windows_update_from_zip",
+        ) as apply_fn, mock.patch.object(
+            upd,
+            "webbrowser",
+        ) as wb, mock.patch(
+            "threading.Thread",
+        ) as th:
+            # 同步执行 worker
+            th.side_effect = lambda target=None, daemon=None, name=None: mock.Mock(
+                start=lambda: target() if target else None
+            )
+            upd._start_windows_install(app, result)
+        dl.assert_not_called()
+        apply_fn.assert_not_called()
+        ui.show_error.assert_called()
+        wb.open.assert_called()
+        self.assertIn(
+            "SHA256",
+            str(ui.show_error.call_args[0][1]) if ui.show_error.call_args else "",
+        )
+
+    def test_windows_install_with_sha256_downloads(self):
+        from services import updater as upd
+
+        digest = "c" * 64
+        app = mock.MagicMock()
+        app.master.after = mock.MagicMock(side_effect=lambda _ms, fn: fn())
+        self._attach_ui_actions(app)
+        result = self._make_result()
+        with mock.patch.object(upd, "_try_begin_update", return_value=True), mock.patch.object(
+            upd.core_update,
+            "resolve_expected_sha256",
+            return_value=digest,
+        ), mock.patch.object(
+            upd.core_update,
+            "download_file",
+            return_value=r"C:\Temp\pkg.zip",
+        ) as dl, mock.patch.object(
+            upd.core_update,
+            "apply_windows_update_from_zip",
+        ) as apply_fn, mock.patch(
+            "threading.Thread",
+        ) as th:
+            th.side_effect = lambda target=None, daemon=None, name=None: mock.Mock(
+                start=lambda: target() if target else None
+            )
+            upd._start_windows_install(app, result)
+        dl.assert_called_once()
+        kwargs = dl.call_args.kwargs if dl.call_args.kwargs else {}
+        # expected_sha256 必须传入有效哈希
+        pos_or_kw = (
+            dl.call_args.kwargs.get("expected_sha256")
+            if dl.call_args.kwargs
+            else None
+        )
+        if pos_or_kw is None and dl.call_args.args:
+            # 位置参数：url, path, ... 不一定含 sha
+            pos_or_kw = kwargs.get("expected_sha256")
+        self.assertEqual(
+            dl.call_args.kwargs.get("expected_sha256")
+            or (dl.call_args[1].get("expected_sha256") if len(dl.call_args) > 1 else None),
+            digest,
+        )
+        apply_fn.assert_called_once()
+
+    def test_mac_download_no_sha256_skips_download(self):
+        from services import updater as upd
+
+        app = mock.MagicMock()
+        app.master.after = mock.MagicMock(side_effect=lambda _ms, fn: fn())
+        ui = self._attach_ui_actions(app)
+        result = self._make_result(
+            asset_name="count_down_tool-9.9.9-mac-arm64.zip",
+        )
+        with mock.patch.object(upd, "_try_begin_update", return_value=True), mock.patch.object(
+            upd.core_update,
+            "resolve_expected_sha256",
+            return_value=None,
+        ), mock.patch.object(
+            upd.core_update,
+            "download_file",
+        ) as dl, mock.patch.object(
+            upd,
+            "webbrowser",
+        ) as wb, mock.patch(
+            "threading.Thread",
+        ) as th:
+            th.side_effect = lambda target=None, daemon=None, name=None: mock.Mock(
+                start=lambda: target() if target else None
+            )
+            upd._start_mac_download(app, result)
+        dl.assert_not_called()
+        ui.show_error.assert_called()
+        wb.open.assert_called()
 
 
 class TestCheckForUpdate(unittest.TestCase):

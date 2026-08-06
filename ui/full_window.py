@@ -62,6 +62,12 @@ def setup_styles(app):
                     foreground=c["text_dim"], background=c["glass"])
     style.configure("MetaMuted.TLabel", font=app._font("label", 8),
                     foreground=c["text_muted"], background=c["glass"])
+    # 结束闪烁：预注册奇偶色，flash_visual 只切换 style
+    style.configure("FlashEven.TLabel", font=app.FONTS["countdown"],
+                    foreground=c["success"], background=c["glass"])
+    style.configure("FlashOdd.TLabel", font=app.FONTS["countdown"],
+                    foreground=c["error"], background=c["glass"])
+    # 兼容旧 style 名（等同奇数帧 error 色）
     style.configure("Flash.TLabel", font=app.FONTS["countdown"],
                     foreground=c["error"], background=c["glass"])
 

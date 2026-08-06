@@ -14,6 +14,7 @@ if _ROOT not in sys.path:
 from core.countdown_core import APP_NAME, APP_NAME_EN
 from services.windows_native import (
     MINI_WINDOW_TITLE,
+    SHOW_POLL_INTERVAL_MS,
     SHOW_REQUEST_NAME,
     clear_stale_show_request,
     consume_show_request,
@@ -96,6 +97,14 @@ class TestShowRequestProtocol(unittest.TestCase):
             body = f.read().strip()
         self.assertTrue(body)
         float(body)  # 时间戳
+
+
+class TestShowPollInterval(unittest.TestCase):
+    def test_show_poll_interval_in_range(self):
+        # 二次启动唤起延迟上限：1–2s，默认 1.5s
+        self.assertIsInstance(SHOW_POLL_INTERVAL_MS, int)
+        self.assertGreaterEqual(SHOW_POLL_INTERVAL_MS, 1000)
+        self.assertLessEqual(SHOW_POLL_INTERVAL_MS, 2000)
 
 
 if __name__ == "__main__":

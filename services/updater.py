@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""自动更新 UI 编排：启动检查、手动检查、下载与 Windows 替换。"""
+"""自动更新 UI 编排：启动检查、手动检查、下载与 Windows 替换。
+
+UI 仅经 app.ui_actions，本模块不 import ui。
+"""
 
 from __future__ import annotations
 
@@ -7,6 +10,7 @@ import logging
 import os
 import threading
 import time
+import tkinter as tk
 import webbrowser
 from datetime import date
 from typing import Callable, Optional
@@ -32,6 +36,10 @@ _DOWNLOAD_CANCEL: Optional[threading.Event] = None
 StatusCb = Optional[Callable[[str, str], None]]
 
 
+def _ui(app):
+    return getattr(app, "ui_actions", None)
+
+
 def schedule_startup_check(app) -> None:
     """若开启自动检查且今日未查过，则延迟后台检查。"""
     if not getattr(app, "_check_update_on_start", True):
@@ -42,11 +50,19 @@ def schedule_startup_check(app) -> None:
         return
 
     def _kick():
+        try:
+            app._startup_update_timer_id = None
+        except (AttributeError, TypeError):
+            pass
         run_update_check(app, manual=False)
 
     try:
-        app.master.after(_STARTUP_DELAY_MS, _kick)
-    except (RuntimeError, AttributeError):
+        app._startup_update_timer_id = app.master.after(_STARTUP_DELAY_MS, _kick)
+    except (RuntimeError, AttributeError, tk.TclError):
+        try:
+            app._startup_update_timer_id = None
+        except (AttributeError, TypeError):
+            pass
         logger.debug("调度启动更新检查失败", exc_info=True)
 
 
@@ -103,11 +119,14 @@ def _request_download_cancel() -> None:
 def _resolve_download_sha256(result: core_update.UpdateCheckResult) -> Optional[str]:
     """
     若 Release 存在对应 sha256 资产则返回哈希（下载后强制校验）；
-    若不存在则 warning 并返回 None（不阻断现有用户）。
+    若不存在或解析失败则 warning 并返回 None（调用方须阻断应用内下载/安装）。
     """
     name = (result.asset_name or "").strip()
     url = (result.asset_url or "").strip()
     if not name or not url:
+        logger.warning(
+            "缺少更新资产名/URL，无法解析 SHA256，禁止应用内下载安装"
+        )
         return None
     try:
         digest = core_update.resolve_expected_sha256(
@@ -116,15 +135,36 @@ def _resolve_download_sha256(result: core_update.UpdateCheckResult) -> Optional[
             release=result.release,
         )
     except (OSError, RuntimeError, ValueError, TypeError) as exc:
-        logger.warning("解析 SHA256 校验源失败，将跳过哈希校验: %s", exc)
+        logger.warning(
+            "解析 SHA256 校验源失败，禁止应用内下载安装: %s",
+            exc,
+        )
         return None
     if digest:
         return digest
     logger.warning(
-        "Release 未提供 %s 的 SHA256 资产，仅做大小校验（建议发布时附带 .sha256）",
+        "Release 未提供 %s 的 SHA256 资产，禁止应用内静默下载/安装"
+        "（请发布时附带 .sha256；用户将改为浏览器手动下载）",
         name,
     )
     return None
+
+
+def _release_page_url(result: core_update.UpdateCheckResult) -> str:
+    """发布页 URL：优先当前 Release 页，否则仓库 Releases 列表。"""
+    if result.release and getattr(result.release, "html_url", None):
+        return str(result.release.html_url)
+    return core_update.GITHUB_RELEASES_PAGE
+
+
+def _open_release_in_browser(result: core_update.UpdateCheckResult) -> str:
+    """打开 Release/下载页，返回实际打开的 URL。"""
+    url = _release_page_url(result)
+    try:
+        webbrowser.open(url)
+    except Exception:
+        logger.debug("打开浏览器失败: %s", url, exc_info=True)
+    return url
 
 
 def _make_throttled_progress(app, progress_win, update_progress_fn) -> Callable[[int, int], None]:
@@ -176,9 +216,9 @@ def run_update_check(
             _emit_status(status_cb, "正在检查更新，请稍候…", "busy")
         elif manual:
             def _busy():
-                from ui.app_dialogs import show_info
-
-                show_info(app, "正在检查更新，请稍候…")
+                ui = _ui(app)
+                if ui is not None:
+                    ui.show_info(app, "正在检查更新，请稍候…")
 
             try:
                 app.master.after(0, _busy)
@@ -222,9 +262,9 @@ def set_pending_update(app, result: Optional[core_update.UpdateCheckResult]) -> 
     """缓存待处理更新并刷新完整窗标题 NEW 角标。"""
     app._pending_update_result = result if (result and result.has_update) else None
     try:
-        from ui.full_window import refresh_update_badge
-
-        refresh_update_badge(app)
+        ui = _ui(app)
+        if ui is not None:
+            ui.refresh_update_badge(app)
     except Exception:
         # UI 刷新边界，异常类型不可控
         logger.debug("刷新更新角标失败", exc_info=True)
@@ -256,12 +296,12 @@ def _on_check_done(
         if status_cb:
             _emit_status(status_cb, msg, "error")
         elif manual:
-            from ui.app_dialogs import show_error
-
-            show_error(
-                app,
-                f"检查更新失败：\n{result.error}\n\n也可手动打开：\n{core_update.GITHUB_RELEASES_PAGE}",
-            )
+            ui = _ui(app)
+            if ui is not None:
+                ui.show_error(
+                    app,
+                    f"检查更新失败：\n{result.error}\n\n也可手动打开：\n{core_update.GITHUB_RELEASES_PAGE}",
+                )
         return
 
     if not result.has_update:
@@ -274,12 +314,12 @@ def _on_check_done(
         if status_cb:
             _emit_status(status_cb, msg, "ok")
         elif manual:
-            from ui.app_dialogs import show_info
-
-            show_info(
-                app,
-                f"当前已是最新版本。\n\n本地：{result.current_version}\n远程：{result.latest_version or '—'}",
-            )
+            ui = _ui(app)
+            if ui is not None:
+                ui.show_info(
+                    app,
+                    f"当前已是最新版本。\n\n本地：{result.current_version}\n远程：{result.latest_version or '—'}",
+                )
         return
 
     notes = ""
@@ -318,7 +358,10 @@ def _notify_update_available(app, result: core_update.UpdateCheckResult) -> None
 
 def _prompt_update(app, result: core_update.UpdateCheckResult, notes: str) -> None:
     """产品化更新对话框。"""
-    from ui.update_dialog import show_update_available
+    ui = _ui(app)
+    if ui is None:
+        logger.debug("ui_actions 未装配，跳过更新提示")
+        return
 
     ver = result.latest_version
 
@@ -344,24 +387,24 @@ def _prompt_update(app, result: core_update.UpdateCheckResult, notes: str) -> No
                 logger.debug("清除忽略版本保存失败", exc_info=True)
 
         if action == "browser" or not result.asset_url:
-            webbrowser.open(
-                result.release.html_url if result.release else core_update.GITHUB_RELEASES_PAGE
-            )
+            _open_release_in_browser(result)
             return
         if action == "install":
             _start_windows_install(app, result)
         elif action == "download_only":
             _start_mac_download(app, result)
 
-    show_update_available(app, result, notes, on_action=on_action)
+    ui.show_update_available(app, result, notes, on_action=on_action)
 
 
 def _notify_update_busy(app) -> None:
     """下载/安装已在进行时的轻量提示。"""
     try:
-        from ui.app_dialogs import show_info
-
-        app.master.after(0, lambda: show_info(app, "正在下载或安装更新，请稍候…"))
+        ui = _ui(app)
+        if ui is not None:
+            app.master.after(
+                0, lambda: ui.show_info(app, "正在下载或安装更新，请稍候…")
+            )
     except Exception:
         logger.debug("更新忙碌提示失败", exc_info=True)
 
@@ -374,24 +417,34 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
         _notify_update_busy(app)
         return
 
-    from ui.update_dialog import close_progress, show_update_progress, update_progress
+    ui = _ui(app)
+    if ui is None:
+        _end_update()
+        logger.debug("ui_actions 未装配，跳过 Windows 安装")
+        return
 
     cancel_event = threading.Event()
     _DOWNLOAD_CANCEL = cancel_event
 
-    progress_win = show_update_progress(
+    progress_win = ui.show_update_progress(
         app,
         "正在下载更新",
         "下载完成后将自动安装并重启，请稍候…",
         on_cancel=_request_download_cancel,
         allow_cancel=True,
     )
-    progress_cb = _make_throttled_progress(app, progress_win, update_progress)
+    progress_cb = _make_throttled_progress(app, progress_win, ui.update_progress)
 
     def worker():
         err: Optional[str] = None
         cancelled = False
+        missing_sha = False
         try:
+            # 无有效 SHA256：禁止应用内下载与覆盖安装目录
+            expected_sha = core_update.require_expected_sha256(
+                _resolve_download_sha256(result),
+                asset_name=result.asset_name or "",
+            )
             tmp_dir = os.path.join(
                 os.environ.get("TEMP") or os.environ.get("TMP") or ".",
                 "count_down_tool_update",
@@ -402,7 +455,6 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
                 result.asset_name or f"count_down_tool-{result.latest_version}-win64.zip",
             )
 
-            expected_sha = _resolve_download_sha256(result)
             core_update.download_file(
                 result.asset_url,
                 zip_path,
@@ -414,6 +466,10 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
             if cancel_event.is_set():
                 raise core_update.DownloadCancelled("下载已取消")
             core_update.apply_windows_update_from_zip(zip_path)
+        except core_update.MissingUpdateSha256Error as exc:
+            logger.warning("Windows 更新因缺少 SHA256 已阻断: %s", exc)
+            missing_sha = True
+            err = str(exc)
         except core_update.DownloadCancelled as exc:
             logger.info("Windows 更新下载已取消: %s", exc)
             cancelled = True
@@ -426,16 +482,22 @@ def _start_windows_install(app, result: core_update.UpdateCheckResult) -> None:
             # 成功退出前也释放标志（进程将结束；失败/取消路径需允许重试）
             if err:
                 _end_update()
-            close_progress(progress_win)
+            ui.close_progress(progress_win)
             if cancelled:
                 return
             if err:
-                from ui.app_dialogs import show_error
-
-                show_error(
-                    app,
-                    f"更新失败：\n{err}\n\n可手动下载：\n{core_update.GITHUB_RELEASES_PAGE}",
-                )
+                page = _release_page_url(result)
+                if missing_sha:
+                    ui.show_error(
+                        app,
+                        f"{err}\n\n将打开发布页供手动下载：\n{page}",
+                    )
+                    _open_release_in_browser(result)
+                else:
+                    ui.show_error(
+                        app,
+                        f"更新失败：\n{err}\n\n可手动下载：\n{page}",
+                    )
                 return
             # 成功启动替换脚本，退出应用
             try:
@@ -465,30 +527,39 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
         _notify_update_busy(app)
         return
 
-    from ui.update_dialog import close_progress, show_update_progress, update_progress
+    ui = _ui(app)
+    if ui is None:
+        _end_update()
+        logger.debug("ui_actions 未装配，跳过 macOS 下载")
+        return
 
     cancel_event = threading.Event()
     _DOWNLOAD_CANCEL = cancel_event
 
-    progress_win = show_update_progress(
+    progress_win = ui.show_update_progress(
         app,
         "正在下载更新包",
         "将保存到「下载」文件夹，完成后可手动替换 App。",
         on_cancel=_request_download_cancel,
         allow_cancel=True,
     )
-    progress_cb = _make_throttled_progress(app, progress_win, update_progress)
+    progress_cb = _make_throttled_progress(app, progress_win, ui.update_progress)
 
     def worker():
         err: Optional[str] = None
         cancelled = False
+        missing_sha = False
         dest = ""
         try:
+            # 无有效 SHA256：禁止应用内静默下载
+            expected_sha = core_update.require_expected_sha256(
+                _resolve_download_sha256(result),
+                asset_name=result.asset_name or "",
+            )
             folder = core_update.default_download_dir()
             name = result.asset_name or f"count_down_tool-{result.latest_version}.zip"
             dest = os.path.join(folder, name)
 
-            expected_sha = _resolve_download_sha256(result)
             core_update.download_file(
                 result.asset_url,
                 dest,
@@ -497,6 +568,10 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
                 expected_sha256=expected_sha,
                 cancel_event=cancel_event,
             )
+        except core_update.MissingUpdateSha256Error as exc:
+            logger.warning("macOS 下载因缺少 SHA256 已阻断: %s", exc)
+            missing_sha = True
+            err = str(exc)
         except core_update.DownloadCancelled as exc:
             logger.info("macOS 更新下载已取消: %s", exc)
             cancelled = True
@@ -507,20 +582,24 @@ def _start_mac_download(app, result: core_update.UpdateCheckResult) -> None:
 
         def done():
             _end_update()
-            close_progress(progress_win)
+            ui.close_progress(progress_win)
             if cancelled:
                 return
             if err:
-                from ui.app_dialogs import show_error
-
-                show_error(
-                    app,
-                    f"下载失败：\n{err}\n\n可手动打开：\n{core_update.GITHUB_RELEASES_PAGE}",
-                )
+                page = _release_page_url(result)
+                if missing_sha:
+                    ui.show_error(
+                        app,
+                        f"{err}\n\n将打开发布页供手动下载：\n{page}",
+                    )
+                    _open_release_in_browser(result)
+                else:
+                    ui.show_error(
+                        app,
+                        f"下载失败：\n{err}\n\n可手动打开：\n{page}",
+                    )
                 return
-            from ui.app_dialogs import show_info
-
-            show_info(
+            ui.show_info(
                 app,
                 f"已下载到：\n{dest}\n\n请解压后手动替换 count_down_tool.app。",
             )

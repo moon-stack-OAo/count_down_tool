@@ -10,7 +10,7 @@ import webbrowser
 
 from core.countdown_core import APP_NAME, __version__
 from core.update import GITHUB_RELEASES_PAGE
-from ui.app_dialogs import show_error, show_info, show_log_viewer
+from ui.app_dialogs import show_error, show_log_viewer
 from ui.design.tokens import SETTINGS_WIDTH, SPACE_MD, SPACE_SM, SPACE_XS
 from ui.settings.layout import card, pill
 
@@ -185,12 +185,17 @@ def build_about_section(app, parent, c) -> None:
             root.clipboard_clear()
             root.clipboard_append(text)
             root.update_idletasks()
-            show_info(
-                app,
-                "版本信息已复制到剪贴板。",
-                title="已复制",
-                parent=parent_win or app.master,
-            )
+            from ui.settings.shell import show_settings_toast
+
+            if not show_settings_toast(app, "版本信息已复制到剪贴板"):
+                from ui.app_dialogs import show_info
+
+                show_info(
+                    app,
+                    "版本信息已复制到剪贴板。",
+                    title="已复制",
+                    parent=parent_win or app.master,
+                )
         except (tk.TclError, AttributeError, TypeError, RuntimeError) as exc:
             logger.debug("复制版本信息失败", exc_info=True)
             show_error(

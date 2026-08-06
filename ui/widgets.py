@@ -3,6 +3,8 @@
 
 import tkinter as tk
 
+from ui.design.tokens import SPACE_MD, SPACE_SM
+
 
 class RoundedFrame(tk.Canvas):
     """圆角卡片容器"""
@@ -221,6 +223,39 @@ def update_circle_button(canvas, item_ids, fill=None, text=None, text_color=None
             canvas.itemconfig(text_id, fill=text_color)
         if text is not None:
             canvas.itemconfig(text_id, text=text)
+
+
+def make_settings_card(
+    parent,
+    c,
+    *,
+    pack: bool = True,
+    fill: str = "x",
+    expand: bool = False,
+    padx_inner=None,
+    pady_inner=None,
+) -> tk.Frame:
+    """设置中心风格卡片：card 底 + border 描边 + 内边距。
+
+    设置 Tab 与 app_dialogs 弹窗内容区共用，保证观感一致。
+    """
+    colors = c if isinstance(c, dict) else {}
+    inner_x = SPACE_MD if padx_inner is None else padx_inner
+    inner_y = SPACE_SM if pady_inner is None else pady_inner
+    card_f = tk.Frame(
+        parent,
+        bg=colors.get("card", "#1A2332"),
+        highlightbackground=colors.get("border", "#2A3A4E"),
+        highlightthickness=1,
+        padx=inner_x,
+        pady=inner_y,
+    )
+    if pack:
+        kwargs = {"fill": fill, "pady": (0, SPACE_MD)}
+        if expand:
+            kwargs["expand"] = True
+        card_f.pack(**kwargs)
+    return card_f
 
 
 def make_pill(

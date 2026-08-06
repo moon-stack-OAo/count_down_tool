@@ -10,7 +10,7 @@ import subprocess
 import tkinter as tk
 
 from services.autostart import is_autostart_enabled, set_autostart
-from ui.app_dialogs import show_error, show_info
+from ui.app_dialogs import show_error
 from ui.design.tokens import SPACE_SM, SPACE_XS
 from ui.settings.layout import card, pill
 
@@ -154,12 +154,17 @@ def build_system_section(app, parent, c, refreshers) -> None:
 
         try:
             reset_mini_layout(app)
-            show_info(
-                app,
-                "已恢复 Mini 默认位置与大小。",
-                title="已重置",
-                parent=win or app.master,
-            )
+            from ui.settings.shell import show_settings_toast
+
+            if not show_settings_toast(app, "已恢复 Mini 默认位置与大小"):
+                from ui.app_dialogs import show_info
+
+                show_info(
+                    app,
+                    "已恢复 Mini 默认位置与大小。",
+                    title="已重置",
+                    parent=win or app.master,
+                )
         except (tk.TclError, AttributeError, OSError, RuntimeError) as exc:
             logger.debug("重置 Mini 布局失败", exc_info=True)
             show_error(
@@ -217,12 +222,19 @@ def build_system_section(app, parent, c, refreshers) -> None:
         except (ImportError, AttributeError, RuntimeError, TypeError):
             pass
         _refresh()
-        show_info(
-            app,
-            "已清除忽略的更新版本。\n下次检查更新时将重新提示。",
-            title="已清除",
-            parent=win or app.master,
-        )
+        from ui.settings.shell import show_settings_toast
+
+        if not show_settings_toast(
+            app, "已清除忽略版本，下次检查更新时将重新提示"
+        ):
+            from ui.app_dialogs import show_info
+
+            show_info(
+                app,
+                "已清除忽略的更新版本。\n下次检查更新时将重新提示。",
+                title="已清除",
+                parent=win or app.master,
+            )
 
     clear_ign_btn = pill(
         ign_btn_row,

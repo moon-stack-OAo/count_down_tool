@@ -153,6 +153,32 @@ def next_second_delay_ms(now: Optional[datetime] = None) -> int:
     return delay
 
 
+def should_update_mini_countdown(
+    prev: Optional[Tuple[str, str]],
+    text: str,
+    state: str,
+) -> bool:
+    """Mini 倒计时标签是否需 configure。
+
+    prev 为上次同步的 (countdown_text, _state)；None 表示首次/强制刷新。
+    颜色角色由 state 推导，故 state 变化即覆盖 role 变化。
+    """
+    if prev is None:
+        return True
+    try:
+        prev_text, prev_state = prev
+    except (TypeError, ValueError):
+        return True
+    return prev_text != text or prev_state != state
+
+
+def should_update_mini_clock(prev_hm: Optional[str], hm: str) -> bool:
+    """Mini 时钟（仅 %H:%M）是否需 configure；分钟未变则跳过。"""
+    if prev_hm is None:
+        return True
+    return prev_hm != hm
+
+
 def validate_hms(
     hour: Any, minute: Any, second: Any
 ) -> Tuple[bool, Optional[str]]:

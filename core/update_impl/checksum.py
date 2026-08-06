@@ -96,6 +96,28 @@ def verify_file_sha256(path: str, expected_sha256: str) -> str:
     return actual
 
 
+class MissingUpdateSha256Error(RuntimeError):
+    """Release 未提供可用 SHA256，禁止应用内静默下载/安装。"""
+
+
+def require_expected_sha256(
+    expected_sha256: Optional[str],
+    asset_name: str = "",
+) -> str:
+    """
+    应用内下载/安装必须提供有效 SHA256。
+    返回规范化（小写）哈希；缺失或格式无效则抛 MissingUpdateSha256Error。
+    """
+    digest = (expected_sha256 or "").strip().lower()
+    if re.fullmatch(r"[0-9a-f]{64}", digest):
+        return digest
+    name = (asset_name or "").strip() or "安装包"
+    raise MissingUpdateSha256Error(
+        f"Release 未提供 {name} 的有效 SHA256 校验，"
+        f"为安全起见已禁止应用内自动下载/安装。请从发布页手动下载。"
+    )
+
+
 def resolve_expected_sha256(
     asset_name: str,
     asset_url: str,
@@ -104,7 +126,8 @@ def resolve_expected_sha256(
 ) -> Optional[str]:
     """
     尝试从 GitHub Release 获取同名 .sha256 或 SHA256SUMS 类资产中的哈希。
-    找到则返回 64 位十六进制；找不到返回 None（调用方应 warning 后继续）。
+    找到则返回 64 位十六进制；找不到返回 None
+   （调用方应对应用内下载/安装路径强制阻断，并引导用户走浏览器）。
     """
     name = (asset_name or "").strip()
     if not name:

@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 from core.update_impl.checksum import (
+    MissingUpdateSha256Error,
     file_sha256,
     parse_sha256_text,
+    require_expected_sha256,
     resolve_expected_sha256,
     verify_file_sha256,
 )
@@ -83,6 +85,8 @@ __all__ = [
     "file_sha256",
     "parse_sha256_text",
     "verify_file_sha256",
+    "MissingUpdateSha256Error",
+    "require_expected_sha256",
     "resolve_expected_sha256",
     "download_file",
     "is_allowed_extract_member",

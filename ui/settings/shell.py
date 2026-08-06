@@ -8,7 +8,7 @@ import tkinter as tk
 
 from core.countdown_core import APP_NAME
 from ui.app_dialogs import show_error
-from ui.design.tokens import SETTINGS_HEIGHT, SETTINGS_WIDTH
+from ui.design.tokens import SETTINGS_HEIGHT, SETTINGS_WIDTH, SPACE_MD, SPACE_SM
 from ui.settings.about_tab import build_about_section
 from ui.settings.appearance import build_appearance_section
 from ui.settings.layout import bind_wheel_tree, make_scroll_page
@@ -20,6 +20,7 @@ from ui.window_chrome_dialog import ensure_dialog_visible
 logger = logging.getLogger("count_down_tool")
 
 _SETTINGS_TAB_KEYS = frozenset({"appearance", "sound", "system", "about"})
+_TOAST_DEFAULT_MS = 2200
 
 
 def close_settings(app) -> None:
@@ -78,6 +79,77 @@ def get_settings_open_tab(app) -> str | None:
         return None
     tab = getattr(win, "_settings_tab", None)
     return _normalize_settings_tab(tab) if tab else "appearance"
+
+
+def show_settings_toast(
+    app,
+    message: str,
+    *,
+    kind: str = "ok",
+    duration_ms: int = _TOAST_DEFAULT_MS,
+) -> bool:
+    """设置中心底部轻提示（不弹窗）。
+
+    kind: ok / info / error（影响文字颜色）。
+    设置窗未打开时返回 False，调用方可回退到 show_info。
+    """
+    win = getattr(app, "_settings_window", None)
+    if win is None:
+        return False
+    try:
+        if not win.winfo_exists():
+            return False
+    except tk.TclError:
+        return False
+
+    toast = getattr(win, "_settings_toast", None)
+    if toast is None:
+        return False
+
+    c = getattr(app, "COLORS", {}) or {}
+    kind_l = (kind or "ok").lower()
+    if kind_l == "error":
+        fg = c.get("error", "#FB7185")
+    elif kind_l == "info":
+        fg = c.get("text_dim", c.get("text", "#F1F5F9"))
+    else:
+        fg = c.get("success", c.get("accent_glow", c.get("accent", "#38BDF8")))
+
+    text = (message or "").replace("\n", " ").strip()
+    if len(text) > 80:
+        text = text[:77] + "…"
+
+    try:
+        toast.config(text=text, fg=fg)
+    except tk.TclError:
+        return False
+
+    # 取消上一次自动清空
+    prev = getattr(win, "_settings_toast_after", None)
+    if prev is not None:
+        try:
+            win.after_cancel(prev)
+        except (tk.TclError, ValueError):
+            pass
+        win._settings_toast_after = None  # type: ignore[attr-defined]
+
+    def _clear():
+        try:
+            if getattr(app, "_settings_window", None) is win and win.winfo_exists():
+                toast.config(text="")
+        except tk.TclError:
+            pass
+        try:
+            win._settings_toast_after = None  # type: ignore[attr-defined]
+        except (tk.TclError, AttributeError):
+            pass
+
+    try:
+        ms = max(800, int(duration_ms))
+        win._settings_toast_after = win.after(ms, _clear)  # type: ignore[attr-defined]
+    except (tk.TclError, ValueError, TypeError):
+        pass
+    return True
 
 
 def _show_settings_impl(app, initial_tab: str | None = None) -> None:
@@ -144,6 +216,24 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
     tab_bar = tk.Frame(shell, bg=c.get("title_bar", c["bg"]))
     tab_bar.pack(fill=tk.X, side=tk.TOP)
     tk.Frame(shell, bg=c["accent"], height=2).pack(fill=tk.X, side=tk.TOP)
+
+    # 底部轻提示（先 pack TOP 的 page 会占满；toast 用 BOTTOM 固定）
+    toast_bar = tk.Frame(shell, bg=c.get("title_bar", c["bg"]))
+    toast_bar.pack(fill=tk.X, side=tk.BOTTOM)
+    tk.Frame(toast_bar, bg=c.get("border", c["accent"]), height=1).pack(fill=tk.X, side=tk.TOP)
+    toast_lbl = tk.Label(
+        toast_bar,
+        text="",
+        font=app._font("label", 9),
+        bg=c.get("title_bar", c["bg"]),
+        fg=c.get("text_muted", c["text_dim"]),
+        anchor="w",
+        padx=SPACE_MD,
+        pady=SPACE_SM,
+    )
+    toast_lbl.pack(fill=tk.X)
+    win._settings_toast = toast_lbl  # type: ignore[attr-defined]
+    win._settings_toast_after = None  # type: ignore[attr-defined]
 
     page_host = tk.Frame(shell, bg=c["bg"])
     page_host.pack(fill=tk.BOTH, expand=True)

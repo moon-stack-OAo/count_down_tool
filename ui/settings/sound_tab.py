@@ -8,7 +8,7 @@ import os
 import tkinter as tk
 from tkinter import filedialog
 
-from ui.app_dialogs import ask_yes_no, show_error, show_info, temporary_withdraw
+from ui.app_dialogs import ask_yes_no, show_error, temporary_withdraw
 from ui.design.tokens import SETTINGS_WIDTH, SPACE_SM, SPACE_XS
 from ui.settings.layout import bind_wheel_tree, card, pill
 
@@ -112,12 +112,13 @@ def build_sound_section(app, parent, c, refreshers, win) -> None:
         app._save_config()
         _refresh()
         _tray_refresh()
-        show_info(
-            app,
-            f"已导入并设为结束音效：\n{name}",
-            title="导入成功",
-            parent=win,
-        )
+        tip = f"已导入并设为结束音效：{name}"
+        from ui.settings.shell import show_settings_toast
+
+        if not show_settings_toast(app, tip):
+            from ui.app_dialogs import show_info
+
+            show_info(app, f"已导入并设为结束音效：\n{name}", title="导入成功", parent=win)
 
     def _preview_root():
         # 系统铃依赖 root.bell/after；主窗 Mini withdraw 时可能无声，优先设置窗
@@ -166,10 +167,15 @@ def build_sound_section(app, parent, c, refreshers, win) -> None:
         _refresh()
         _tray_refresh()
         if n:
-            msg = f"历史已清空，并删除了 {n} 个未使用音效文件。\n当前结束音效保持不变。"
+            tip = f"历史已清空，并删除 {n} 个未使用文件（当前音效保留）"
         else:
-            msg = "历史已清空。\n当前结束音效保持不变。"
-        show_info(app, msg, title="已清空", parent=win)
+            tip = "历史已清空（当前结束音效保留）"
+        from ui.settings.shell import show_settings_toast
+
+        if not show_settings_toast(app, tip):
+            from ui.app_dialogs import show_info
+
+            show_info(app, tip, title="已清空", parent=win)
 
     def _schedule_preview_refresh():
         _refresh()

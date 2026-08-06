@@ -6,8 +6,8 @@ from __future__ import annotations
 import logging
 import tkinter as tk
 from datetime import datetime
-from tkinter import ttk
 
+from app.timers import cancel_timer_attr
 from core.countdown_core import (
     ACTION_FINISH,
     ACTION_PAUSE,
@@ -261,12 +261,7 @@ class CountdownController:
     def pause_countdown(self):
         """暂停：冻结剩余时间，取消 tick，UI 保持暂停瞬间的值。"""
         app = self.app
-        if app._countdown_timer_id is not None:
-            try:
-                app.master.after_cancel(app._countdown_timer_id)
-            except (tk.TclError, ValueError):
-                logger.debug("暂停时取消倒计时定时器失败", exc_info=True)
-            app._countdown_timer_id = None
+        cancel_timer_attr(app, "_countdown_timer_id")
         now = datetime.now()
         if app.target_time is not None:
             rem = remaining_seconds(app.target_time, now)
@@ -388,12 +383,7 @@ class CountdownController:
         if not app.running:
             return
 
-        if app._countdown_timer_id is not None:
-            try:
-                app.master.after_cancel(app._countdown_timer_id)
-            except (tk.TclError, ValueError):
-                logger.debug("取消倒计时定时器失败", exc_info=True)
-            app._countdown_timer_id = None
+        cancel_timer_attr(app, "_countdown_timer_id")
 
         rem_sec = remaining_seconds(target_time, datetime.now())
         if rem_sec <= 0:
@@ -422,7 +412,6 @@ class CountdownController:
         """结束提醒：闪烁 + 通知 + 提示音。失败只 log。"""
         app = self.app
         app._alarm_count = 0
-        app._bell_count = 0
         try:
             self.flash_visual()
         except (tk.TclError, AttributeError, KeyError, TypeError):
@@ -475,19 +464,13 @@ class CountdownController:
         app = self.app
         if not app.countdown_label:
             return
-        style = ttk.Style()
-        fg = (
-            app.COLORS["success"]
+        # 样式在 setup_styles 预注册；此处只切换，避免每次 ttk.Style + configure
+        flash_style = (
+            "FlashEven.TLabel"
             if app._alarm_count % 2 == 0
-            else app.COLORS["error"]
+            else "FlashOdd.TLabel"
         )
-        style.configure(
-            "Flash.TLabel",
-            font=app.FONTS["countdown"],
-            foreground=fg,
-            background=app.COLORS["glass"],
-        )
-        app.countdown_label.config(style="Flash.TLabel")
+        app.countdown_label.config(style=flash_style)
         app._alarm_count += 1
         if app._alarm_count >= 6:
             app.countdown_label.config(style="Countdown.TLabel")
@@ -499,23 +482,12 @@ class CountdownController:
     def reset(self):
         app = self.app
         app._alarm_count = 0
-        app._bell_count = 0
         app._preset_duration = None
         self.clear_paused_remaining()
         app._duration_total_seconds = 0.0
         app._progress_value = 0.0
-        if app._alarm_timer_id is not None:
-            try:
-                app.master.after_cancel(app._alarm_timer_id)
-            except (tk.TclError, ValueError):
-                logger.debug("取消报警定时器失败", exc_info=True)
-            app._alarm_timer_id = None
-        if app._countdown_timer_id is not None:
-            try:
-                app.master.after_cancel(app._countdown_timer_id)
-            except (tk.TclError, ValueError):
-                logger.debug("重置时取消倒计时定时器失败", exc_info=True)
-            app._countdown_timer_id = None
+        cancel_timer_attr(app, "_alarm_timer_id")
+        cancel_timer_attr(app, "_countdown_timer_id")
         self.set_state(ACTION_RESET)
         app.target_time = None
         app.hour_var.set("18")
@@ -542,12 +514,7 @@ class CountdownController:
         if app.target_time_label:
             app.target_time_label.config(text=format_target_label(target, now))
 
-        if app._countdown_timer_id is not None:
-            try:
-                app.master.after_cancel(app._countdown_timer_id)
-            except (tk.TclError, ValueError):
-                logger.debug("预设时取消倒计时定时器失败", exc_info=True)
-            app._countdown_timer_id = None
+        cancel_timer_attr(app, "_countdown_timer_id")
 
         self.record_duration_total(target, now)
         # 禁止直接写 _state；idle→START，finished→RESTART；paused→RESUME 按新目标

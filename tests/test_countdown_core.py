@@ -48,6 +48,8 @@ from core.countdown_core import (
     normalize_mini_text,
     normalize_startup_mode,
     parse_mini_geometry,
+    should_update_mini_clock,
+    should_update_mini_countdown,
     parse_mini_size,
     progress_ratio,
     read_lock_pid,
@@ -262,6 +264,42 @@ class TestNextSecondDelayMs(unittest.TestCase):
         self.assertEqual(next_second_delay_ms(now), 1)
         now = datetime(2026, 7, 17, 12, 0, 0, 999_999)
         self.assertEqual(next_second_delay_ms(now), 1)
+
+
+class TestShouldUpdateMiniCountdown(unittest.TestCase):
+    def test_first_sync(self):
+        self.assertTrue(should_update_mini_countdown(None, "01:00:00", STATE_RUNNING))
+
+    def test_same_skips(self):
+        prev = ("01:00:00", STATE_RUNNING)
+        self.assertFalse(
+            should_update_mini_countdown(prev, "01:00:00", STATE_RUNNING)
+        )
+
+    def test_text_change(self):
+        prev = ("01:00:00", STATE_RUNNING)
+        self.assertTrue(
+            should_update_mini_countdown(prev, "00:59:59", STATE_RUNNING)
+        )
+
+    def test_state_change(self):
+        prev = ("00:00:00", STATE_RUNNING)
+        self.assertTrue(
+            should_update_mini_countdown(prev, "00:00:00", STATE_FINISHED)
+        )
+
+    def test_bad_prev_treated_as_need_update(self):
+        self.assertTrue(should_update_mini_countdown("bad", "x", STATE_IDLE))
+        self.assertTrue(should_update_mini_countdown(("only",), "x", STATE_IDLE))
+
+
+class TestShouldUpdateMiniClock(unittest.TestCase):
+    def test_first_and_change(self):
+        self.assertTrue(should_update_mini_clock(None, "12:00"))
+        self.assertTrue(should_update_mini_clock("12:00", "12:01"))
+
+    def test_same_minute_skips(self):
+        self.assertFalse(should_update_mini_clock("12:00", "12:00"))
 
 
 class TestStateMachine(unittest.TestCase):

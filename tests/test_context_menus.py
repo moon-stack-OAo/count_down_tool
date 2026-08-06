@@ -9,7 +9,11 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from ui.context_menus import tray_mini_menu_label, tray_window_menu_label
+from services.menu_labels import tray_mini_menu_label, tray_window_menu_label
+from ui.context_menus import (  # re-export 兼容
+    tray_mini_menu_label as _ui_tray_mini_menu_label,
+    tray_window_menu_label as _ui_tray_window_menu_label,
+)
 
 
 class TestTrayMenuLabels(unittest.TestCase):
@@ -33,6 +37,11 @@ class TestTrayMenuLabels(unittest.TestCase):
         is_mini = False
         self.assertEqual(tray_mini_menu_label(is_mini), "Mini 模式")
         self.assertEqual(tray_window_menu_label(is_mini), "显示主窗口")
+
+    def test_ui_context_menus_reexports(self):
+        """ui.context_menus 继续 re-export，对外 API 不变。"""
+        self.assertIs(tray_window_menu_label, _ui_tray_window_menu_label)
+        self.assertIs(tray_mini_menu_label, _ui_tray_mini_menu_label)
 
 
 class TestRefreshTrayMenuImport(unittest.TestCase):

@@ -2,7 +2,7 @@
 """结构化应用状态：持久化配置态 + 可选倒计时运行时。
 
 与 config.json schema 对齐的字段放在 PersistedState；
-CountdownApp 通过 property 将 app._xxx 映射到此处，保持 duck-type 兼容。
+app._xxx 由 app.host_bindings.install_state_properties 批量绑定，保持 duck-type 兼容。
 """
 
 from __future__ import annotations
@@ -49,5 +49,4 @@ class CountdownRuntime:
     paused_remaining: Optional[float] = None
     alarm_count: int = 0
     alarm_timer_id: Any = None
-    bell_count: int = 0
     error_timer_id: Any = None

@@ -189,5 +189,113 @@ class TestConfigStoreLoad(unittest.TestCase):
             )
 
 
+class TestConfigStoreCache(unittest.TestCase):
+    def tearDown(self):
+        config_store.clear_config_cache()
+
+    def test_sequential_saves_preserve_later_fields(self):
+        """两次顺序 save：后写字段与先写字段均保留（缓存 merge，非整文件互盖）。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "extra_keep": "stay",
+                        "theme_id": "slate_cyan",
+                        "startup_mode": "remember",
+                    },
+                    f,
+                )
+            app = _make_app(path)
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.load_config(app)
+
+            # 第一次 save：写入 last_update_check
+            app._last_update_check = "2026-04-01"
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.save_config(app)
+
+            # 第二次 save：改 theme，不丢 last_update_check / extra_keep
+            app._theme_id = "emerald"
+            app._last_update_check = "2026-04-01"
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.save_config(app)
+
+            with open(path, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            self.assertEqual(saved.get("extra_keep"), "stay")
+            self.assertEqual(saved.get("last_update_check"), "2026-04-01")
+            self.assertEqual(saved.get("theme_id"), "emerald")
+
+    def test_save_prefers_memory_over_stale_disk(self):
+        """缓存命中时即使磁盘读返回旧数据，后续 save merge 也不被旧读覆盖。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"theme_id": "slate_cyan", "extra_keep": "v1"}, f)
+            app = _make_app(path)
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.load_config(app)
+
+            app._last_update_check = "2026-05-10"
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.save_config(app)
+
+            # 模拟「磁盘上仍是旧快照」：若 save 再 reload 磁盘会丢 last_update_check
+            stale = {"theme_id": "slate_cyan", "extra_keep": "v1"}
+            app._ignored_update_version = "9.9.9"
+            with mock.patch(
+                "app.config_store.load_config_dict", return_value=stale
+            ) as m_load:
+                with mock.patch(
+                    "app.config_store.is_autostart_enabled", return_value=False
+                ):
+                    config_store.save_config(app)
+                # 缓存命中则不应再读盘
+                m_load.assert_not_called()
+
+            with open(path, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            self.assertEqual(saved.get("last_update_check"), "2026-05-10")
+            self.assertEqual(saved.get("ignored_update_version"), "9.9.9")
+            self.assertEqual(saved.get("extra_keep"), "v1")
+            self.assertEqual(saved.get("theme_id"), "slate_cyan")
+
+    def test_load_refreshes_cache_from_disk(self):
+        """显式 load 始终读盘并刷新缓存。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"theme_id": "slate_cyan"}, f)
+            app = _make_app(path)
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.load_config(app)
+            # 外部改盘
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {"theme_id": "emerald", "last_update_check": "2026-01-01"},
+                    f,
+                )
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.load_config(app)
+            self.assertEqual(app._theme_id, "emerald")
+            self.assertEqual(app._last_update_check, "2026-01-01")
+
+
 if __name__ == "__main__":
     unittest.main()
+

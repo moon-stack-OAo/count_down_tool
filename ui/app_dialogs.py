@@ -10,13 +10,15 @@ import tkinter as tk
 from typing import Optional
 
 from core.countdown_core import APP_NAME
-from ui.design.tokens import SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XS
-from ui.widgets import ThinScrollbar, make_pill
+from ui.design.tokens import SPACE_MD, SPACE_SM, SPACE_XS
+from ui.widgets import ThinScrollbar, make_pill, make_settings_card
 from ui.window_chrome_dialog import center_dialog_later, use_borderless_chrome
 
 logger = logging.getLogger("count_down_tool")
 
-_DIALOG_WIDTH = 400
+# 与设置中心内容宽感接近（设置窗 500，弹窗略窄）
+_DIALOG_WIDTH = 420
+_DIALOG_CONTENT_PAD = SPACE_MD
 
 
 def _dialog_parent(app, parent=None):
@@ -210,32 +212,43 @@ def _show_message(
     win.protocol("WM_DELETE_WINDOW", _close)
     use_borderless_chrome(win, app, title=display_title, on_close=_close)
 
-    shell = tk.Frame(win, bg=c["bg"], padx=SPACE_LG, pady=SPACE_LG)
+    # 内容区对齐设置中心：外层 bg 边距 + card 卡片 + 分区标题/正文/胶囊钮
+    shell = tk.Frame(win, bg=c["bg"], padx=_DIALOG_CONTENT_PAD, pady=_DIALOG_CONTENT_PAD)
     shell.pack(fill=tk.BOTH, expand=True)
 
+    body_card = make_settings_card(shell, c, pack=True, fill="x")
+    wrap = max(240, _DIALOG_WIDTH - 2 * _DIALOG_CONTENT_PAD - 2 * SPACE_MD - 24)
+
     tk.Label(
-        shell,
+        body_card,
         text=display_title,
-        font=app._font("button", 12, bold=True),
-        bg=c["bg"],
-        fg=accent,
-    ).pack(anchor="w")
-    tk.Label(
-        shell,
-        text=message or "",
         font=app._font("label", 9),
-        bg=c["bg"],
+        bg=c["card"],
+        fg=c.get("text_muted", c["text_dim"]),
+        anchor="w",
+    ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_XS))
+    # 状态色条（error / accent），贴近设置分区层次
+    tk.Frame(body_card, bg=accent, height=2).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_SM))
+    tk.Label(
+        body_card,
+        text=message or "",
+        font=app._font("label", 10),
+        bg=c["card"],
         fg=c["text"],
-        wraplength=_DIALOG_WIDTH - 48,
+        wraplength=wrap,
         justify=tk.LEFT,
         anchor="w",
-    ).pack(anchor="w", pady=(SPACE_SM, SPACE_LG))
+    ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_SM))
 
-    make_pill(shell, "知道了", app=app, c=c, primary=True, command=_close).pack(side=tk.RIGHT)
+    btn_row = tk.Frame(shell, bg=c["bg"])
+    btn_row.pack(fill=tk.X, pady=(0, 0))
+    make_pill(btn_row, "知道了", app=app, c=c, primary=True, command=_close).pack(
+        side=tk.RIGHT
+    )
 
     win.update_idletasks()
-    w = max(320, min(_DIALOG_WIDTH, win.winfo_reqwidth() + 32))
-    h = max(140, win.winfo_reqheight() + 16)
+    w = max(320, min(_DIALOG_WIDTH, win.winfo_reqwidth() + 24))
+    h = max(160, win.winfo_reqheight() + 12)
     center_dialog_later(win, int(w), int(h))
     _activate(win)
     # 再抬一次，压过设置窗
@@ -339,35 +352,43 @@ def show_log_viewer(app, *, parent=None) -> None:
     win.protocol("WM_DELETE_WINDOW", _close)
     use_borderless_chrome(win, app, title="运行日志", on_close=_close)
 
-    shell = tk.Frame(win, bg=c["bg"], padx=SPACE_LG, pady=SPACE_LG)
+    shell = tk.Frame(win, bg=c["bg"], padx=_DIALOG_CONTENT_PAD, pady=_DIALOG_CONTENT_PAD)
     shell.pack(fill=tk.BOTH, expand=True)
 
+    # 路径 + 状态：设置分区小标题风格
+    meta_card = make_settings_card(shell, c, pack=True, fill="x")
     tk.Label(
-        shell,
+        meta_card,
+        text="运行日志",
+        font=app._font("label", 9),
+        bg=c["card"],
+        fg=c.get("text_muted", c["text_dim"]),
+        anchor="w",
+    ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_XS))
+    tk.Label(
+        meta_card,
         text=log_path,
         font=app._font("label", 8),
-        bg=c["bg"],
-        fg=c["text_muted"],
-        anchor="w",
-        wraplength=_LOG_VIEW_WIDTH - 48,
-        justify=tk.LEFT,
-    ).pack(fill=tk.X)
-
-    status_lbl = tk.Label(
-        shell,
-        text="",
-        font=app._font("label", 9),
-        bg=c["bg"],
+        bg=c["card"],
         fg=c["text_dim"],
         anchor="w",
+        wraplength=_LOG_VIEW_WIDTH - 2 * _DIALOG_CONTENT_PAD - 2 * SPACE_MD - 24,
+        justify=tk.LEFT,
+    ).pack(fill=tk.X, padx=SPACE_SM)
+    status_lbl = tk.Label(
+        meta_card,
+        text="",
+        font=app._font("label", 9),
+        bg=c["card"],
+        fg=c["text_muted"],
+        anchor="w",
     )
-    status_lbl.pack(fill=tk.X, pady=(SPACE_XS, SPACE_SM))
+    status_lbl.pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_XS, 0))
 
-    body = tk.Frame(
-        shell, bg=c["card"], highlightbackground=c["border"], highlightthickness=1
+    body = make_settings_card(
+        shell, c, pack=True, fill="both", expand=True, padx_inner=SPACE_SM, pady_inner=SPACE_SM
     )
-    body.pack(fill=tk.BOTH, expand=True)
-
+    # 卡片已有边距，内部文本区贴齐
     try:
         log_font = app._font("time", 9)
     except (TypeError, AttributeError):
@@ -392,9 +413,11 @@ def show_log_viewer(app, *, parent=None) -> None:
         body,
         command=text.yview,
         bg=c.get("card", c["bg"]),
-        trough=c.get("border", "#1E293B"),
-        thumb=c.get("text_muted", "#64748B"),
-        thumb_hover=c.get("text_dim", "#94A3B8"),
+        trough=c.get("input_bg", c.get("border", "#1E293B")),
+        thumb=c.get("border", c.get("text_muted", "#64748B")),
+        thumb_hover=c.get("text_muted", c.get("text_dim", "#94A3B8")),
+        width=6,
+        pad=3,
     )
     text.configure(yscrollcommand=ysb.set)
     ysb.pack(side=tk.RIGHT, fill=tk.Y)
@@ -522,27 +545,32 @@ def ask_yes_no(
     win.protocol("WM_DELETE_WINDOW", lambda: _finish(False))
     use_borderless_chrome(win, app, title=title, on_close=lambda: _finish(False))
 
-    shell = tk.Frame(win, bg=c["bg"], padx=SPACE_LG, pady=SPACE_LG)
+    shell = tk.Frame(win, bg=c["bg"], padx=_DIALOG_CONTENT_PAD, pady=_DIALOG_CONTENT_PAD)
     shell.pack(fill=tk.BOTH, expand=True)
 
     accent = c.get("error", "#FB7185") if danger else c.get("accent", "#38BDF8")
+    body_card = make_settings_card(shell, c, pack=True, fill="x")
+    wrap = max(240, _DIALOG_WIDTH - 2 * _DIALOG_CONTENT_PAD - 2 * SPACE_MD - 24)
+
     tk.Label(
-        shell,
+        body_card,
         text=title,
-        font=app._font("button", 12, bold=True),
-        bg=c["bg"],
-        fg=accent,
-    ).pack(anchor="w")
-    tk.Label(
-        shell,
-        text=message or "",
         font=app._font("label", 9),
-        bg=c["bg"],
+        bg=c["card"],
+        fg=c.get("text_muted", c["text_dim"]),
+        anchor="w",
+    ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_XS))
+    tk.Frame(body_card, bg=accent, height=2).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_SM))
+    tk.Label(
+        body_card,
+        text=message or "",
+        font=app._font("label", 10),
+        bg=c["card"],
         fg=c["text"],
-        wraplength=_DIALOG_WIDTH - 48,
+        wraplength=wrap,
         justify=tk.LEFT,
         anchor="w",
-    ).pack(anchor="w", pady=(SPACE_SM, SPACE_LG))
+    ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_SM))
 
     row = tk.Frame(shell, bg=c["bg"])
     row.pack(fill=tk.X)
@@ -560,8 +588,8 @@ def ask_yes_no(
     ).pack(side=tk.RIGHT)
 
     win.update_idletasks()
-    w = max(320, min(_DIALOG_WIDTH, win.winfo_reqwidth() + 32))
-    h = max(160, win.winfo_reqheight() + 16)
+    w = max(320, min(_DIALOG_WIDTH, win.winfo_reqwidth() + 24))
+    h = max(170, win.winfo_reqheight() + 12)
     center_dialog_later(win, int(w), int(h))
     _activate(win)
     try:

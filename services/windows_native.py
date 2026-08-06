@@ -16,6 +16,8 @@ _instance_lock = None
 
 # 二次启动「show 请求」标志文件名（写在用户配置目录）
 SHOW_REQUEST_NAME = "show.request"
+# 主实例轮询 show.request 的间隔（ms）；约等于二次启动唤起延迟上限
+SHOW_POLL_INTERVAL_MS = 1500
 # Mini 窗可枚举标题（无边框仍可 GetWindowText）
 MINI_WINDOW_TITLE = f"{APP_NAME} - Mini"
 
@@ -56,17 +58,133 @@ def path_has_mark_of_the_web(path: str) -> bool:
     return False
 
 
-def try_remove_mark_of_the_web(path: str) -> bool:
-    """尝试删除 Zone.Identifier（等同「解除锁定」）。成功返回 True。"""
-    if platform.system() != "Windows" or not path:
-        return False
-    ads = path + ":Zone.Identifier"
+def _ads_path_candidates(path: str) -> list[str]:
+    """Zone.Identifier ADS 路径候选（含显式 $DATA）。"""
+    base = path + ":Zone.Identifier"
+    return [base, base + ":$DATA"]
+
+
+def _try_delete_ads_os(ads: str) -> bool:
+    """os.remove / pathlib.unlink。"""
     try:
-        if os.path.isfile(path):
-            os.remove(ads)
+        os.remove(ads)
+        return True
+    except OSError:
+        pass
+    try:
+        from pathlib import Path
+
+        Path(ads).unlink(missing_ok=False)
+        return True
+    except OSError:
+        return False
+
+
+def _try_delete_ads_win32(ads: str) -> bool:
+    """Win32 DeleteFileW 与 CreateFileW+DELETE_ON_CLOSE。
+
+    部分环境（含安全软件/策略）下 os.remove 对 ADS 会 WinError 5，
+    但以 DELETE|FILE_FLAG_DELETE_ON_CLOSE 打开后 CloseHandle 可删。
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except ImportError:
+        return False
+
+    kernel32 = ctypes.windll.kernel32
+    kernel32.DeleteFileW.argtypes = [wintypes.LPCWSTR]
+    kernel32.DeleteFileW.restype = wintypes.BOOL
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+    GENERIC_READ = 0x80000000
+    DELETE = 0x00010000
+    FILE_SHARE_READ = 0x1
+    FILE_SHARE_WRITE = 0x2
+    FILE_SHARE_DELETE = 0x4
+    OPEN_EXISTING = 3
+    FILE_FLAG_DELETE_ON_CLOSE = 0x04000000
+
+    try:
+        if kernel32.DeleteFileW(ads):
             return True
     except OSError:
-        logger.debug("删除 Zone.Identifier 失败: %s", path, exc_info=True)
+        pass
+
+    handle = None
+    try:
+        handle = kernel32.CreateFileW(
+            ads,
+            DELETE | GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            None,
+            OPEN_EXISTING,
+            FILE_FLAG_DELETE_ON_CLOSE,
+            None,
+        )
+        if not handle or handle == INVALID_HANDLE_VALUE:
+            return False
+        # CloseHandle 触发 DELETE_ON_CLOSE
+        kernel32.CloseHandle(handle)
+        handle = None
+        return True
+    except OSError:
+        return False
+    finally:
+        if handle and handle != INVALID_HANDLE_VALUE:
+            try:
+                kernel32.CloseHandle(handle)
+            except OSError:
+                pass
+
+
+def try_remove_mark_of_the_web(path: str) -> bool:
+    """尝试删除 Zone.Identifier（等同「解除锁定」）。
+
+    成功条件：删除后 ``path_has_mark_of_the_web`` 为 False（或本就无 MOTW）。
+    非 Windows / 路径无效返回 False。某环境无法删 ADS 时返回 False（调用方可忽略）。
+    """
+    if platform.system() != "Windows" or not path:
+        return False
+    try:
+        if not os.path.isfile(path):
+            return False
+    except OSError:
+        return False
+
+    # 本就无 Internet/Restricted MOTW，视为无需删除
+    if not path_has_mark_of_the_web(path):
+        return True
+
+    last_err: Exception | None = None
+    for ads in _ads_path_candidates(path):
+        try:
+            if _try_delete_ads_os(ads) or _try_delete_ads_win32(ads):
+                if not path_has_mark_of_the_web(path):
+                    return True
+        except OSError as exc:
+            last_err = exc
+
+    # 兜底：再次尝试显式 DeleteFileW / DELETE_ON_CLOSE 后复检
+    if not path_has_mark_of_the_web(path):
+        return True
+
+    if last_err is not None:
+        logger.debug("删除 Zone.Identifier 失败: %s (%s)", path, last_err, exc_info=True)
+    else:
+        logger.debug("删除 Zone.Identifier 失败（权限或策略限制）: %s", path)
     return False
 
 

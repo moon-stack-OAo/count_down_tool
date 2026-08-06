@@ -57,7 +57,6 @@ class CountdownHost(Protocol):
     progress_canvas: Any
     _alarm_count: int
     _alarm_timer_id: Any
-    _bell_count: int
     _error_timer_id: Any
     btn_start: Any
     target_time: Any
@@ -132,6 +131,7 @@ class UpdateHost(Protocol):
     _last_update_check: str
     _ignored_update_version: str
     _pending_update_result: Any
+    ui_actions: Any  # app.ui_actions.UIActionsBundle
 
     def _save_config(self) -> None: ...
 

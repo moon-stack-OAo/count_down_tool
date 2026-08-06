@@ -12,17 +12,26 @@ from core.countdown_core import (
 )
 from core.themes import list_themes
 from services.autostart import is_autostart_enabled, set_autostart
+from services.menu_labels import (  # re-export 兼容；真源在 services/menu_labels
+    tray_mini_menu_label,
+    tray_window_menu_label,
+)
 from ui.app_dialogs import show_error
 
-
-def tray_window_menu_label(is_mini: bool) -> str:
-    """托盘「显示/展开」文案。"""
-    return "展开主窗口" if is_mini else "显示主窗口"
-
-
-def tray_mini_menu_label(is_mini: bool) -> str:
-    """托盘 Mini 切换文案。"""
-    return "退出 Mini 模式" if is_mini else "Mini 模式"
+__all__ = [
+    "tray_window_menu_label",
+    "tray_mini_menu_label",
+    "add_countdown_toggle_item",
+    "add_exit_item",
+    "add_autostart_item",
+    "add_theme_cascade",
+    "current_mini_text_key",
+    "set_mini_text_color",
+    "reset_mini_text_colors",
+    "popup_full_menu",
+    "bind_full_context_menu",
+    "bind_full_context_menu_tree",
+]
 
 
 def _styled_menu(app, parent):

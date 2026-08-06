@@ -24,8 +24,8 @@
 - **开机自启**（Windows）
 - **主题切换**：石板青蓝、暗夜紫、暖琥珀、翠绿、浅色
 - **结束提醒**：内置预设音效 + 自定义文件（含 **`.ncm` 自动解密**）+ 历史记录；可静音
-- **透明 Mini**、跨平台 Windows / macOS / Linux
-- **检查更新**：可在启动时自动检查 GitHub Release，或在「关于」中手动检查；支持忽略版本；下载可取消；安装包解压路径校验（有 `.sha256` 时校验哈希）
+- **透明 Mini**、跨平台 Windows / macOS；Linux 为实验性支持
+- **检查更新**：可在启动时自动检查 GitHub Release，或在「关于」中手动检查；支持忽略版本；下载可取消；**强制 SHA256**（无校验资产时禁止应用内下载/安装，改为浏览器打开发布页）
 
 ---
 
@@ -203,4 +203,4 @@ ruff check .
 - **图标 / 图像**：Pillow
 - **打包**：PyInstaller（`scripts/pyinstaller_common.py`）
 - **质量**：pytest、ruff
-- **更新**：GitHub Releases（可选 SHA256 资产校验）
+- **更新**：GitHub Releases（**强制** SHA256 资产校验；无哈希则走浏览器手动下载）

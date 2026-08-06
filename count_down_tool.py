@@ -37,7 +37,9 @@ from app.config_store import (
     save_config as _cfg_save,
 )
 from app.countdown import CountdownController
+from app.host_bindings import install_state_properties
 from app.state import CountdownRuntime, PersistedState
+from app.timers import cancel_all_timers, cancel_timer_attr
 from core.app_logging import setup_app_logging
 from core.countdown_core import (
     APP_NAME,
@@ -45,11 +47,13 @@ from core.countdown_core import (
     next_second_delay_ms,
     resource_path,
     should_start_mini,
+    should_update_mini_clock,
     user_config_path,
 )
 from core.themes import DEFAULT_THEME_ID, resolve_theme
 from services.tray import init_tray_icon, refresh_tray_menu, stop_tray
 from services.windows_native import (
+    SHOW_POLL_INTERVAL_MS,
     acquire_single_instance,
     bring_existing_to_front,
     clear_stale_show_request,
@@ -75,6 +79,7 @@ logger = logging.getLogger("count_down_tool")
 _ICON_PATH = resource_path(os.path.join("assets", "count_down_tool.ico"))
 
 
+@install_state_properties
 class CountdownApp:
     WINDOW_WIDTH = 500
     WINDOW_HEIGHT = 520
@@ -102,6 +107,7 @@ class CountdownApp:
     COLORS = resolve_theme(DEFAULT_THEME_ID)
 
     def __init__(self, master):
+        self.current_time_label = None
         self.master = master
         self.master.title(APP_NAME)
         self.master.geometry(f"{self.WINDOW_WIDTH}x{self.WINDOW_HEIGHT}")
@@ -110,7 +116,7 @@ class CountdownApp:
         if platform.system() != "Darwin":
             self.master.overrideredirect(True)
 
-        # 结构化状态：app._xxx 经 property 映射，保持 duck-type 兼容
+        # 结构化状态：app._xxx 由 install_state_properties 绑定（duck-type 兼容）
         self.state = PersistedState()
         self._runtime = CountdownRuntime()
 
@@ -130,6 +136,11 @@ class CountdownApp:
 
         self.FONTS = self._get_fonts(self.master)
         self._ctrl = CountdownController(self)
+
+        # services → UI 端口：托盘/更新等禁止直接 import ui
+        from app.ui_actions import bind_default_ui_actions
+
+        bind_default_ui_actions(self)
 
         # Mini 模式相关（非持久化 UI 句柄）
         self._is_mini = False
@@ -154,9 +165,18 @@ class CountdownApp:
         self.countdown_text = "--:--:--"
 
         self._resize_data = None  # Mini 边缘缩放状态
+        self._mini_sync_cache = None  # Mini 倒计时/字色上次同步快照
+        self._mini_clock_hm = None  # Mini 时钟上次 "%H:%M"
         self._config_file = user_config_path()
         self._load_config()
         self.master.configure(bg=self.COLORS["bg"])
+
+        # after 定时器 id（退出时由 cancel_all_timers 统一清理；须在首个 after 调度前初始化）
+        self._show_poll_timer_id = None
+        self._clock_timer_id = None
+        self._mini_geo_save_id = None
+        self._startup_health_timer_id = None
+        self._startup_update_timer_id = None
 
         self._setup_styles()
         self._setup_ui()
@@ -169,18 +189,20 @@ class CountdownApp:
         # 启动模式：startup_mode + last_mode（见 should_start_mini）
         has_last = "last_mode" in getattr(self, "_loaded_keys", set())
         if should_start_mini(
-            getattr(self, "_startup_mode", "remember"),
-            self._last_mode,
-            has_last_mode=has_last,
+                getattr(self, "_startup_mode", "remember"),
+                self._last_mode,
+                has_last_mode=has_last,
         ):
             self._switch_to_mini()
         # 二次启动唤醒：轮询 show.request（跨平台文件标志）
-        self._show_poll_timer_id = None
         self._start_show_request_poll()
         # 启动诊断：MOTW 解锁提示、托盘失败可见提示（延后避免挡启动动画）
         try:
-            self.master.after(600, lambda: self._startup_health_hints(tray_ok))
+            self._startup_health_timer_id = self.master.after(
+                600, lambda: self._startup_health_hints(tray_ok)
+            )
         except tk.TclError:
+            self._startup_health_timer_id = None
             logger.debug("调度启动健康提示失败", exc_info=True)
         try:
             from services.updater import schedule_startup_check
@@ -191,6 +213,7 @@ class CountdownApp:
 
     def _startup_health_hints(self, tray_ok: bool) -> None:
         """启动后提示：网络解锁标记、托盘不可用。"""
+        self._startup_health_timer_id = None
         try:
             from ui.app_dialogs import show_info
         except ImportError:
@@ -240,226 +263,6 @@ class CountdownApp:
             except (tk.TclError, AttributeError, RuntimeError):
                 logger.debug("托盘失败提示失败", exc_info=True)
 
-    # ------------------------------------------------------------------
-    # 状态 property：app._xxx ↔ self.state / self._runtime（兼容 duck-type）
-    # ------------------------------------------------------------------
-
-    @property
-    def _theme_id(self):
-        return self.state.theme_id
-
-    @_theme_id.setter
-    def _theme_id(self, value):
-        self.state.theme_id = value
-
-    @property
-    def _theme_custom(self):
-        return self.state.theme_custom
-
-    @_theme_custom.setter
-    def _theme_custom(self, value):
-        self.state.theme_custom = value
-
-    @property
-    def _sound_muted(self):
-        return self.state.sound_muted
-
-    @_sound_muted.setter
-    def _sound_muted(self, value):
-        self.state.sound_muted = bool(value)
-
-    @property
-    def _sound_id(self):
-        return self.state.sound_id
-
-    @_sound_id.setter
-    def _sound_id(self, value):
-        self.state.sound_id = value
-
-    @property
-    def _sound_path(self):
-        return self.state.sound_path
-
-    @_sound_path.setter
-    def _sound_path(self, value):
-        self.state.sound_path = value
-
-    @property
-    def _sound_history(self):
-        return self.state.sound_history
-
-    @_sound_history.setter
-    def _sound_history(self, value):
-        self.state.sound_history = value if value is not None else []
-
-    @property
-    def _autostart(self):
-        return self.state.autostart
-
-    @_autostart.setter
-    def _autostart(self, value):
-        self.state.autostart = bool(value)
-
-    @property
-    def _check_update_on_start(self):
-        return self.state.check_update_on_start
-
-    @_check_update_on_start.setter
-    def _check_update_on_start(self, value):
-        self.state.check_update_on_start = bool(value)
-
-    @property
-    def _last_update_check(self):
-        return self.state.last_update_check
-
-    @_last_update_check.setter
-    def _last_update_check(self, value):
-        self.state.last_update_check = value if value is not None else ""
-
-    @property
-    def _ignored_update_version(self):
-        return self.state.ignored_update_version
-
-    @_ignored_update_version.setter
-    def _ignored_update_version(self, value):
-        self.state.ignored_update_version = value if value is not None else ""
-
-    @property
-    def _startup_mode(self):
-        return self.state.startup_mode
-
-    @_startup_mode.setter
-    def _startup_mode(self, value):
-        self.state.startup_mode = value
-
-    @property
-    def _last_mode(self):
-        return self.state.last_mode
-
-    @_last_mode.setter
-    def _last_mode(self, value):
-        self.state.last_mode = value
-
-    @property
-    def _transparent_mode(self):
-        return self.state.transparent_mode
-
-    @_transparent_mode.setter
-    def _transparent_mode(self, value):
-        self.state.transparent_mode = bool(value)
-
-    @property
-    def _mini_pos(self):
-        return self.state.mini_pos
-
-    @_mini_pos.setter
-    def _mini_pos(self, value):
-        self.state.mini_pos = value
-
-    @property
-    def _mini_size(self):
-        return self.state.mini_size
-
-    @_mini_size.setter
-    def _mini_size(self, value):
-        self.state.mini_size = value
-
-    @property
-    def _mini_text(self):
-        return self.state.mini_text
-
-    @_mini_text.setter
-    def _mini_text(self, value):
-        self.state.mini_text = value if value is not None else {}
-
-    @property
-    def _state(self):
-        return self._runtime.state
-
-    @_state.setter
-    def _state(self, value):
-        self._runtime.state = value
-
-    @property
-    def _countdown_timer_id(self):
-        return self._runtime.countdown_timer_id
-
-    @_countdown_timer_id.setter
-    def _countdown_timer_id(self, value):
-        self._runtime.countdown_timer_id = value
-
-    @property
-    def _preset_duration(self):
-        return self._runtime.preset_duration
-
-    @_preset_duration.setter
-    def _preset_duration(self, value):
-        self._runtime.preset_duration = value
-
-    @property
-    def _applying_preset(self):
-        return self._runtime.applying_preset
-
-    @_applying_preset.setter
-    def _applying_preset(self, value):
-        self._runtime.applying_preset = bool(value)
-
-    @property
-    def _duration_total_seconds(self):
-        return self._runtime.duration_total_seconds
-
-    @_duration_total_seconds.setter
-    def _duration_total_seconds(self, value):
-        self._runtime.duration_total_seconds = float(value) if value is not None else 0.0
-
-    @property
-    def _progress_value(self):
-        return self._runtime.progress_value
-
-    @_progress_value.setter
-    def _progress_value(self, value):
-        self._runtime.progress_value = float(value) if value is not None else 0.0
-
-    @property
-    def _paused_remaining(self):
-        return self._runtime.paused_remaining
-
-    @_paused_remaining.setter
-    def _paused_remaining(self, value):
-        self._runtime.paused_remaining = value
-
-    @property
-    def _alarm_count(self):
-        return self._runtime.alarm_count
-
-    @_alarm_count.setter
-    def _alarm_count(self, value):
-        self._runtime.alarm_count = int(value) if value is not None else 0
-
-    @property
-    def _alarm_timer_id(self):
-        return self._runtime.alarm_timer_id
-
-    @_alarm_timer_id.setter
-    def _alarm_timer_id(self, value):
-        self._runtime.alarm_timer_id = value
-
-    @property
-    def _bell_count(self):
-        return self._runtime.bell_count
-
-    @_bell_count.setter
-    def _bell_count(self, value):
-        self._runtime.bell_count = int(value) if value is not None else 0
-
-    @property
-    def _error_timer_id(self):
-        return self._runtime.error_timer_id
-
-    @_error_timer_id.setter
-    def _error_timer_id(self, value):
-        self._runtime.error_timer_id = value
-
     @staticmethod
     def _get_fonts(root=None):
         """按系统探测可用字体并回退，避免缺字时样式怪异。"""
@@ -503,10 +306,10 @@ class CountdownApp:
         _theme.apply_theme(self, theme_id)
 
     def _show_settings(self):
-        """打开设置中心（产品级 GUI 门面）。"""
-        from ui.settings_window import show_settings
+        """打开设置中心（经 ui_actions，A5 已装配）。"""
+        from app.ui_actions import call_ui
 
-        show_settings(self)
+        call_ui(self, "show_settings", self)
 
     # ------------------------------------------------------------------
     # 倒计时（委托 CountdownController，保留 app.xxx 对外接口）
@@ -637,7 +440,9 @@ class CountdownApp:
         except (OSError, tk.TclError, AttributeError, RuntimeError):
             logger.debug("轮询 show 请求失败", exc_info=True)
         try:
-            self._show_poll_timer_id = self.master.after(400, self._poll_show_request)
+            self._show_poll_timer_id = self.master.after(
+                SHOW_POLL_INTERVAL_MS, self._poll_show_request
+            )
         except tk.TclError:
             self._show_poll_timer_id = None
 
@@ -649,16 +454,15 @@ class CountdownApp:
 
     def _quit_app(self):
         self._save_config()
-        tid = getattr(self, "_show_poll_timer_id", None)
-        if tid is not None:
-            try:
-                self.master.after_cancel(tid)
-            except (tk.TclError, ValueError):
-                pass
-            self._show_poll_timer_id = None
+        # destroy 前统一取消全部 after，避免幽灵回调 / TclError
+        self._cancel_all_timers()
         stop_tray(self)
         self._destroy_mini_window()
         self.master.destroy()
+
+    def _cancel_all_timers(self):
+        """取消应用上登记的全部 master.after 定时器。"""
+        cancel_all_timers(self)
 
     def _show_time_picker(self):
         # 仅 running 禁止改到期时间；paused / idle / finished 可开
@@ -707,25 +511,42 @@ class CountdownApp:
         build_full_ui(self)
 
     def update_clock(self):
-        now = datetime.now()
-        self.current_time_label.config(text=now.strftime("%H:%M:%S"))
-        if self.mini_time_label:
-            self.mini_time_label.config(text=now.strftime("%H:%M"))
-        self.master.after(next_second_delay_ms(), self.update_clock)
+        try:
+            now = datetime.now()
+            # 主窗时钟仍每秒更新（含秒）
+            self.current_time_label.config(text=now.strftime("%H:%M:%S"))
+            # Mini 仅显示 %H:%M：分钟未变则跳过 configure
+            if self.mini_time_label:
+                hm = now.strftime("%H:%M")
+                if should_update_mini_clock(self._mini_clock_hm, hm):
+                    self.mini_time_label.config(text=hm)
+                    self._mini_clock_hm = hm
+        except tk.TclError:
+            # 窗口已毁时勿再调度
+            self._clock_timer_id = None
+            return
+        try:
+            self._clock_timer_id = self.master.after(
+                next_second_delay_ms(), self.update_clock
+            )
+        except tk.TclError:
+            self._clock_timer_id = None
 
     def show_error(self, message):
-        if self._error_timer_id is not None:
-            try:
-                self.master.after_cancel(self._error_timer_id)
-            except (tk.TclError, ValueError):
-                logger.debug("取消错误提示定时器失败", exc_info=True)
+        cancel_timer_attr(self, "_error_timer_id")
+        try:
+            self.error_label.config(text=message)
+            self._error_timer_id = self.master.after(3000, self._clear_error)
+        except tk.TclError:
             self._error_timer_id = None
-        self.error_label.config(text=message)
-        self._error_timer_id = self.master.after(3000, self._clear_error)
+            logger.debug("显示错误提示失败", exc_info=True)
 
     def _clear_error(self):
-        self.error_label.config(text="")
         self._error_timer_id = None
+        try:
+            self.error_label.config(text="")
+        except tk.TclError:
+            pass
 
 
 def main():

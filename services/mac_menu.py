@@ -4,6 +4,8 @@
 pystray 在 Darwin 上会在后台线程跑 NSApplication.run，与 Tk 主循环争用 AppKit，
 易在 Tcl AfterProc → PyEval_RestoreThread 时触发 TstateNULL 直接 abort。
 因此 mac 统一用 Tk 菜单栏，全程主线程。
+
+UI 仅经 app.ui_actions，本模块不 import ui。
 """
 
 from __future__ import annotations
@@ -13,8 +15,13 @@ import platform
 import tkinter as tk
 
 from core.countdown_core import APP_NAME, __version__, button_text_for_state
+from services.menu_labels import tray_mini_menu_label, tray_window_menu_label
 
 logger = logging.getLogger("count_down_tool")
+
+
+def _ui(app):
+    return getattr(app, "ui_actions", None)
 
 
 def is_darwin() -> bool:
@@ -32,14 +39,15 @@ def init_mac_menubar(app) -> bool:
         # Apple 菜单（关于）
         apple = tk.Menu(menubar, name="apple", tearoff=0)
         menubar.add_cascade(menu=apple)
-        def _about():
-            from ui.app_dialogs import show_info
 
-            show_info(
-                app,
-                f"{APP_NAME}\n版本 {__version__}",
-                title=f"关于 {APP_NAME}",
-            )
+        def _about():
+            ui = _ui(app)
+            if ui is not None:
+                ui.show_info(
+                    app,
+                    f"{APP_NAME}\n版本 {__version__}",
+                    title=f"关于 {APP_NAME}",
+                )
 
         apple.add_command(label=f"关于 {APP_NAME}", command=_about)
 
@@ -86,7 +94,6 @@ def _fill_settings(menu: tk.Menu, app) -> None:
         command=lambda: _show_settings(app),
     )
     menu.add_separator()
-    from ui.context_menus import tray_mini_menu_label, tray_window_menu_label
 
     menu.add_command(
         label=tray_window_menu_label(app._is_mini),
@@ -128,22 +135,21 @@ def _fill_settings(menu: tk.Menu, app) -> None:
 
 
 def _show_settings(app) -> None:
-    from ui.settings_window import show_settings
-
-    show_settings(app)
+    ui = _ui(app)
+    if ui is not None:
+        ui.show_settings(app)
 
 
 def _reset_mini_size(app) -> None:
-    from ui.mini_window import reset_mini_size
-
-    if app._is_mini:
-        reset_mini_size(app)
+    ui = _ui(app)
+    if app._is_mini and ui is not None:
+        ui.reset_mini_size(app)
 
 
 def _show_text_picker(app) -> None:
-    from ui.mini_text_picker import show_mini_text_picker
-
-    show_mini_text_picker(app)
+    ui = _ui(app)
+    if ui is not None:
+        ui.show_mini_text_picker(app)
 
 
 def refresh_mac_menubar(app) -> None:

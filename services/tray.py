@@ -2,6 +2,7 @@
 """系统托盘：Windows 用 pystray；macOS 用 Tk 菜单栏（见 mac_menu）。
 
 回调经 master.after 回主线程。Darwin 禁止后台 NSApplication.run，避免与 Tk 冲突崩溃。
+UI 仅经 app.ui_actions，本模块不 import ui。
 """
 
 import logging
@@ -10,6 +11,7 @@ import platform
 import threading
 
 from core.countdown_core import APP_NAME, button_text_for_state
+from services.menu_labels import tray_mini_menu_label, tray_window_menu_label
 
 logger = logging.getLogger("count_down_tool")
 
@@ -20,6 +22,10 @@ try:
 except ImportError:
     HAS_PYSTRAY = False
     pystray = None
+
+
+def _ui(app):
+    return getattr(app, "ui_actions", None)
 
 
 def init_tray_icon(app, icon_path) -> bool:
@@ -49,7 +55,6 @@ def init_tray_icon(app, icon_path) -> bool:
         return False
     try:
         image = load_tray_icon(icon_path)
-        from ui.context_menus import tray_mini_menu_label, tray_window_menu_label
 
         # 主题/音效/自启/更新已迁入设置中心，托盘仅保留常用快捷项
         menu = pystray.Menu(
@@ -138,9 +143,9 @@ def tray_show_settings(app, icon=None, item=None):
     """托盘打开设置中心（回主线程）。"""
 
     def _do():
-        from ui.settings_window import show_settings
-
-        show_settings(app)
+        ui = _ui(app)
+        if ui is not None:
+            ui.show_settings(app)
 
     app.master.after(0, _do)
 
@@ -199,10 +204,9 @@ def tray_toggle_transparent(app, icon=None, item=None):
 
 def tray_reset_mini_size(app, icon=None, item=None):
     def _do():
-        from ui.mini_window import reset_mini_size
-
-        if app._is_mini:
-            reset_mini_size(app)
+        ui = _ui(app)
+        if app._is_mini and ui is not None:
+            ui.reset_mini_size(app)
         refresh_tray_menu(app)
 
     app.master.after(0, _do)
@@ -210,9 +214,9 @@ def tray_reset_mini_size(app, icon=None, item=None):
 
 def tray_show_mini_text_picker(app, icon=None, item=None):
     def _do():
-        from ui.mini_text_picker import show_mini_text_picker
-
-        show_mini_text_picker(app)
+        ui = _ui(app)
+        if ui is not None:
+            ui.show_mini_text_picker(app)
 
     app.master.after(0, _do)
 
