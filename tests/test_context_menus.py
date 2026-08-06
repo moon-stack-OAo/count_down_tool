@@ -12,6 +12,8 @@ if _ROOT not in sys.path:
 from services.menu_labels import tray_mini_menu_label, tray_window_menu_label
 from ui.context_menus import (  # re-export 兼容
     tray_mini_menu_label as _ui_tray_mini_menu_label,
+)
+from ui.context_menus import (
     tray_window_menu_label as _ui_tray_window_menu_label,
 )
 

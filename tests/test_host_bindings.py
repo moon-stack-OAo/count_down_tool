@@ -104,8 +104,9 @@ class TestInstallStateProperties:
 
     def test_countdown_app_has_bindings(self):
         """真实 CountdownApp 类上已装绑定（不实例化 Tk）。"""
-        from count_down_tool import CountdownApp
         from dataclasses import fields
+
+        from count_down_tool import CountdownApp
 
         for f in fields(PersistedState):
             assert isinstance(getattr(CountdownApp, f"_{f.name}"), property)
