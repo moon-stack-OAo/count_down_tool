@@ -176,14 +176,35 @@ class TestCountdownController(unittest.TestCase):
 
     def test_pause_and_resume(self):
         app = _make_app(_state=STATE_RUNNING)
-        app.target_time = datetime.now() + timedelta(minutes=5)
+        original = datetime.now() + timedelta(minutes=5)
+        app.target_time = original
         app._duration_total_seconds = 300.0
         ctrl = CountdownController(app)
         ctrl.pause_countdown()
         self.assertEqual(app._state, STATE_PAUSED)
         self.assertIsNotNone(app._paused_remaining)
-        ctrl.resume_countdown()
+        with mock.patch.object(CountdownController, "update_countdown") as upd:
+            ctrl.resume_countdown()
         self.assertEqual(app._state, STATE_RUNNING)
+        # 继续保留原目标时刻，不按冻结剩余重建
+        self.assertEqual(app.target_time, original)
+        self.assertIsNone(app._paused_remaining)
+        upd.assert_called_once_with(original)
+
+    def test_resume_uses_original_target_not_frozen(self):
+        """继续时不重建 target；剩余由 update_countdown(target − now) 决定。"""
+        app = _make_app(_state=STATE_RUNNING)
+        target = datetime(2026, 8, 7, 18, 0, 0)
+        app.target_time = target
+        ctrl = CountdownController(app)
+        ctrl.pause_countdown()
+        frozen = app._paused_remaining
+        self.assertIsNotNone(frozen)
+        with mock.patch.object(CountdownController, "update_countdown") as upd:
+            ctrl.resume_countdown()
+        self.assertEqual(app.target_time, target)
+        # 若仍用冻结重建，target 会变成 now+frozen，与原 target 不同
+        upd.assert_called_once_with(target)
 
 
 class TestTrayActions(unittest.TestCase):

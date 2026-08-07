@@ -31,7 +31,6 @@ from core.countdown_core import (
     remaining_seconds,
     target_from_duration,
     target_from_hms,
-    target_from_remaining,
     validate_hms,
 )
 from services.tray import refresh_tray_menu
@@ -283,7 +282,7 @@ class CountdownController:
         app._sync_mini_state()
 
     def pause_countdown(self):
-        """暂停：冻结剩余时间，取消 tick，UI 保持暂停瞬间的值。"""
+        """暂停：取消 tick，UI 冻结为暂停瞬间的剩余；目标时刻保持不变。"""
         app = self.app
         cancel_timer_attr(app, "_countdown_timer_id")
         now = datetime.now()
@@ -291,6 +290,7 @@ class CountdownController:
             rem = remaining_seconds(app.target_time, now)
         else:
             rem = 0.0
+        # 仅用于暂停态展示；继续时按原 target 相对 now 重算
         app._paused_remaining = rem
         app.countdown_text = format_remaining(int(rem))
         if app.countdown_label:
@@ -301,21 +301,17 @@ class CountdownController:
         self.set_state(ACTION_PAUSE)
 
     def resume_countdown(self):
-        """继续：以冻结剩余重建 target_time，清空冻结值并重新 schedule tick。"""
+        """继续：保留原 target_time，按 now 重算剩余；已过目标则直接结束。"""
         app = self.app
-        rem = app._paused_remaining
         app._paused_remaining = None
         now = datetime.now()
-        if rem is not None:
-            app.target_time = target_from_remaining(rem, now)
+        if app.target_time is not None:
             if app.target_time_label:
                 app.target_time_label.config(
                     text=format_target_label(app.target_time, now)
                 )
             self.set_state(ACTION_RESUME)
-            self.update_countdown(app.target_time)
-        elif app.target_time:
-            self.set_state(ACTION_RESUME)
+            # update_countdown 内部用 target − now；≤0 会走结束逻辑
             self.update_countdown(app.target_time)
         else:
             self.start_countdown()

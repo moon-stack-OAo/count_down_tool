@@ -158,28 +158,27 @@ class TestRemainingFreeze(unittest.TestCase):
         )
         self.assertEqual(target_from_remaining(-3, now), now)
 
-    def test_pause_resume_preserves_remaining(self):
-        """暂停后墙钟前进，resume 用冻结 remaining 重建 target，剩余应不变。"""
+    def test_pause_resume_recalculates_from_target(self):
+        """继续时按原 target 相对 now 重算剩余（暂停期间墙钟仍前进）。"""
         t0 = datetime(2026, 7, 17, 12, 0, 0)
         target = t0 + timedelta(seconds=100)
         pause_at = t0 + timedelta(seconds=30)
         frozen = remaining_seconds(target, pause_at)
         self.assertAlmostEqual(frozen, 70.0)
 
-        resume_at = pause_at + timedelta(seconds=120)
-        new_target = target_from_remaining(frozen, resume_at)
-        rem_after = remaining_seconds(new_target, resume_at)
-        self.assertAlmostEqual(rem_after, frozen, delta=1.0)
-        self.assertAlmostEqual(rem_after, 70.0, delta=1.0)
+        # 暂停 20 秒后继续：剩余 = 100 - 50 = 50，而非冻结的 70
+        resume_at = pause_at + timedelta(seconds=20)
+        rem_after = remaining_seconds(target, resume_at)
+        self.assertAlmostEqual(rem_after, 50.0, delta=1.0)
 
-    def test_without_freeze_remaining_would_decay(self):
-        """对照：若不冻结而沿用原 target，暂停期间剩余会被扣掉。"""
+    def test_resume_after_target_passed_is_zero(self):
+        """暂停过久、继续时已过目标 → remaining ≤ 0。"""
         t0 = datetime(2026, 7, 17, 12, 0, 0)
         target = t0 + timedelta(seconds=100)
         pause_at = t0 + timedelta(seconds=30)
         resume_at = pause_at + timedelta(seconds=120)
-        rem_without_freeze = remaining_seconds(target, resume_at)
-        self.assertAlmostEqual(rem_without_freeze, 0.0)
+        rem = remaining_seconds(target, resume_at)
+        self.assertAlmostEqual(rem, 0.0)
 
 
 class TestInputsLocked(unittest.TestCase):

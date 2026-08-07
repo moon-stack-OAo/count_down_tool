@@ -2,21 +2,21 @@
 
 ![Python](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
-![Windows](https://img.shields.io/badge/Windows%20(v1.4.1)-0078D6?logo=windows&logoColor=white)
-![macOS](https://img.shields.io/badge/macOS%20(v1.4.1)-000000?logo=apple&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.4.1-brightgreen.svg)
+![Windows](https://img.shields.io/badge/Windows%20(v1.4.2)-0078D6?logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS%20(v1.4.2)-000000?logo=apple&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.4.2-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 基于 **Python + Tkinter** 的深色主题桌面倒计时工具（完整模式 + Mini 小组件）。
 
-**当前版本：1.4.1**（变更见 [CHANGELOG.md](CHANGELOG.md)）
+**当前版本：1.4.2**（变更见 [CHANGELOG.md](CHANGELOG.md)）
 
 ---
 
 ## 功能特性
 
 - **倒计时**：自定义到期时间（时/分/秒，可直接键入），实时剩余时间与进度条
-- **运行锁定**：进行中锁定到期时间与快捷预设；暂停后可改时间/选新目标再继续
+- **运行锁定**：进行中锁定到期时间与快捷预设；暂停后可改时间/选新目标再继续；未改时间则继续时按原目标相对当前时刻重算剩余
 - **Mini 桌面小组件**：右下角迷你悬浮窗，始终置顶，可拖动；边缘/四角可缩放并记住大小
 - **设置中心**：外观（主题、默认启动模式、Mini 字色）/ 声音 / 系统（开机自启、**启动时**检查更新、配置目录、重置 Mini）/ 关于（**手动
   **检查更新、弹窗查看日志、复制版本）
@@ -87,7 +87,7 @@ pip install -r requirements-dev.txt
 
 ## 打包构建
 
-版本号读取自 `core.countdown_core.__version__`（当前 **1.4.1**）。CI 打 tag 时要求 tag 与代码版本一致。
+版本号读取自 `core.countdown_core.__version__`（当前 **1.4.2**）。CI 打 tag 时要求 tag 与代码版本一致。
 
 ### 统一 PyInstaller 配置
 
