@@ -278,6 +278,21 @@ jobs:
           # 列出实际产物路径供上传
           find artifacts -type f | sort
 
+      - name: Generate SHA256 sidecars
+        run: |
+          set -euo pipefail
+          # 必须对「即将上传」的 zip 现算哈希；同 tag 重推时若只覆盖 zip 不覆盖 .sha256 会导致自动更新校验失败
+          while IFS= read -r -d '' zip; do
+            dir="$(dirname "$zip")"
+            base="$(basename "$zip")"
+            (
+              cd "$dir"
+              sha256sum "$base" | tee "${base}.sha256"
+            )
+          done < <(find artifacts -type f -name '*.zip' -print0 | sort -z)
+          echo "----- sha256 files -----"
+          find artifacts -type f -name '*.sha256' -print -exec cat {} \;
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -288,7 +303,7 @@ jobs:
             artifacts/win-zip/*
           draft: false
           prerelease: false
-          # 同 tag 重推时覆盖附件，避免 already_exists
+          # 同 tag 重推时覆盖附件（含 .sha256），避免 already_exists / 陈旧哈希
           overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
