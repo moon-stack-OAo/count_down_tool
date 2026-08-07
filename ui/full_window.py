@@ -334,9 +334,16 @@ def build_full_ui(app):
     spin_input_frame = tk.Frame(time_row, bg=c["card"])
     spin_input_frame.pack(side=tk.LEFT)
 
-    app.hour_var = tk.StringVar(value="18")
-    app.minute_var = tk.StringVar(value="00")
-    app.second_var = tk.StringVar(value="00")
+    # 默认用配置中的上次到期时分秒
+    app.hour_var = tk.StringVar(
+        value=str(getattr(app, "_last_hour", "18") or "18")
+    )
+    app.minute_var = tk.StringVar(
+        value=str(getattr(app, "_last_minute", "00") or "00")
+    )
+    app.second_var = tk.StringVar(
+        value=str(getattr(app, "_last_second", "00") or "00")
+    )
 
     spinboxes = [
         (app.hour_var, 0, 23),
@@ -399,12 +406,14 @@ def build_full_ui(app):
         background=c["card"],
     ).pack(side=tk.LEFT, padx=(0, 10))
 
+    # 与托盘「快捷开始」对齐（保留 +15 分主界面常用项）
     preset_buttons = [
         ("+5分", "00", "05", "00"),
         ("+10分", "00", "10", "00"),
         ("+15分", "00", "15", "00"),
         ("+30分", "00", "30", "00"),
         ("+1时", "01", "00", "00"),
+        ("+8时", "08", "00", "00"),
     ]
     app._preset_chips = []
     for text, h, m, s in preset_buttons:
@@ -414,11 +423,11 @@ def build_full_ui(app):
             font=app._font("label", 9),
             bg=c["chip"],
             fg=c["text_dim"],
-            padx=10,
+            padx=8,
             pady=5,
             cursor="hand2",
         )
-        btn.pack(side=tk.LEFT, padx=(0, 6))
+        btn.pack(side=tk.LEFT, padx=(0, 5))
         btn._preset_hms = (h, m, s)  # type: ignore[attr-defined]
         app._preset_chips.append(btn)
 

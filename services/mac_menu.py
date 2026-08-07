@@ -15,7 +15,12 @@ import platform
 import tkinter as tk
 
 from core.countdown_core import APP_NAME, __version__, button_text_for_state
-from services.menu_labels import tray_mini_menu_label, tray_window_menu_label
+from services.menu_labels import (
+    TRAY_QUICK_START_MENU_LABEL,
+    TRAY_QUICK_START_PRESETS,
+    tray_mini_menu_label,
+    tray_window_menu_label,
+)
 
 logger = logging.getLogger("count_down_tool")
 
@@ -105,9 +110,22 @@ def _fill_settings(menu: tk.Menu, app) -> None:
         command=app._show_time_picker,
         state=pick_state,
     )
+    quick = tk.Menu(menu, tearoff=0)
+    for label, hours, minutes, seconds in TRAY_QUICK_START_PRESETS:
+        quick.add_command(
+            label=label,
+            command=lambda h=hours, m=minutes, s=seconds: _quick_start(
+                app, h, m, s
+            ),
+        )
+    menu.add_cascade(label=TRAY_QUICK_START_MENU_LABEL, menu=quick)
     menu.add_command(
         label=button_text_for_state(app._state),
         command=app.toggle_countdown,
+    )
+    menu.add_command(
+        label="重置",
+        command=lambda: _reset_countdown(app),
     )
     menu.add_separator()
     menu.add_command(
@@ -129,9 +147,30 @@ def _fill_settings(menu: tk.Menu, app) -> None:
         label="字体颜色…",
         command=lambda: _show_text_picker(app),
     )
-    # 主题/音效/自启/更新已迁入设置中心
+    menu.add_separator()
+    menu.add_command(
+        label="检查更新…",
+        command=lambda: _open_update(app),
+    )
     menu.add_separator()
     menu.add_command(label="退出", command=app._quit_app)
+
+
+def _quick_start(app, hours: int, minutes: int, seconds: int) -> None:
+    """菜单栏快捷开始（已在主线程）。"""
+    app._set_preset_time(hours, minutes, seconds, force=True)
+
+
+def _reset_countdown(app) -> None:
+    """菜单栏重置倒计时。"""
+    app.reset()
+
+
+def _open_update(app) -> None:
+    """菜单栏检查更新。"""
+    from services.updater import open_update_from_ui
+
+    open_update_from_ui(app)
 
 
 def _show_settings(app) -> None:

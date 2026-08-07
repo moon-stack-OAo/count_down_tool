@@ -24,5 +24,8 @@
   ],
   "check_update_on_start": true,
   "last_update_check": "",
-  "ignored_update_version": ""
+  "ignored_update_version": "",
+  "last_hour": "18",
+  "last_minute": "00",
+  "last_second": "00"
 }

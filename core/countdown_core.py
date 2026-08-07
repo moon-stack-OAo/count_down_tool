@@ -599,6 +599,7 @@ def merge_config(
     - check_update_on_start: Optional[bool]
     - last_update_check: Optional[str]  # YYYY-MM-DD
     - ignored_update_version: Optional[str]  # 用户忽略的版本号
+    - last_hour / last_minute / last_second: Optional[str]  # 上次到期时分秒
     """
     result: Dict[str, Any] = dict(config) if isinstance(config, dict) else {}
     for key, value in updates.items():

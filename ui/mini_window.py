@@ -291,19 +291,27 @@ def create_mini_window(app):
         mini.after_idle(lambda w=mini: _ensure_mini_topmost(w))
         mini.after(50, lambda w=mini: _ensure_mini_topmost(w))
         mini.after(200, lambda w=mini: _ensure_mini_topmost(w))
-        # 周期性保活：切换其它 App 后仍保持浮层
+        # 周期性保活：切换其它 App 后仍保持浮层（id 登记到 app，销毁时统一 cancel）
         def _keep_topmost(win=mini, app_ref=app):
             try:
                 if getattr(app_ref, "mini_window", None) is not win:
+                    cancel_timer_attr(app_ref, "_mini_topmost_timer_id", widget=win)
                     return
                 if not win.winfo_exists():
+                    cancel_timer_attr(app_ref, "_mini_topmost_timer_id", widget=win)
                     return
                 _ensure_mini_topmost(win)
-                win.after(1500, _keep_topmost)
+                app_ref._mini_topmost_timer_id = win.after(1500, _keep_topmost)
             except tk.TclError:
-                pass
+                try:
+                    app_ref._mini_topmost_timer_id = None
+                except (AttributeError, TypeError):
+                    pass
 
-        mini.after(1500, _keep_topmost)
+        try:
+            app._mini_topmost_timer_id = mini.after(1500, _keep_topmost)
+        except tk.TclError:
+            app._mini_topmost_timer_id = None
     else:
         try:
             mini.lift()
@@ -325,8 +333,10 @@ def destroy_mini_window(app, capture_size=True):
     capture_size=False：仅保存位置，不覆盖 _mini_size（用于「恢复默认大小」）。
     """
     if app.mini_window:
-        # 取消未触发的 debounce，避免销毁后写盘
+        # 取消 debounce / mac topmost 保活，避免销毁后幽灵回调
+        mini_win = app.mini_window
         cancel_timer_attr(app, "_mini_geo_save_id")
+        cancel_timer_attr(app, "_mini_topmost_timer_id", widget=mini_win)
         try:
             if capture_size:
                 _capture_mini_geometry(app)
@@ -336,7 +346,7 @@ def destroy_mini_window(app, capture_size=True):
         except (OSError, tk.TclError, AttributeError, TypeError, ValueError):
             logger.warning("保存 Mini 窗口几何失败", exc_info=True)
         try:
-            app.mini_window.destroy()
+            mini_win.destroy()
         except tk.TclError:
             logger.warning("销毁 Mini 窗口失败", exc_info=True)
         app.mini_window = None
@@ -351,6 +361,7 @@ def destroy_mini_window(app, capture_size=True):
         app.mini_close_btn = None
         app._mini_layout_scale = None
         app._resize_data = None
+        app._mini_press = None
         # 重建后需强制同步
         app._mini_sync_cache = None
         app._mini_clock_hm = None
@@ -495,6 +506,15 @@ def mini_on_press(app, event):
     """按下：边缘开始缩放，否则拖动窗口。"""
     if not app.mini_window:
         return
+    # 记录按下点，松手时用于区分「单击倒计时区」与拖动
+    try:
+        app._mini_press = {
+            "x_root": int(getattr(event, "x_root", 0) or 0),
+            "y_root": int(getattr(event, "y_root", 0) or 0),
+            "widget": getattr(event, "widget", None),
+        }
+    except (TypeError, ValueError, AttributeError):
+        app._mini_press = None
     x, y = _event_xy_in_window(app, event)
     edge = _hit_resize_edge(app, x, y)
     if edge:
@@ -594,12 +614,37 @@ def _schedule_save_mini_geometry(app):
 
 
 def mini_on_release(app, event=None):
-    """松手：捕获几何并 debounce 写盘。"""
+    """松手：捕获几何并 debounce 写盘；倒计时区单击则 toggle。"""
     if not app.mini_window:
         app._resize_data = None
+        app._mini_press = None
         return
     was_resize = bool(app._resize_data)
     app._resize_data = None
+    press = getattr(app, "_mini_press", None)
+    app._mini_press = None
+    # 倒计时区单击（移动 < 6px）：开始/暂停/继续
+    if (
+        not was_resize
+        and press is not None
+        and event is not None
+        and getattr(app, "mini_countdown_label", None) is not None
+    ):
+        try:
+            dx = abs(int(event.x_root) - int(press.get("x_root", 0)))
+            dy = abs(int(event.y_root) - int(press.get("y_root", 0)))
+            widget = press.get("widget")
+            if dx <= 5 and dy <= 5 and widget is app.mini_countdown_label:
+                if hasattr(app, "toggle_countdown"):
+                    app.toggle_countdown()
+                try:
+                    from services.tray import refresh_tray_menu
+
+                    refresh_tray_menu(app)
+                except (ImportError, AttributeError, RuntimeError, tk.TclError):
+                    pass
+        except (TypeError, ValueError, AttributeError, tk.TclError):
+            logger.debug("Mini 单击 toggle 失败", exc_info=True)
     try:
         _capture_mini_geometry(app)
         _schedule_save_mini_geometry(app)

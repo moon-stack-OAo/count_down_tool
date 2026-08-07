@@ -99,9 +99,19 @@ def _safe_extract_member(zf: zipfile.ZipFile, member: zipfile.ZipInfo, dest_dir:
     return target
 
 
-def validate_windows_extract_layout(extract_dir: str) -> str:
+def _rmtree_quiet(path: str) -> None:
+    """失败时静默清理目录（解压回滚）。"""
+    try:
+        if path and os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+    except OSError:
+        logger.debug("清理解压目录失败: %s", path, exc_info=True)
+
+
+def validate_windows_extract_layout(extract_dir: str, *, strict: bool = True) -> str:
     """
     校验解压目录结构：必须有 count_down_tool.exe，附属路径应合理。
+    strict=True：非白名单顶层项直接失败（由 extract 回滚）。
     返回主程序绝对路径。
     """
     root = os.path.abspath(extract_dir)
@@ -162,14 +172,18 @@ def validate_windows_extract_layout(extract_dir: str) -> str:
             full = os.path.join(scan_root, entry)
             if os.path.isfile(full):
                 if low not in _EXTRACT_ALLOWED_ROOT_FILES and not low.endswith(".exe"):
-                    # 允许同级其它附属小文件？收敛：仅白名单文件名
                     if low != WINDOWS_EXE_NAME.lower():
-                        logger.warning("安装包含非白名单顶层文件（已解压）: %s", entry)
+                        msg = f"安装包含非白名单顶层文件: {entry}"
+                        if strict:
+                            raise RuntimeError(msg)
+                        logger.warning("%s（已解压）", msg)
             elif os.path.isdir(full):
                 if low not in _EXTRACT_ALLOWED_TOP_DIRS:
-                    # 包装目录内不应再有奇怪目录
                     if low not in ("_internal", "docs"):
-                        logger.warning("安装包含非白名单顶层目录: %s", entry)
+                        msg = f"安装包含非白名单顶层目录: {entry}"
+                        if strict:
+                            raise RuntimeError(msg)
+                        logger.warning("%s", msg)
     except OSError as exc:
         logger.debug("扫描解压目录失败: %s", exc)
 
@@ -183,33 +197,41 @@ def extract_windows_exe(zip_path: str, dest_dir: str) -> str:
     - onedir 包：zip 内含 exe + _internal/ 等（推荐）
     - 旧 onefile 包：zip 内仅单个 exe（兼容，但易触发 _MEI/python3xx.dll 问题）
 
-    安全：禁止 extractall；逐成员规范化路径、拒绝 .. / 绝对路径 / 非白名单路径。
+    安全：禁止 extractall；逐成员规范化路径、拒绝 .. / 绝对路径 / 非白名单路径；
+    校验失败时删除整个解压目录（回滚）。
     """
-    os.makedirs(dest_dir, exist_ok=True)
     dest_root = os.path.abspath(dest_dir)
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        bad = zf.testzip()
-        if bad is not None:
-            raise RuntimeError(f"更新包损坏（zip 校验失败: {bad}）")
-        members = [
-            m
-            for m in zf.infolist()
-            if m.filename and not str(m.filename).endswith(("/", "\\"))
-        ]
-        # 存在性粗检：规范化失败的恶意名在解压时拒绝
-        has_exe = False
-        for m in members:
-            try:
+    # 干净目标：避免残留旧文件污染布局校验
+    if os.path.isdir(dest_root):
+        _rmtree_quiet(dest_root)
+    os.makedirs(dest_root, exist_ok=True)
+
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            bad = zf.testzip()
+            if bad is not None:
+                raise RuntimeError(f"更新包损坏（zip 校验失败: {bad}）")
+            members = [
+                m
+                for m in zf.infolist()
+                if m.filename and not str(m.filename).endswith(("/", "\\"))
+            ]
+            # 解压前完整预检：全部成员必须可规范化且在白名单，且含主程序
+            has_exe = False
+            for m in members:
                 rel = _normalize_zip_member_name(m.filename)
-            except RuntimeError:
-                continue
-            if os.path.basename(rel).lower() == WINDOWS_EXE_NAME.lower():
-                has_exe = True
-                break
-        if not has_exe:
-            raise FileNotFoundError("zip 中未找到 count_down_tool.exe")
+                if not is_allowed_extract_member(rel):
+                    raise RuntimeError(f"拒绝非白名单路径 zip 成员: {m.filename!r}")
+                if os.path.basename(rel).lower() == WINDOWS_EXE_NAME.lower():
+                    has_exe = True
+            if not has_exe:
+                raise FileNotFoundError("zip 中未找到 count_down_tool.exe")
 
-        for member in members:
-            _safe_extract_member(zf, member, dest_root)
+            for member in members:
+                _safe_extract_member(zf, member, dest_root)
 
-    return validate_windows_extract_layout(dest_root)
+        return validate_windows_extract_layout(dest_root, strict=True)
+    except Exception:
+        # 任一步失败：清理已写出内容，避免半包/脏包残留
+        _rmtree_quiet(dest_root)
+        raise

@@ -378,8 +378,8 @@ class CountdownApp:
     def reset(self):
         self._ctrl.reset()
 
-    def _set_preset_time(self, hours, minutes, seconds):
-        self._ctrl.set_preset_time(hours, minutes, seconds)
+    def _set_preset_time(self, hours, minutes, seconds, *, force: bool = False):
+        self._ctrl.set_preset_time(hours, minutes, seconds, force=force)
 
     def _format_target_label(self, target, now=None):
         return format_target_label(target, now)

@@ -20,6 +20,7 @@ APP_TIMER_ATTRS: tuple[str, ...] = (
     "_alarm_timer_id",
     "_error_timer_id",
     "_mini_geo_save_id",
+    "_mini_topmost_timer_id",  # mac Mini 周期性 topmost 保活
     "_startup_health_timer_id",
     "_startup_update_timer_id",
 )

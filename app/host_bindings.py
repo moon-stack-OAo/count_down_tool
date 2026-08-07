@@ -24,6 +24,9 @@ _PERSISTED_COERCE: Dict[str, Callable[[Any], Any]] = {
     "last_update_check": lambda v: v if v is not None else "",
     "ignored_update_version": lambda v: v if v is not None else "",
     "mini_text": lambda v: v if v is not None else {},
+    "last_hour": lambda v: str(v) if v is not None else "18",
+    "last_minute": lambda v: str(v) if v is not None else "00",
+    "last_second": lambda v: str(v) if v is not None else "00",
 }
 
 _RUNTIME_COERCE: Dict[str, Callable[[Any], Any]] = {

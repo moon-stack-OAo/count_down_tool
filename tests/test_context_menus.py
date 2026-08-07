@@ -9,7 +9,13 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from services.menu_labels import tray_mini_menu_label, tray_window_menu_label
+from services.menu_labels import (
+    TRAY_QUICK_START_MENU_LABEL,
+    TRAY_QUICK_START_PRESETS,
+    tray_mini_menu_label,
+    tray_quick_start_labels,
+    tray_window_menu_label,
+)
 from ui.context_menus import (  # re-export 兼容
     tray_mini_menu_label as _ui_tray_mini_menu_label,
 )
@@ -44,6 +50,32 @@ class TestTrayMenuLabels(unittest.TestCase):
         """ui.context_menus 继续 re-export，对外 API 不变。"""
         self.assertIs(tray_window_menu_label, _ui_tray_window_menu_label)
         self.assertIs(tray_mini_menu_label, _ui_tray_mini_menu_label)
+
+
+class TestTrayQuickStartPresets(unittest.TestCase):
+    def test_menu_label(self):
+        self.assertEqual(TRAY_QUICK_START_MENU_LABEL, "快捷开始")
+
+    def test_presets_labels_and_durations(self):
+        labels = tray_quick_start_labels()
+        self.assertEqual(
+            labels,
+            ["5 分钟", "10 分钟", "30 分钟", "1 小时", "8 小时"],
+        )
+        # (文案, 时, 分, 秒)
+        expected = (
+            ("5 分钟", 0, 5, 0),
+            ("10 分钟", 0, 10, 0),
+            ("30 分钟", 0, 30, 0),
+            ("1 小时", 1, 0, 0),
+            ("8 小时", 8, 0, 0),
+        )
+        self.assertEqual(TRAY_QUICK_START_PRESETS, expected)
+
+    def test_each_preset_positive_duration(self):
+        for label, h, m, s in TRAY_QUICK_START_PRESETS:
+            total = h * 3600 + m * 60 + s
+            self.assertGreater(total, 0, msg=label)
 
 
 class TestRefreshTrayMenuImport(unittest.TestCase):

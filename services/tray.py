@@ -11,7 +11,12 @@ import platform
 import threading
 
 from core.countdown_core import APP_NAME, button_text_for_state
-from services.menu_labels import tray_mini_menu_label, tray_window_menu_label
+from services.menu_labels import (
+    TRAY_QUICK_START_MENU_LABEL,
+    TRAY_QUICK_START_PRESETS,
+    tray_mini_menu_label,
+    tray_window_menu_label,
+)
 
 logger = logging.getLogger("count_down_tool")
 
@@ -57,6 +62,21 @@ def init_tray_icon(app, icon_path) -> bool:
         image = load_tray_icon(icon_path)
 
         # 主题/音效/自启/更新已迁入设置中心，托盘仅保留常用快捷项
+        # pystray 仅接受 0/1/2 个形参的 action（见 MenuItem._assert_action）；
+        # 不可用 lambda 额外默认参捕获时长（会 co_argcount>2 抛 ValueError）
+        def _quick_action(hours, minutes, seconds):
+            def _on_click(icon=None, item=None):
+                tray_quick_start(app, hours, minutes, seconds)
+
+            return _on_click
+
+        quick_items = tuple(
+            pystray.MenuItem(
+                label,
+                _quick_action(hours, minutes, seconds),
+            )
+            for label, hours, minutes, seconds in TRAY_QUICK_START_PRESETS
+        )
         menu = pystray.Menu(
             # 文案随 Mini/完整模式动态变化
             pystray.MenuItem(
@@ -69,8 +89,16 @@ def init_tray_icon(app, icon_path) -> bool:
                 lambda icon=None, item=None: tray_show_time_picker(app),
                 enabled=lambda _: not app._inputs_locked(),
             ),
+            pystray.MenuItem(
+                TRAY_QUICK_START_MENU_LABEL,
+                pystray.Menu(*quick_items),
+            ),
             pystray.MenuItem(lambda _: button_text_for_state(app._state),
                              lambda icon=None, item=None: tray_toggle_countdown(app)),
+            pystray.MenuItem(
+                "重置",
+                lambda icon=None, item=None: tray_reset_countdown(app),
+            ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
                 lambda _: tray_mini_menu_label(app._is_mini),
@@ -93,6 +121,10 @@ def init_tray_icon(app, icon_path) -> bool:
             pystray.MenuItem(
                 "设置…",
                 lambda icon=None, item=None: tray_show_settings(app),
+            ),
+            pystray.MenuItem(
+                "检查更新…",
+                lambda icon=None, item=None: tray_open_update(app),
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("退出", lambda icon=None, item=None: tray_quit(app)),
@@ -181,11 +213,42 @@ def tray_show_time_picker(app, icon=None, item=None):
     app.master.after(0, app._show_time_picker)
 
 
+def tray_quick_start(app, hours, minutes, seconds, icon=None, item=None):
+    """托盘快捷开始：现在 + 时长并开始/重启（主线程，force 可覆盖 running）。"""
+
+    def _do():
+        app._set_preset_time(hours, minutes, seconds, force=True)
+        refresh_tray_menu(app)
+
+    app.master.after(0, _do)
+
+
 def tray_toggle_countdown(app, icon=None, item=None):
     def _do():
         app.toggle_countdown()
         # 状态变更后强制重建托盘原生菜单（Windows 缓存）
         refresh_tray_menu(app)
+
+    app.master.after(0, _do)
+
+
+def tray_reset_countdown(app, icon=None, item=None):
+    """托盘重置倒计时（与完整窗「重置」一致）。"""
+
+    def _do():
+        app.reset()
+        refresh_tray_menu(app)
+
+    app.master.after(0, _do)
+
+
+def tray_open_update(app, icon=None, item=None):
+    """托盘检查更新：有 pending 则打开更新流程，否则手动检查。"""
+
+    def _do():
+        from services.updater import open_update_from_ui
+
+        open_update_from_ui(app)
 
     app.master.after(0, _do)
 

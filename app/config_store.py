@@ -138,6 +138,25 @@ def mini_text_fg(app: Any, role: str) -> str:
     return resolve_mini_text_color(app.COLORS, app._mini_text, role)
 
 
+def _normalize_last_hms(h: Any, m: Any, s: Any) -> Tuple[str, str, str]:
+    """规范化 last_hour/minute/second 为两位数字符串。"""
+
+    def _one(val: Any, default: str, lo: int, hi: int) -> str:
+        try:
+            n = int(str(val).strip())
+        except (TypeError, ValueError, AttributeError):
+            return default
+        if n < lo or n > hi:
+            return default
+        return f"{n:02d}"
+
+    return (
+        _one(h, "18", 0, 23),
+        _one(m, "00", 0, 59),
+        _one(s, "00", 0, 59),
+    )
+
+
 def load_config(app: Any) -> None:
     """从磁盘读取配置并写入 app 字段（ConfigHost 兼容 duck-type）。
 
@@ -214,6 +233,12 @@ def load_config(app: Any) -> None:
             app._last_update_check = luc if isinstance(luc, str) else ""
             ign = config.get("ignored_update_version")
             app._ignored_update_version = ign if isinstance(ign, str) else ""
+            # 上次到期时分秒（容错非法值）
+            app._last_hour, app._last_minute, app._last_second = _normalize_last_hms(
+                config.get("last_hour"),
+                config.get("last_minute"),
+                config.get("last_second"),
+            )
             real_autostart = is_autostart_enabled()
             app._autostart = real_autostart
             if config.get("autostart") is not None and bool(config.get("autostart")) != real_autostart:
@@ -236,6 +261,7 @@ def load_config(app: Any) -> None:
             app._last_update_check = ""
             app._ignored_update_version = ""
             app._startup_mode = "remember"
+            app._last_hour, app._last_minute, app._last_second = "18", "00", "00"
 
 
 def save_config(app: Any) -> None:
@@ -254,6 +280,11 @@ def save_config(app: Any) -> None:
             config = merge_mini_text(config, app._mini_text)
             mode = "mini" if app._is_mini else "full"
             history = normalize_sound_history(getattr(app, "_sound_history", []))
+            lh, lm, ls = _normalize_last_hms(
+                getattr(app, "_last_hour", "18"),
+                getattr(app, "_last_minute", "00"),
+                getattr(app, "_last_second", "00"),
+            )
             config = merge_config(
                 config,
                 transparent_mode=bool(app._transparent_mode),
@@ -270,6 +301,9 @@ def save_config(app: Any) -> None:
                 check_update_on_start=bool(getattr(app, "_check_update_on_start", True)),
                 last_update_check=str(getattr(app, "_last_update_check", "") or ""),
                 ignored_update_version=str(getattr(app, "_ignored_update_version", "") or ""),
+                last_hour=lh,
+                last_minute=lm,
+                last_second=ls,
             )
             if app._theme_custom is not None:
                 config = merge_config(config, theme_custom=app._theme_custom)

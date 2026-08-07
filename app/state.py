@@ -34,6 +34,10 @@ class PersistedState:
     mini_pos: Optional[Tuple[int, int]] = None
     mini_size: Optional[Tuple[int, int]] = None
     mini_text: Dict[str, Any] = field(default_factory=dict)
+    # 上次到期时分秒（两位数字符串），供启动默认与 reset 恢复
+    last_hour: str = "18"
+    last_minute: str = "00"
+    last_second: str = "00"
 
 
 @dataclass

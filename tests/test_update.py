@@ -13,6 +13,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 import hashlib
+import http.client
 import threading
 import urllib.error
 
@@ -177,13 +178,27 @@ class TestExtractAndScript(unittest.TestCase):
     def test_extract_non_whitelist_member_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             zpath = os.path.join(tmp, "dirty.zip")
+            out_dir = os.path.join(tmp, "out")
             payload = b"MZ" + b"\0" * 1200
             with zipfile.ZipFile(zpath, "w") as zf:
                 zf.writestr("count_down_tool.exe", payload)
                 zf.writestr("malware/payload.bin", b"bad")
             with self.assertRaises(RuntimeError) as ctx:
-                extract_windows_exe(zpath, os.path.join(tmp, "out"))
+                extract_windows_exe(zpath, out_dir)
             self.assertIn("白名单", str(ctx.exception))
+            # 失败应回滚：解压目录不残留
+            self.assertFalse(os.path.isdir(out_dir))
+
+    def test_extract_failure_rolls_back_partial_dir(self):
+        """校验失败（exe 过小）时删除整个解压目录。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = os.path.join(tmp, "tiny.zip")
+            out_dir = os.path.join(tmp, "out")
+            with zipfile.ZipFile(zpath, "w") as zf:
+                zf.writestr("count_down_tool.exe", b"MZ" + b"\0" * 10)
+            with self.assertRaises(RuntimeError):
+                extract_windows_exe(zpath, out_dir)
+            self.assertFalse(os.path.isdir(out_dir))
 
     def test_allowed_extract_member_rules(self):
         self.assertTrue(is_allowed_extract_member("count_down_tool.exe"))
@@ -282,9 +297,43 @@ class TestDownloadFile(unittest.TestCase):
                 return_value=self._mock_resp(payload, content_length=100),
             ):
                 with self.assertRaises(RuntimeError) as ctx:
-                    download_file("https://example.com/a.zip", dest)
+                    # max_retries=0：本用例只验证不完整落盘清理，不测退避
+                    download_file(
+                        "https://example.com/a.zip",
+                        dest,
+                        max_retries=0,
+                    )
             self.assertIn("不完整", str(ctx.exception))
             self.assertFalse(os.path.isfile(dest))
+
+    def test_download_retries_remote_disconnected(self):
+        """RemoteDisconnected 等瞬时错误应自动重试后成功。"""
+        payload = b"retry-ok-payload"
+        calls = {"n": 0}
+
+        def _urlopen(*_a, **_k):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise http.client.RemoteDisconnected(
+                    "Remote end closed connection without response"
+                )
+            return self._mock_resp(payload, content_length=len(payload))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "pkg.zip")
+            with mock.patch(
+                "core.update_impl.download.urllib.request.urlopen",
+                side_effect=_urlopen,
+            ):
+                with mock.patch("core.update_impl.download.time.sleep", return_value=None):
+                    path = download_file(
+                        "https://example.com/a.zip",
+                        dest,
+                        max_retries=3,
+                    )
+            self.assertEqual(calls["n"], 3)
+            with open(path, "rb") as f:
+                self.assertEqual(f.read(), payload)
 
     def test_download_empty_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
