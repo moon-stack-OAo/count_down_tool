@@ -783,7 +783,13 @@ def _countdown_color_role(state: str) -> str:
 
 def sync_mini_state(app):
     """同步 mini 窗口的状态显示（变更检测，避免每秒无意义 configure）。"""
-    if not app.mini_window:
+    mini = getattr(app, "mini_window", None)
+    if not mini:
+        return
+    try:
+        if not mini.winfo_exists():
+            return
+    except tk.TclError:
         return
 
     text = app.countdown_text
@@ -806,9 +812,11 @@ def sync_mini_state(app):
     # 同 state 下改字色（设置页）也需刷新
     if (
         not need_countdown
-        and prev_full is not None
-        and len(prev_full) >= 3
-        and prev_full[2] != countdown_fg
+        and (
+            prev_full is None
+            or len(prev_full) < 3
+            or prev_full[2] != countdown_fg
+        )
     ):
         need_countdown = True
     need_clock_fg = (
@@ -817,15 +825,19 @@ def sync_mini_state(app):
         or prev_full[3] != clock_fg
     )
 
-    if need_countdown and app.mini_countdown_label:
+    if need_countdown and getattr(app, "mini_countdown_label", None):
         try:
-            app.mini_countdown_label.config(text=text, fg=countdown_fg)
+            kw = {"text": text}
+            if countdown_fg is not None:
+                kw["fg"] = countdown_fg
+            app.mini_countdown_label.config(**kw)
         except tk.TclError:
             pass
 
     if need_clock_fg and getattr(app, "mini_time_label", None):
         try:
-            app.mini_time_label.config(fg=clock_fg)
+            if clock_fg is not None:
+                app.mini_time_label.config(fg=clock_fg)
         except tk.TclError:
             pass
 

@@ -145,18 +145,36 @@ def set_mini_text_color(app, role, color_key):
         cfg[role] = color_key
     app._mini_text = cfg
     app._save_config()
+    # 强制下次 sync 重绘字色（绕过 text/state 未变时的缓存）
+    app._mini_sync_cache = None
     from ui.mini_window import sync_mini_state
 
     sync_mini_state(app)
+    # 确保界面立刻重绘（部分环境下 configure 后需 update）
+    mini = getattr(app, "mini_window", None)
+    if mini is not None:
+        try:
+            if mini.winfo_exists():
+                mini.update_idletasks()
+        except tk.TclError:
+            pass
 
 
 def reset_mini_text_colors(app):
     """恢复 Mini 字色为默认。"""
     app._mini_text = {}
     app._save_config()
+    app._mini_sync_cache = None
     from ui.mini_window import sync_mini_state
 
     sync_mini_state(app)
+    mini = getattr(app, "mini_window", None)
+    if mini is not None:
+        try:
+            if mini.winfo_exists():
+                mini.update_idletasks()
+        except tk.TclError:
+            pass
 
 
 def _fill_full_menu(menu, app):
