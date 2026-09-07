@@ -97,7 +97,10 @@ def init_tray_icon(app, icon_path) -> bool:
             pystray.MenuItem(
                 TRAY_SHIFT_MENU_LABEL,
                 lambda icon=None, item=None: tray_start_shift(app),
-                enabled=lambda _: bool(getattr(app, "_shift_enabled", False)),
+                enabled=lambda _: (
+                    bool(getattr(app, "_shift_enabled", False))
+                    and not app._inputs_locked()
+                ),
             ),
             pystray.MenuItem(lambda _: button_text_for_state(app._state),
                              lambda icon=None, item=None: tray_toggle_countdown(app)),

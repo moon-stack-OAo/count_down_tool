@@ -120,9 +120,8 @@ def _fill_settings(menu: tk.Menu, app) -> None:
             ),
         )
     menu.add_cascade(label=TRAY_QUICK_START_MENU_LABEL, menu=quick)
-    shift_state = (
-        tk.NORMAL if bool(getattr(app, "_shift_enabled", False)) else tk.DISABLED
-    )
+    shift_ok = bool(getattr(app, "_shift_enabled", False)) and not app._inputs_locked()
+    shift_state = tk.NORMAL if shift_ok else tk.DISABLED
     menu.add_command(
         label=TRAY_SHIFT_MENU_LABEL,
         command=lambda: _start_shift(app),
