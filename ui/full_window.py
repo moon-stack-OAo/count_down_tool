@@ -7,6 +7,7 @@ from tkinter import ttk
 from core.countdown_core import APP_NAME, __version__
 from ui.chrome_titlebar import MAIN_TITLE_HEIGHT, add_circle_button, build_title_bar
 from ui.context_menus import bind_full_context_menu, bind_full_context_menu_tree
+from ui.design.themed import register_themed
 from ui.design.tokens import (
     BTN_FONT_SIZE,
     BTN_PAD_X,
@@ -21,12 +22,10 @@ from ui.design.tokens import (
     MAIN_CONTENT_PAD_Y_TOP,
     PROGRESS_BAR_H,
     RADIUS_CARD,
-    SPACE_LG,
     SPACE_MD,
     SPACE_SM,
     SPACE_XS,
 )
-from ui.design.themed import register_themed
 from ui.widgets import RoundedFrame, make_chip
 
 

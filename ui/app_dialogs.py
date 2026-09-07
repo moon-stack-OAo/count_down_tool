@@ -12,7 +12,7 @@ from typing import Optional
 from core.countdown_core import APP_NAME
 from ui.design.themed import themed_button, themed_frame, themed_label
 from ui.design.tokens import FONT_BODY, FONT_CAPTION, FONT_META, SPACE_MD, SPACE_SM, SPACE_XS
-from ui.widgets import ThinScrollbar, make_pill, make_settings_card
+from ui.widgets import ThinScrollbar, make_settings_card
 from ui.window_chrome_dialog import center_dialog_later, use_borderless_chrome
 
 logger = logging.getLogger("count_down_tool")

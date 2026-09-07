@@ -164,7 +164,8 @@ def build_theme_custom_section(app, parent, c, refreshers) -> None:
                 try:
                     sw.config(bg=color)
                     # 色块角色跟当前键，便于设置窗 recolor 时大致跟色
-                    register_themed(sw, bg=key if key in ("bg", "card", "accent", "chip", "border", "error") else "chip")
+                    role_keys = ("bg", "card", "accent", "chip", "border", "error")
+                    register_themed(sw, bg=key if key in role_keys else "chip")
                 except tk.TclError:
                     pass
             hl = hex_lbls.get(key)
