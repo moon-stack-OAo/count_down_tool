@@ -82,6 +82,7 @@ HIDDENIMPORTS_COMMON: list[str] = [
     "ui.settings.shell",
     "ui.settings.layout",
     "ui.settings.appearance",
+    "ui.settings.theme_custom_editor",
     "ui.settings.about_tab",
     # services
     "services",

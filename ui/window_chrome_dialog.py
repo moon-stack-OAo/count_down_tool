@@ -12,6 +12,7 @@ from ui.chrome_titlebar import (
     add_circle_button,
     build_title_bar,
 )
+from ui.design.tokens import FONT_ICON, RADIUS_LG
 
 # 自绘标题栏高度（与主窗风格一致，对话框略矮）
 CHROME_TITLE_HEIGHT = DIALOG_TITLE_HEIGHT
@@ -89,7 +90,7 @@ def use_borderless_chrome(
         command=_do_close if close_enabled else None,
         hover_fill=c["btn_hover_close"],
         enabled=close_enabled,
-        font_size=12,
+        font_size=FONT_ICON,
         name="close",
         chrome=chrome,
     )
@@ -134,7 +135,7 @@ def _apply_rounded_corners(win: tk.Misc, app) -> None:
     """Windows 圆角；geometry 稳定后再设一次更稳。"""
     if platform.system() != "Windows":
         return
-    radius = int(getattr(app, "CORNER_RADIUS", 16) or 16)
+    radius = int(getattr(app, "CORNER_RADIUS", RADIUS_LG) or RADIUS_LG)
     try:
         from services.windows_native import set_window_rounded_corners
     except ImportError:

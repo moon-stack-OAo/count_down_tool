@@ -7,7 +7,27 @@ from tkinter import ttk
 from core.countdown_core import APP_NAME, __version__
 from ui.chrome_titlebar import MAIN_TITLE_HEIGHT, add_circle_button, build_title_bar
 from ui.context_menus import bind_full_context_menu, bind_full_context_menu_tree
-from ui.widgets import RoundedFrame
+from ui.design.tokens import (
+    BTN_FONT_SIZE,
+    BTN_PAD_X,
+    BTN_PAD_Y,
+    FONT_BODY,
+    FONT_CAPTION,
+    FONT_ICON,
+    FONT_META,
+    FONT_SPIN,
+    MAIN_CONTENT_PAD_X,
+    MAIN_CONTENT_PAD_Y_BOTTOM,
+    MAIN_CONTENT_PAD_Y_TOP,
+    PROGRESS_BAR_H,
+    RADIUS_CARD,
+    SPACE_LG,
+    SPACE_MD,
+    SPACE_SM,
+    SPACE_XS,
+)
+from ui.design.themed import register_themed
+from ui.widgets import RoundedFrame, make_chip
 
 
 def refresh_update_badge(app) -> None:
@@ -25,7 +45,7 @@ def refresh_update_badge(app) -> None:
     try:
         if show:
             if not badge.winfo_ismapped():
-                badge.pack(side=tk.LEFT, padx=(6, 0))
+                badge.pack(side=tk.LEFT, padx=(SPACE_XS + 2, 0))
         else:
             if badge.winfo_ismapped():
                 badge.pack_forget()
@@ -34,44 +54,25 @@ def refresh_update_badge(app) -> None:
 
 
 def sync_shift_chip(app) -> None:
-    """按 shift_enabled 增删主界面「今日班次」chip，并刷新锁定样式。"""
+    """确保主界面有「今日班次」chip，并按启用/锁定状态刷新样式。"""
     chips = getattr(app, "_preset_chips", None)
     if chips is None:
         return
-    enabled = bool(getattr(app, "_shift_enabled", False))
     existing = None
     for btn in list(chips):
         if bool(getattr(btn, "_shift_chip", False)):
             existing = btn
             break
 
-    if enabled and existing is None:
+    if existing is None:
         parent = getattr(app, "_preset_row", None)
         if parent is None:
             return
         c = app.COLORS
-        shift_btn = tk.Label(
-            parent,
-            text="今日班次",
-            font=app._font("label", 9),
-            bg=c["chip"],
-            fg=c["text_dim"],
-            padx=8,
-            pady=5,
-            cursor="hand2",
-        )
-        shift_btn.pack(side=tk.LEFT, padx=(0, 5))
+        shift_btn = make_chip(parent, "今日班次", app=app, c=c)
+        shift_btn.pack(side=tk.LEFT, padx=(0, SPACE_XS + 1))
         shift_btn._shift_chip = True  # type: ignore[attr-defined]
         chips.append(shift_btn)
-    elif not enabled and existing is not None:
-        try:
-            existing.destroy()
-        except tk.TclError:
-            pass
-        try:
-            chips.remove(existing)
-        except ValueError:
-            pass
 
     apply_lock = getattr(app, "_apply_input_lock", None)
     if callable(apply_lock):
@@ -104,11 +105,11 @@ def setup_styles(app):
     style.configure("Error.TLabel", font=app.FONTS["label"],
                     foreground=c["error"], background=c["bg"])
     style.configure("Dim.TLabel", foreground=c["text_dim"], background=c["glass"])
-    style.configure("Caption.TLabel", font=app._font("label", 9),
+    style.configure("Caption.TLabel", font=app._font("label", FONT_CAPTION),
                     foreground=c["text_muted"], background=c["glass"])
-    style.configure("Meta.TLabel", font=app._font("label", 9),
+    style.configure("Meta.TLabel", font=app._font("label", FONT_CAPTION),
                     foreground=c["text_dim"], background=c["glass"])
-    style.configure("MetaMuted.TLabel", font=app._font("label", 8),
+    style.configure("MetaMuted.TLabel", font=app._font("label", FONT_META),
                     foreground=c["text_muted"], background=c["glass"])
     # 结束闪烁：预注册奇偶色，flash_visual 只切换 style
     style.configure("FlashEven.TLabel", font=app.FONTS["countdown"],
@@ -120,14 +121,16 @@ def setup_styles(app):
                     foreground=c["error"], background=c["glass"])
 
     _btn_fg = c.get("btn_on_primary", c["bg"])
-    # 空闲 / 开始
+    _btn_font = app._font("button", BTN_FONT_SIZE, bold=True)
+    _btn_pad = (BTN_PAD_X, BTN_PAD_Y)
+    # 空闲 / 开始（色/pad/字号与 make_pill primary 对齐）
     style.configure("Accent.TButton",
-                    font=app.FONTS["button"],
+                    font=_btn_font,
                     background=c.get("btn_primary", c["accent"]),
                     foreground=_btn_fg,
                     borderwidth=0,
                     focuscolor=c["accent_glow"],
-                    padding=(24, 12))
+                    padding=_btn_pad)
     style.map("Accent.TButton",
               background=[("active", c.get("btn_primary_hover", c["accent_hover"])),
                           ("pressed", c.get("btn_primary_hover", c["accent_hover"])),
@@ -136,12 +139,12 @@ def setup_styles(app):
                           ("!disabled", _btn_fg)])
     # 运行中 / 暂停
     style.configure("PrimaryRunning.TButton",
-                    font=app.FONTS["button"],
+                    font=_btn_font,
                     background=c.get("btn_running", c["warning"]),
                     foreground=_btn_fg,
                     borderwidth=0,
                     focuscolor=c.get("btn_running_hover", c["warning"]),
-                    padding=(24, 12))
+                    padding=_btn_pad)
     style.map("PrimaryRunning.TButton",
               background=[("active", c.get("btn_running_hover", c["warning"])),
                           ("pressed", c.get("btn_running_hover", c["warning"])),
@@ -150,12 +153,12 @@ def setup_styles(app):
                           ("!disabled", _btn_fg)])
     # 完成
     style.configure("PrimaryFinished.TButton",
-                    font=app.FONTS["button"],
+                    font=_btn_font,
                     background=c.get("btn_finished", c["success"]),
                     foreground=_btn_fg,
                     borderwidth=0,
                     focuscolor=c.get("btn_finished_hover", c["success"]),
-                    padding=(24, 12))
+                    padding=_btn_pad)
     style.map("PrimaryFinished.TButton",
               background=[("active", c.get("btn_finished_hover", c["success"])),
                           ("pressed", c.get("btn_finished_hover", c["success"])),
@@ -163,16 +166,18 @@ def setup_styles(app):
               foreground=[("disabled", c["text_muted"]),
                           ("!disabled", _btn_fg)])
 
+    # 次要：与 make_pill(primary=False) 同 chip 语义
     style.configure("Secondary.TButton",
-                    font=app.FONTS["label"],
-                    background=c["card"],
-                    foreground=c["text_dim"],
+                    font=app._font("label", FONT_CAPTION),
+                    background=c.get("chip", c["card"]),
+                    foreground=c["text"],
                     borderwidth=0,
-                    padding=(18, 10))
+                    padding=_btn_pad)
     style.map("Secondary.TButton",
-              background=[("active", c["chip_hover"]),
+              background=[("active", c.get("chip_hover", c["border"])),
                           ("pressed", c["border"])],
-              foreground=[("active", c["text"])])
+              foreground=[("active", c["text"]),
+                          ("!disabled", c["text"])])
 
     style.configure("TSpinbox",
                     fieldbackground=c["input_bg"],
@@ -221,10 +226,11 @@ def build_full_ui(app):
         text=f"v{__version__}",
         bg=c["title_bar"],
         fg=c.get("text_muted", c.get("text_dim", c["text"])),
-        font=app._font("label", 8),
+        font=app._font("label", FONT_META),
         cursor="hand2",
     )
-    version_label.pack(side=tk.LEFT, padx=(6, 0))
+    register_themed(version_label, bg="title_bar", fg="text_muted")
+    version_label.pack(side=tk.LEFT, padx=(SPACE_XS + 2, 0))
     version_label.bind("<Button-1>", _on_update_from_title)
     app._title_version_label = version_label
 
@@ -232,13 +238,14 @@ def build_full_ui(app):
     update_badge = tk.Label(
         title_bar,
         text=" NEW ",
-        bg=c.get("error", "#FB7185"),
-        fg=c.get("white", "#FFFFFF"),
-        font=app._font("label", 8, bold=True),
+        bg=c["error"],
+        fg=c["white"],
+        font=app._font("label", FONT_META, bold=True),
         cursor="hand2",
-        padx=4,
+        padx=SPACE_XS,
         pady=1,
     )
+    register_themed(update_badge, bg="error", fg="white")
     app._title_update_badge = update_badge
     update_badge.bind("<Button-1>", _on_update_from_title)
     refresh_update_badge(app)
@@ -258,7 +265,7 @@ def build_full_ui(app):
         text="×",
         command=lambda _e=None: app._hide_to_tray(),
         hover_fill=c["btn_hover_close"],
-        font_size=12,
+        font_size=FONT_ICON,
         name="close",
         chrome=chrome,
     )
@@ -268,7 +275,7 @@ def build_full_ui(app):
         text="−",
         command=lambda _e=None: app._switch_to_mini(),
         hover_fill=c["btn_hover_min"],
-        font_size=12,
+        font_size=FONT_ICON,
         name="mini",
         chrome=chrome,
     )
@@ -278,14 +285,21 @@ def build_full_ui(app):
         text="⚙",
         command=_open_settings,
         hover_fill=c["accent"],
-        font_size=10,
+        font_size=FONT_BODY,
         name="settings",
         chrome=chrome,
     )
 
     # ===== 主内容区域 =====
     main_frame = tk.Frame(app.master, bg=c["bg"])
-    main_frame.pack(fill=tk.BOTH, expand=True, padx=22, pady=(14, 16))
+    register_themed(main_frame, bg="bg")
+    app._main_frame = main_frame
+    main_frame.pack(
+        fill=tk.BOTH,
+        expand=True,
+        padx=MAIN_CONTENT_PAD_X,
+        pady=(MAIN_CONTENT_PAD_Y_TOP, MAIN_CONTENT_PAD_Y_BOTTOM),
+    )
 
     # ----- 倒计时主视觉卡（置顶）-----
     _display_border = c.get("card_border", c["border"])
@@ -293,20 +307,25 @@ def build_full_ui(app):
         main_frame,
         bg_color=c["glass"],
         border_color=_display_border,
-        corner_radius=14,
+        corner_radius=RADIUS_CARD,
         border_width=1,
         height=172,
     )
-    countdown_card.pack(fill=tk.X, pady=(0, 12))
+    register_themed(countdown_card, bg="glass", border="card_border")
+    countdown_card.pack(fill=tk.X, pady=(0, SPACE_MD))
+    app._countdown_card = countdown_card
     countdown_inner = tk.Frame(countdown_card, bg=c["glass"])
+    register_themed(countdown_inner, bg="glass")
     countdown_inner.place(relx=0.5, rely=0.5, anchor="center")
 
-    ttk.Label(
+    _cap = ttk.Label(
         countdown_inner,
         text="剩余时间",
         style="Caption.TLabel",
         background=c["glass"],
-    ).pack(pady=(0, 2))
+    )
+    register_themed(_cap, bg="glass")
+    _cap.pack(pady=(0, 2))
 
     app.countdown_label = ttk.Label(
         countdown_inner,
@@ -314,10 +333,11 @@ def build_full_ui(app):
         style="Countdown.TLabel",
         background=c["glass"],
     )
-    app.countdown_label.pack(pady=(0, 4))
+    register_themed(app.countdown_label, bg="glass")
+    app.countdown_label.pack(pady=(0, SPACE_XS))
 
     # 进度条（细条；主题重建后需重新挂到 app）
-    _progress_w, _progress_h = 280, 4
+    _progress_w, _progress_h = 280, PROGRESS_BAR_H
     app.progress_canvas = tk.Canvas(
         countdown_inner,
         width=_progress_w,
@@ -326,7 +346,8 @@ def build_full_ui(app):
         highlightthickness=0,
         bd=0,
     )
-    app.progress_canvas.pack(pady=(4, 8))
+    register_themed(app.progress_canvas, bg="glass")
+    app.progress_canvas.pack(pady=(SPACE_XS, SPACE_SM))
     app._progress_bar_w = _progress_w
     app._progress_bar_h = _progress_h
     app._progress_track_id = app.progress_canvas.create_rectangle(
@@ -344,6 +365,7 @@ def build_full_ui(app):
         style="Meta.TLabel",
         background=c["glass"],
     )
+    register_themed(app.target_time_label, bg="glass")
     app.target_time_label.pack()
 
     app.current_time_label = ttk.Label(
@@ -352,46 +374,47 @@ def build_full_ui(app):
         style="MetaMuted.TLabel",
         background=c["glass"],
     )
-    app.current_time_label.pack(pady=(4, 0))
+    register_themed(app.current_time_label, bg="glass")
+    app.current_time_label.pack(pady=(SPACE_XS, 0))
 
     # ----- 设置卡：到期时间 + 快捷预设 -----
     settings_card = RoundedFrame(
         main_frame,
         bg_color=c["card"],
         border_color=c["card_border"],
-        corner_radius=14,
+        corner_radius=RADIUS_CARD,
         border_width=1,
         height=132,
     )
-    settings_card.pack(fill=tk.X, pady=(0, 10))
+    register_themed(settings_card, bg="card", border="card_border")
+    settings_card.pack(fill=tk.X, pady=(0, SPACE_SM + 2))
     app._settings_card = settings_card
     settings_inner = tk.Frame(settings_card, bg=c["card"])
+    register_themed(settings_inner, bg="card")
     settings_inner.place(relx=0.5, rely=0.5, anchor="center")
     app._settings_inner = settings_inner
 
     time_row = tk.Frame(settings_inner, bg=c["card"])
+    register_themed(time_row, bg="card")
     time_row.pack()
 
-    ttk.Label(
+    _time_cap = ttk.Label(
         time_row,
         text="到期时间（今日）",
         style="Caption.TLabel",
         background=c["card"],
-    ).pack(side=tk.LEFT, padx=(0, 12))
+    )
+    register_themed(_time_cap, bg="card")
+    _time_cap.pack(side=tk.LEFT, padx=(0, SPACE_MD))
 
     spin_input_frame = tk.Frame(time_row, bg=c["card"])
+    register_themed(spin_input_frame, bg="card")
     spin_input_frame.pack(side=tk.LEFT)
 
-    # 默认用配置中的上次到期时分秒
-    app.hour_var = tk.StringVar(
-        value=str(getattr(app, "_last_hour", "18") or "18")
-    )
-    app.minute_var = tk.StringVar(
-        value=str(getattr(app, "_last_minute", "00") or "00")
-    )
-    app.second_var = tk.StringVar(
-        value=str(getattr(app, "_last_second", "00") or "00")
-    )
+    # 默认到期时刻固定 18:00:00（不记忆上次输入）
+    app.hour_var = tk.StringVar(value="18")
+    app.minute_var = tk.StringVar(value="00")
+    app.second_var = tk.StringVar(value="00")
 
     spinboxes = [
         (app.hour_var, 0, 23),
@@ -413,8 +436,8 @@ def build_full_ui(app):
         return "break"
 
     app._time_spinboxes = []
-    spin_font = app._font("time", 14)
-    spin_colon_font = app._font("time", 14, bold=True)
+    spin_font = app._font("time", FONT_SPIN)
+    spin_colon_font = app._font("time", FONT_SPIN, bold=True)
     for idx, (var, min_val, max_val) in enumerate(spinboxes):
         sb = ttk.Spinbox(
             spin_input_frame,
@@ -432,28 +455,33 @@ def build_full_ui(app):
         sb.bind("<Button-5>", lambda e, s=sb: _spin_wheel(e, s))
         app._time_spinboxes.append(sb)
         if idx < 2:
-            ttk.Label(
+            _colon = ttk.Label(
                 spin_input_frame,
                 text=":",
                 font=spin_colon_font,
                 background=c["card"],
                 foreground=c["text_muted"],
-            ).grid(row=0, column=idx * 2 + 1)
+            )
+            register_themed(_colon, bg="card", fg="text_muted")
+            _colon.grid(row=0, column=idx * 2 + 1)
 
     app.hour_var.trace_add("write", app._on_time_changed)
     app.minute_var.trace_add("write", app._on_time_changed)
     app.second_var.trace_add("write", app._on_time_changed)
 
     preset_row = tk.Frame(settings_inner, bg=c["card"])
-    preset_row.pack(pady=(12, 0))
+    register_themed(preset_row, bg="card")
+    preset_row.pack(pady=(SPACE_MD, 0))
     app._preset_row = preset_row
 
-    ttk.Label(
+    _preset_cap = ttk.Label(
         preset_row,
         text="快捷时长",
         style="Caption.TLabel",
         background=c["card"],
-    ).pack(side=tk.LEFT, padx=(0, 10))
+    )
+    register_themed(_preset_cap, bg="card")
+    _preset_cap.pack(side=tk.LEFT, padx=(0, SPACE_SM + 2))
 
     # 与托盘「快捷开始」对齐（保留 +15 分主界面常用项）
     preset_buttons = [
@@ -466,35 +494,16 @@ def build_full_ui(app):
     ]
     app._preset_chips = []
     for text, h, m, s in preset_buttons:
-        btn = tk.Label(
-            preset_row,
-            text=text,
-            font=app._font("label", 9),
-            bg=c["chip"],
-            fg=c["text_dim"],
-            padx=8,
-            pady=5,
-            cursor="hand2",
-        )
-        btn.pack(side=tk.LEFT, padx=(0, 5))
+        btn = make_chip(preset_row, text, app=app, c=c)
+        btn.pack(side=tk.LEFT, padx=(0, SPACE_XS + 1))
         btn._preset_hms = (h, m, s)  # type: ignore[attr-defined]
         app._preset_chips.append(btn)
 
-    # 班次启用时显示「今日班次」chip（锁定逻辑与预设一致）
-    if bool(getattr(app, "_shift_enabled", False)):
-        shift_btn = tk.Label(
-            preset_row,
-            text="今日班次",
-            font=app._font("label", 9),
-            bg=c["chip"],
-            fg=c["text_dim"],
-            padx=8,
-            pady=5,
-            cursor="hand2",
-        )
-        shift_btn.pack(side=tk.LEFT, padx=(0, 5))
-        shift_btn._shift_chip = True  # type: ignore[attr-defined]
-        app._preset_chips.append(shift_btn)
+    # 「今日班次」始终显示；未启用时由 apply_input_lock 置灰
+    shift_btn = make_chip(preset_row, "今日班次", app=app, c=c)
+    shift_btn.pack(side=tk.LEFT, padx=(0, SPACE_XS + 1))
+    shift_btn._shift_chip = True  # type: ignore[attr-defined]
+    app._preset_chips.append(shift_btn)
 
     # 按当前状态应用输入锁定、主按钮色、进度条
     if hasattr(app, "_apply_input_lock"):
@@ -505,9 +514,11 @@ def build_full_ui(app):
         app._refresh_progress_bar()
 
     app.error_label = ttk.Label(main_frame, style="Error.TLabel")
-    app.error_label.pack(pady=(0, 8))
+    register_themed(app.error_label, bg="bg")
+    app.error_label.pack(pady=(0, SPACE_SM))
 
     action_frame = tk.Frame(main_frame, bg=c["bg"])
+    register_themed(action_frame, bg="bg")
     action_frame.pack(fill=tk.X)
 
     app.btn_start = ttk.Button(
@@ -516,7 +527,7 @@ def build_full_ui(app):
         style="Accent.TButton",
         command=app.toggle_countdown,
     )
-    app.btn_start.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 10))
+    app.btn_start.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, SPACE_SM + 2))
 
     ttk.Button(
         action_frame,

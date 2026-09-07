@@ -10,12 +10,28 @@ import tkinter as tk
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional
 
+from ui.design.themed import register_themed
+from ui.design.tokens import (
+    CIRCLE_BTN_SIZE,
+    DIALOG_TITLE_HEIGHT,
+    FONT_BODY,
+    FONT_ICON,
+    MAIN_TITLE_HEIGHT,
+    SPACE_SM,
+    SPACE_XS,
+)
 from ui.widgets import init_circle_button, update_circle_button
 
-# 主窗 / 对话框默认高度
-MAIN_TITLE_HEIGHT = 48
-DIALOG_TITLE_HEIGHT = 40
-CIRCLE_BTN_SIZE = 16
+# 再导出，供 full_window / window_chrome_dialog 等既有 import 使用
+__all__ = (
+    "MAIN_TITLE_HEIGHT",
+    "DIALOG_TITLE_HEIGHT",
+    "CIRCLE_BTN_SIZE",
+    "TitleBarChrome",
+    "build_title_bar",
+    "add_circle_button",
+    "bind_drag_to_widget",
+)
 
 
 @dataclass
@@ -45,10 +61,12 @@ def build_title_bar(
     """
     c = app.COLORS
     title_bar = tk.Frame(parent, bg=c["title_bar"], height=height)
+    register_themed(title_bar, bg="title_bar")
     title_bar.pack(fill=tk.X, side=pack_side)
     title_bar.pack_propagate(False)
 
     accent = tk.Frame(title_bar, bg=c["accent"], height=2)
+    register_themed(accent, bg="accent")
     accent.pack(side=tk.BOTTOM, fill=tk.X)
 
     if on_drag_start is not None:
@@ -61,8 +79,9 @@ def build_title_bar(
         text=title if title.startswith(" ") else f"  {title}",
         bg=c["title_bar"],
         fg=c["text"],
-        font=app._font("label", 10, bold=True),
+        font=app._font("label", FONT_BODY, bold=True),
     )
+    register_themed(title_label, bg="title_bar", fg="text")
     title_label.pack(side=tk.LEFT, fill=tk.Y)
     if on_drag_start is not None:
         title_label.bind("<Button-1>", on_drag_start)
@@ -70,7 +89,8 @@ def build_title_bar(
         title_label.bind("<B1-Motion>", on_drag_motion)
 
     btn_frame = tk.Frame(title_bar, bg=c["title_bar"])
-    btn_frame.pack(side=tk.RIGHT, padx=(0, 10))
+    register_themed(btn_frame, bg="title_bar")
+    btn_frame.pack(side=tk.RIGHT, padx=(0, SPACE_SM + 2))
 
     return TitleBarChrome(frame=title_bar, title_label=title_label, btn_frame=btn_frame)
 
@@ -83,7 +103,7 @@ def add_circle_button(
     command: Optional[Callable[..., Any]] = None,
     hover_fill: Optional[str] = None,
     enabled: bool = True,
-    font_size: int = 12,
+    font_size: int = FONT_ICON,
     size: int = CIRCLE_BTN_SIZE,
     name: str = "",
     chrome: Optional[TitleBarChrome] = None,
@@ -97,7 +117,7 @@ def add_circle_button(
     font_family = app.FONTS["label"][0]
     fill_default = c["btn_default"]
     text_default = c["text_dim"] if enabled else c.get("text_muted", c["text_dim"])
-    hover = hover_fill if hover_fill else c.get("accent", c["btn_default"])
+    hover = hover_fill if hover_fill is not None else c["accent"]
 
     canvas = tk.Canvas(
         btn_frame,
@@ -107,7 +127,8 @@ def add_circle_button(
         highlightthickness=0,
         cursor="hand2" if enabled and command is not None else "",
     )
-    canvas.pack(side=tk.RIGHT, padx=(6, 0))
+    register_themed(canvas, bg="title_bar")
+    canvas.pack(side=tk.RIGHT, padx=(SPACE_XS + 2, 0))
     items = init_circle_button(
         canvas,
         size,
@@ -119,6 +140,15 @@ def add_circle_button(
         font_family=font_family,
         font_size=font_size,
     )
+    canvas._circle_items = items  # type: ignore[attr-defined]
+    canvas._circle_enabled = bool(enabled and command is not None)  # type: ignore[attr-defined]
+    # 悬停色角色：按按钮名映射；未知则 accent
+    _hover_by_name = {
+        "close": "btn_hover_close",
+        "mini": "btn_hover_min",
+        "min": "btn_hover_min",
+    }
+    canvas._hover_role = _hover_by_name.get(name, "accent")  # type: ignore[attr-defined]
 
     if enabled and command is not None:
         canvas.bind(

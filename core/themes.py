@@ -145,7 +145,8 @@ _EMERALD_COLORS = {
     "btn_on_primary": "#0A1410",
 }
 
-# 浅色：title_bar 用浅灰，避免 Windows transparentcolor 纯白误抠
+# 浅色：title_bar 用浅灰，避免 Windows transparentcolor 纯白误抠。
+# 对比度约定（勿大改色值）：text≠bg、accent≠bg、btn_on_primary 与 btn_primary 可辨。
 _LIGHT_COLORS = {
     "bg": "#F1F5F9",
     "card": "#FFFFFF",

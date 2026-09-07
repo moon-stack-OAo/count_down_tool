@@ -103,6 +103,7 @@ class CountdownController:
 
         chips = getattr(app, "_preset_chips", None) or []
         c = app.COLORS
+        shift_enabled = bool(getattr(app, "_shift_enabled", False))
         for btn in chips:
             try:
                 btn.unbind("<Enter>")
@@ -110,7 +111,10 @@ class CountdownController:
                 btn.unbind("<Button-1>")
             except tk.TclError:
                 logger.debug("预设 chip 解绑事件失败", exc_info=True)
-            if locked:
+            is_shift = bool(getattr(btn, "_shift_chip", False))
+            # 运行锁定，或班次未启用时的班次 chip → 置灰
+            disabled = locked or (is_shift and not shift_enabled)
+            if disabled:
                 try:
                     btn.config(
                         bg=c.get("btn_default", c["chip"]),
@@ -121,7 +125,6 @@ class CountdownController:
                     logger.debug("预设 chip 禁用样式失败", exc_info=True)
             else:
                 hms = getattr(btn, "_preset_hms", None)
-                is_shift = bool(getattr(btn, "_shift_chip", False))
                 try:
                     btn.config(bg=c["chip"], fg=c.get("text_dim", c["text"]), cursor="hand2")
                     btn.bind(
@@ -228,27 +231,6 @@ class CountdownController:
         except (tk.TclError, TypeError, ValueError, KeyError, AttributeError):
             logger.debug("绘制进度条失败", exc_info=True)
 
-    def remember_last_hms(self, *, save: bool = True) -> None:
-        """把当前 spinbox 时分秒记入持久化字段（可选写盘）。"""
-        app = self.app
-        try:
-            h = int(str(app.hour_var.get()).strip())
-            m = int(str(app.minute_var.get()).strip())
-            s = int(str(app.second_var.get()).strip())
-        except (ValueError, TypeError, AttributeError, tk.TclError):
-            return
-        ok, _ = validate_hms(h, m, s)
-        if not ok:
-            return
-        app._last_hour = f"{h:02d}"
-        app._last_minute = f"{m:02d}"
-        app._last_second = f"{s:02d}"
-        if save and hasattr(app, "_save_config"):
-            try:
-                app._save_config()
-            except (OSError, TypeError, ValueError, AttributeError):
-                logger.debug("保存 last_hms 失败", exc_info=True)
-
     def on_time_changed(self, *args):
         """当用户修改时间时，实时更新目标时间显示。"""
         app = self.app
@@ -270,9 +252,6 @@ class CountdownController:
             if app._state == STATE_PAUSED:
                 self.clear_paused_remaining()
             app.target_time_label.config(text=format_target_label(target, now))
-            # 用户改时间时记住默认到期时刻（不频繁写盘：仅内存）
-            if not app._applying_preset:
-                self.remember_last_hms(save=False)
         except (ValueError, TypeError, tk.TclError):
             # 输入中间态（空/非数字）时静默
             pass
@@ -385,7 +364,6 @@ class CountdownController:
             self.set_state(ACTION_RESUME)
         elif app._state == STATE_FINISHED:
             self.set_state(ACTION_RESTART)
-        self.remember_last_hms(save=True)
         self.update_countdown(app.target_time)
 
     def validate_inputs(self):
@@ -525,14 +503,11 @@ class CountdownController:
         cancel_timer_attr(app, "_countdown_timer_id")
         self.set_state(ACTION_RESET)
         app.target_time = None
-        # 恢复上次到期时分秒（无记录则 18:00:00）
-        h = str(getattr(app, "_last_hour", "18") or "18")
-        m = str(getattr(app, "_last_minute", "00") or "00")
-        s = str(getattr(app, "_last_second", "00") or "00")
+        # 固定恢复默认到期时刻 18:00:00
         try:
-            app.hour_var.set(h)
-            app.minute_var.set(m)
-            app.second_var.set(s)
+            app.hour_var.set("18")
+            app.minute_var.set("00")
+            app.second_var.set("00")
         except (tk.TclError, AttributeError):
             pass
         app.countdown_text = "--:--:--"
@@ -575,7 +550,6 @@ class CountdownController:
         else:
             # idle→running；running+force 保持 running
             self.set_state(ACTION_START)
-        self.remember_last_hms(save=True)
         self.update_countdown(target)
         app._sync_mini_state()
 
@@ -630,6 +604,5 @@ class CountdownController:
             self.set_state(ACTION_RESUME)
         else:
             self.set_state(ACTION_START)
-        self.remember_last_hms(save=True)
         self.update_countdown(target)
         app._sync_mini_state()

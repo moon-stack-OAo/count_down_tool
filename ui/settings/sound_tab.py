@@ -9,8 +9,17 @@ import tkinter as tk
 from tkinter import filedialog
 
 from ui.app_dialogs import ask_yes_no, show_error, temporary_withdraw
-from ui.design.tokens import SETTINGS_WIDTH, SPACE_SM, SPACE_XS
-from ui.settings.layout import bind_wheel_tree, card, pill
+from ui.design.themed import themed_frame, themed_label
+from ui.design.tokens import FONT_CAPTION, SETTINGS_WIDTH, SPACE_SM, SPACE_XS
+from ui.settings.layout import (
+    bind_wheel_tree,
+    card,
+    divider,
+    pill,
+    section_title,
+    selectable_row,
+    set_selectable_selected,
+)
 
 logger = logging.getLogger("count_down_tool")
 
@@ -35,7 +44,7 @@ def build_sound_section(app, parent, c, refreshers, win) -> None:
     sound_card = card(parent, c)
 
     sound_rows = {}
-    history_frame = tk.Frame(sound_card, bg=c["card"])
+    history_frame = themed_frame(sound_card, app, role="card", c=c)
 
     def _tray_refresh():
         try:
@@ -187,63 +196,43 @@ def build_sound_section(app, parent, c, refreshers, win) -> None:
             pass
 
     # 静音开关
-    mute_lbl = tk.Label(
+    mute_lbl = selectable_row(
         sound_card,
-        text="",
-        font=app._font("label", 10),
-        bg=c["card"],
-        fg=c["text"],
-        anchor="w",
-        cursor="hand2",
-        padx=SPACE_SM,
+        app,
+        c,
+        "结束静音",
+        selected=False,
+        on_click=_toggle_mute,
         pady=SPACE_SM,
     )
-    mute_lbl.pack(fill=tk.X)
-    mute_lbl.bind("<Button-1>", lambda e: _toggle_mute())
 
-    tk.Frame(sound_card, bg=c["border"], height=1).pack(fill=tk.X, pady=SPACE_SM)
+    divider(sound_card, c)
 
-    tk.Label(
-        sound_card,
-        text="结束音效",
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c["text_muted"],
-        anchor="w",
-    ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_XS))
+    section_title(sound_card, app, c, "结束音效")
 
     for sid, name in SOUND_PRESETS:
-        row = tk.Label(
+        row = selectable_row(
             sound_card,
-            text="",
-            font=app._font("label", 10),
-            bg=c["card"],
-            fg=c["text"],
-            anchor="w",
-            cursor="hand2",
-            padx=SPACE_SM,
-            pady=6,
+            app,
+            c,
+            name,
+            selected=False,
+            on_click=lambda s=sid: _set_sound(s),
         )
         row._sound_name = name  # type: ignore[attr-defined]
-        row.pack(fill=tk.X)
-        row.bind("<Button-1>", lambda e, s=sid: _set_sound(s))
-        row.bind(
-            "<Enter>",
-            lambda e, w=row: w.config(bg=c.get("chip_hover", c["border"])),
-        )
-        row.bind("<Leave>", lambda e, w=row: w.config(bg=c["card"]))
         sound_rows[sid] = row
 
     # 自定义当前项提示
-    custom_lbl = tk.Label(
+    custom_lbl = themed_label(
         sound_card,
-        text="",
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c["text_dim"],
-        anchor="w",
+        app,
+        "",
+        fg_role="text_dim",
+        bg_role="card",
+        font_size=FONT_CAPTION,
+        c=c,
         padx=SPACE_SM,
-        pady=4,
+        pady=SPACE_XS,
         wraplength=SETTINGS_WIDTH - 96,
         justify=tk.LEFT,
     )
@@ -251,7 +240,7 @@ def build_sound_section(app, parent, c, refreshers, win) -> None:
 
     history_frame.pack(fill=tk.X, pady=(SPACE_XS, 0))
 
-    btn_row = tk.Frame(sound_card, bg=c["card"])
+    btn_row = themed_frame(sound_card, app, role="card", c=c)
     btn_row.pack(fill=tk.X, pady=(SPACE_SM, 0))
 
     pill(btn_row, "导入文件…", app=app, c=c, primary=False, command=_import_sound).pack(
@@ -262,7 +251,7 @@ def build_sound_section(app, parent, c, refreshers, win) -> None:
     stop_btn = pill(btn_row, "停止试听", app=app, c=c, primary=False, command=_stop_preview)
     stop_btn.pack(side=tk.LEFT)
 
-    util_row = tk.Frame(sound_card, bg=c["card"])
+    util_row = themed_frame(sound_card, app, role="card", c=c)
     util_row.pack(fill=tk.X, pady=(SPACE_SM, 0))
     pill(
         util_row,
@@ -290,14 +279,13 @@ def build_sound_section(app, parent, c, refreshers, win) -> None:
                 pass
         if not history:
             return
-        tk.Label(
+        section_title(
             history_frame,
-            text="最近导入",
-            font=app._font("label", 9),
-            bg=c["card"],
-            fg=c["text_muted"],
-            anchor="w",
-        ).pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_SM, SPACE_XS))
+            app,
+            c,
+            "最近导入",
+            pady=(SPACE_SM, SPACE_XS),
+        )
         cur = str(getattr(app, "_sound_id", "soft") or "soft")
         cur_path = str(getattr(app, "_sound_path", "") or "")
         for entry in history[:8]:
@@ -305,37 +293,24 @@ def build_sound_section(app, parent, c, refreshers, win) -> None:
             label = entry.get("name") or os.path.basename(path) or "音效"
             if len(label) > 32:
                 label = label[:29] + "…"
-            mark = ""
+            selected = False
             if cur == SOUND_ID_CUSTOM and path:
                 try:
-                    if os.path.normcase(os.path.abspath(cur_path)) == os.path.normcase(
-                            os.path.abspath(path)
-                    ):
-                        mark = "✓  "
-                    else:
-                        mark = "    "
+                    selected = os.path.normcase(
+                        os.path.abspath(cur_path)
+                    ) == os.path.normcase(os.path.abspath(path))
                 except OSError:
-                    mark = "✓  " if cur_path == path else "    "
-            else:
-                mark = "    "
-            row = tk.Label(
+                    selected = cur_path == path
+            selectable_row(
                 history_frame,
-                text=f"{mark}{label}",
-                font=app._font("label", 9),
-                bg=c["card"],
-                fg=c["text"],
-                anchor="w",
-                cursor="hand2",
-                padx=SPACE_SM,
-                pady=4,
+                app,
+                c,
+                label,
+                selected=selected,
+                on_click=lambda p=path: _select_history(p),
+                font_size=FONT_CAPTION,
+                pady=SPACE_XS,
             )
-            row.pack(fill=tk.X)
-            row.bind("<Button-1>", lambda e, p=path: _select_history(p))
-            row.bind(
-                "<Enter>",
-                lambda e, w=row: w.config(bg=c.get("chip_hover", c["border"])),
-            )
-            row.bind("<Leave>", lambda e, w=row: w.config(bg=c["card"]))
         # 历史行是新建控件，须重绑滚轮才能在列表上滚动
         page = getattr(history_frame, "master", None)
         canvas = None
@@ -358,14 +333,15 @@ def build_sound_section(app, parent, c, refreshers, win) -> None:
     def _refresh():
         muted = bool(getattr(app, "_sound_muted", False))
         try:
-            mute_lbl.config(text=("✓  结束静音" if muted else "    结束静音"))
+            set_selectable_selected(mute_lbl, muted, text="结束静音")
         except tk.TclError:
             pass
         cur = str(getattr(app, "_sound_id", "soft") or "soft")
         for sid, lbl in sound_rows.items():
             try:
-                mark = "✓  " if sid == cur else "    "
-                lbl.config(text=f"{mark}{lbl._sound_name}")  # type: ignore[attr-defined]
+                set_selectable_selected(
+                    lbl, sid == cur, text=lbl._sound_name  # type: ignore[attr-defined]
+                )
             except tk.TclError:
                 pass
         path = str(getattr(app, "_sound_path", "") or "")
@@ -382,9 +358,14 @@ def build_sound_section(app, parent, c, refreshers, win) -> None:
             pass
         _rebuild_history()
         playing = is_sound_playing()
+        palette = getattr(app, "COLORS", None) or c
         try:
-            preview_btn.config(fg=c["text_muted"] if playing else c["bg"])
-            stop_btn.config(fg=c["text"] if playing else c["text_muted"])
+            preview_btn.config(
+                fg=palette["text_muted"] if playing else palette["bg"]
+            )
+            stop_btn.config(
+                fg=palette["text"] if playing else palette["text_muted"]
+            )
         except tk.TclError:
             pass
 

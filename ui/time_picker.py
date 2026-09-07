@@ -6,7 +6,17 @@ import platform
 import tkinter as tk
 
 from core.countdown_core import ACTION_RESUME, STATE_PAUSED, STATE_RUNNING
-from ui.design.tokens import SPACE_LG, SPACE_MD, SPACE_SM
+from ui.design.tokens import (
+    FONT_CAPTION,
+    FONT_SECTION,
+    FONT_SPIN,
+    FONT_TITLE,
+    RADIUS_LG,
+    SPACE_LG,
+    SPACE_MD,
+    SPACE_SM,
+    SPACE_XS,
+)
 from ui.widgets import RoundedFrame, init_circle_button, make_pill, update_circle_button
 from ui.window_chrome_dialog import center_dialog_later, use_borderless_chrome
 
@@ -146,33 +156,33 @@ def show_time_picker(app):
 
     # 标题
     header = tk.Frame(shell, bg=c["bg"])
-    header.pack(fill=tk.X, pady=(0, 10))
+    header.pack(fill=tk.X, pady=(0, SPACE_SM + 2))
     tk.Label(
         header,
         text="选择到期时间",
-        font=app._font("button", 13, bold=True),
+        font=app._font("button", FONT_TITLE, bold=True),
         bg=c["bg"],
         fg=c["text"],
     ).pack(anchor="w")
     tk.Label(
         header,
         text="可直接输入或点上下按钮调整，确认后开始计时",
-        font=app._font("label", 9),
+        font=app._font("label", FONT_CAPTION),
         bg=c["bg"],
         fg=c["text_muted"],
-    ).pack(anchor="w", pady=(4, 0))
-    tk.Frame(header, bg=c["accent"], height=2).pack(fill=tk.X, pady=(10, 0))
+    ).pack(anchor="w", pady=(SPACE_XS, 0))
+    tk.Frame(header, bg=c["accent"], height=2).pack(fill=tk.X, pady=(SPACE_SM + 2, 0))
 
     # 主卡片：Canvas 子控件用 place；高度须盖住步进+数字+单位
     card = RoundedFrame(
         shell,
         bg_color=c["glass"],
         border_color=c["accent"],
-        corner_radius=16,
+        corner_radius=RADIUS_LG,
         border_width=2,
         height=240,
     )
-    card.pack(fill=tk.X, pady=(0, 12))
+    card.pack(fill=tk.X, pady=(0, SPACE_MD))
     card_inner = tk.Frame(card, bg=c["glass"])
     card_inner.place(relx=0.5, rely=0.5, anchor="center")
 
@@ -181,7 +191,7 @@ def show_time_picker(app):
 
     mono = app._font("time", 24)
     mono_colon = app._font("time", 22, bold=True)
-    label_font = app._font("label", 9)
+    label_font = app._font("label", FONT_CAPTION)
     font_family = mono[0] if isinstance(mono, (tuple, list)) else "Segoe UI"
 
     def _step_btn(parent_fr, on_click, symbol):
@@ -352,19 +362,19 @@ def show_time_picker(app):
     _unit(units_row, s_var, 59, "秒")
 
     # 预览条
-    preview_bar = tk.Frame(shell, bg=c["card"], padx=14, pady=10)
+    preview_bar = tk.Frame(shell, bg=c["card"], padx=14, pady=SPACE_SM + 2)
     preview_bar.pack(fill=tk.X, pady=(0, 14))
     tk.Label(
         preview_bar,
         text="目标",
-        font=app._font("label", 9),
+        font=app._font("label", FONT_CAPTION),
         bg=c["card"],
         fg=c["text_muted"],
     ).pack(side=tk.LEFT)
     preview_lbl = tk.Label(
         preview_bar,
         text=f"{h0:02d}:{m0:02d}:{s0:02d}",
-        font=app._font("time", 14, bold=True),
+        font=app._font("time", FONT_SPIN, bold=True),
         bg=c["card"],
         fg=c["accent_glow"],
     )
@@ -438,8 +448,8 @@ def show_time_picker(app):
         primary=True,
         command=confirm,
         padx=32,
-        pady=8,
-        font_size=11,
+        pady=SPACE_SM,
+        font_size=FONT_SECTION,
     ).pack(side=tk.LEFT, padx=(0, SPACE_SM))
     make_pill(
         btn_inner,
@@ -449,8 +459,8 @@ def show_time_picker(app):
         primary=False,
         command=cancel,
         padx=32,
-        pady=8,
-        font_size=11,
+        pady=SPACE_SM,
+        font_size=FONT_SECTION,
     ).pack(side=tk.LEFT)
 
     picker.bind("<Return>", lambda e: confirm())

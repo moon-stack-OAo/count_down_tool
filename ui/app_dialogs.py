@@ -10,7 +10,8 @@ import tkinter as tk
 from typing import Optional
 
 from core.countdown_core import APP_NAME
-from ui.design.tokens import SPACE_MD, SPACE_SM, SPACE_XS
+from ui.design.themed import themed_button, themed_frame, themed_label
+from ui.design.tokens import FONT_BODY, FONT_CAPTION, FONT_META, SPACE_MD, SPACE_SM, SPACE_XS
 from ui.widgets import ThinScrollbar, make_pill, make_settings_card
 from ui.window_chrome_dialog import center_dialog_later, use_borderless_chrome
 
@@ -182,10 +183,8 @@ def _show_message(
     c = app.COLORS
     kind = (kind or "info").lower()
     if kind == "error":
-        accent = c.get("error", "#FB7185")
         default_title = "出错了"
     else:
-        accent = c.get("accent", "#38BDF8")
         default_title = "提示"
     display_title = title or default_title
 
@@ -213,36 +212,43 @@ def _show_message(
     use_borderless_chrome(win, app, title=display_title, on_close=_close)
 
     # 内容区对齐设置中心：外层 bg 边距 + card 卡片 + 分区标题/正文/胶囊钮
-    shell = tk.Frame(win, bg=c["bg"], padx=_DIALOG_CONTENT_PAD, pady=_DIALOG_CONTENT_PAD)
+    shell = themed_frame(
+        win, app, role="bg", c=c, padx=_DIALOG_CONTENT_PAD, pady=_DIALOG_CONTENT_PAD
+    )
     shell.pack(fill=tk.BOTH, expand=True)
 
     body_card = make_settings_card(shell, c, pack=True, fill="x")
     wrap = max(240, _DIALOG_WIDTH - 2 * _DIALOG_CONTENT_PAD - 2 * SPACE_MD - 24)
 
-    tk.Label(
+    themed_label(
         body_card,
-        text=display_title,
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c.get("text_muted", c["text_dim"]),
-        anchor="w",
+        app,
+        display_title,
+        fg_role="text_muted",
+        bg_role="card",
+        font_size=FONT_CAPTION,
+        c=c,
     ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_XS))
     # 状态色条（error / accent），贴近设置分区层次
-    tk.Frame(body_card, bg=accent, height=2).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_SM))
-    tk.Label(
+    bar_role = "error" if kind == "error" else "accent"
+    themed_frame(body_card, app, role=bar_role, c=c, height=2).pack(
+        fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_SM)
+    )
+    themed_label(
         body_card,
-        text=message or "",
-        font=app._font("label", 10),
-        bg=c["card"],
-        fg=c["text"],
+        app,
+        message or "",
+        fg_role="text",
+        bg_role="card",
+        font_size=FONT_BODY,
+        c=c,
         wraplength=wrap,
         justify=tk.LEFT,
-        anchor="w",
     ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_SM))
 
-    btn_row = tk.Frame(shell, bg=c["bg"])
+    btn_row = themed_frame(shell, app, role="bg", c=c)
     btn_row.pack(fill=tk.X, pady=(0, 0))
-    make_pill(btn_row, "知道了", app=app, c=c, primary=True, command=_close).pack(
+    themed_button(btn_row, app, "知道了", primary=True, c=c, command=_close).pack(
         side=tk.RIGHT
     )
 
@@ -352,36 +358,41 @@ def show_log_viewer(app, *, parent=None) -> None:
     win.protocol("WM_DELETE_WINDOW", _close)
     use_borderless_chrome(win, app, title="运行日志", on_close=_close)
 
-    shell = tk.Frame(win, bg=c["bg"], padx=_DIALOG_CONTENT_PAD, pady=_DIALOG_CONTENT_PAD)
+    shell = themed_frame(
+        win, app, role="bg", c=c, padx=_DIALOG_CONTENT_PAD, pady=_DIALOG_CONTENT_PAD
+    )
     shell.pack(fill=tk.BOTH, expand=True)
 
     # 路径 + 状态：设置分区小标题风格
     meta_card = make_settings_card(shell, c, pack=True, fill="x")
-    tk.Label(
+    themed_label(
         meta_card,
-        text="运行日志",
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c.get("text_muted", c["text_dim"]),
-        anchor="w",
+        app,
+        "运行日志",
+        fg_role="text_muted",
+        bg_role="card",
+        font_size=FONT_CAPTION,
+        c=c,
     ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_XS))
-    tk.Label(
+    themed_label(
         meta_card,
-        text=log_path,
-        font=app._font("label", 8),
-        bg=c["card"],
-        fg=c["text_dim"],
-        anchor="w",
+        app,
+        log_path,
+        fg_role="text_dim",
+        bg_role="card",
+        font_size=FONT_META,
+        c=c,
         wraplength=_LOG_VIEW_WIDTH - 2 * _DIALOG_CONTENT_PAD - 2 * SPACE_MD - 24,
         justify=tk.LEFT,
     ).pack(fill=tk.X, padx=SPACE_SM)
-    status_lbl = tk.Label(
+    status_lbl = themed_label(
         meta_card,
-        text="",
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c["text_muted"],
-        anchor="w",
+        app,
+        "",
+        fg_role="text_muted",
+        bg_role="card",
+        font_size=FONT_CAPTION,
+        c=c,
     )
     status_lbl.pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_XS, 0))
 
@@ -390,9 +401,9 @@ def show_log_viewer(app, *, parent=None) -> None:
     )
     # 卡片已有边距，内部文本区贴齐
     try:
-        log_font = app._font("time", 9)
+        log_font = app._font("time", FONT_CAPTION)
     except (TypeError, AttributeError):
-        log_font = app._font("label", 9)
+        log_font = app._font("label", FONT_CAPTION)
 
     text = tk.Text(
         body,
@@ -474,19 +485,19 @@ def show_log_viewer(app, *, parent=None) -> None:
             logger.debug("打开日志目录失败", exc_info=True)
             status_lbl.config(text=f"打开目录失败：{exc}")
 
-    footer = tk.Frame(shell, bg=c["bg"])
+    footer = themed_frame(shell, app, role="bg", c=c)
     footer.pack(fill=tk.X, pady=(SPACE_MD, 0))
 
-    make_pill(footer, "刷新", app=app, c=c, primary=False, command=_load).pack(
+    themed_button(footer, app, "刷新", primary=False, c=c, command=_load).pack(
         side=tk.LEFT, padx=(0, SPACE_SM)
     )
-    make_pill(footer, "复制", app=app, c=c, primary=False, command=_copy_all).pack(
+    themed_button(footer, app, "复制", primary=False, c=c, command=_copy_all).pack(
         side=tk.LEFT, padx=(0, SPACE_SM)
     )
-    make_pill(
-        footer, "打开所在目录", app=app, c=c, primary=False, command=_open_folder
+    themed_button(
+        footer, app, "打开所在目录", primary=False, c=c, command=_open_folder
     ).pack(side=tk.LEFT)
-    make_pill(footer, "关闭", app=app, c=c, primary=True, command=_close).pack(
+    themed_button(footer, app, "关闭", primary=True, c=c, command=_close).pack(
         side=tk.RIGHT
     )
 
@@ -545,46 +556,51 @@ def ask_yes_no(
     win.protocol("WM_DELETE_WINDOW", lambda: _finish(False))
     use_borderless_chrome(win, app, title=title, on_close=lambda: _finish(False))
 
-    shell = tk.Frame(win, bg=c["bg"], padx=_DIALOG_CONTENT_PAD, pady=_DIALOG_CONTENT_PAD)
+    shell = themed_frame(
+        win, app, role="bg", c=c, padx=_DIALOG_CONTENT_PAD, pady=_DIALOG_CONTENT_PAD
+    )
     shell.pack(fill=tk.BOTH, expand=True)
 
-    accent = c.get("error", "#FB7185") if danger else c.get("accent", "#38BDF8")
     body_card = make_settings_card(shell, c, pack=True, fill="x")
     wrap = max(240, _DIALOG_WIDTH - 2 * _DIALOG_CONTENT_PAD - 2 * SPACE_MD - 24)
 
-    tk.Label(
+    themed_label(
         body_card,
-        text=title,
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c.get("text_muted", c["text_dim"]),
-        anchor="w",
+        app,
+        title,
+        fg_role="text_muted",
+        bg_role="card",
+        font_size=FONT_CAPTION,
+        c=c,
     ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_XS))
-    tk.Frame(body_card, bg=accent, height=2).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_SM))
-    tk.Label(
+    themed_frame(
+        body_card, app, role="error" if danger else "accent", c=c, height=2
+    ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_SM))
+    themed_label(
         body_card,
-        text=message or "",
-        font=app._font("label", 10),
-        bg=c["card"],
-        fg=c["text"],
+        app,
+        message or "",
+        fg_role="text",
+        bg_role="card",
+        font_size=FONT_BODY,
+        c=c,
         wraplength=wrap,
         justify=tk.LEFT,
-        anchor="w",
     ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_SM))
 
-    row = tk.Frame(shell, bg=c["bg"])
+    row = themed_frame(shell, app, role="bg", c=c)
     row.pack(fill=tk.X)
-    make_pill(
+    themed_button(
         row,
+        app,
         yes_text,
-        app=app,
-        c=c,
         primary=not danger,
         danger=danger,
+        c=c,
         command=lambda: _finish(True),
     ).pack(side=tk.RIGHT, padx=(SPACE_SM, 0))
-    make_pill(
-        row, no_text, app=app, c=c, primary=False, command=lambda: _finish(False)
+    themed_button(
+        row, app, no_text, primary=False, c=c, command=lambda: _finish(False)
     ).pack(side=tk.RIGHT)
 
     win.update_idletasks()

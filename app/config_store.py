@@ -139,25 +139,6 @@ def mini_text_fg(app: Any, role: str) -> str:
     return resolve_mini_text_color(app.COLORS, app._mini_text, role)
 
 
-def _normalize_last_hms(h: Any, m: Any, s: Any) -> Tuple[str, str, str]:
-    """规范化 last_hour/minute/second 为两位数字符串。"""
-
-    def _one(val: Any, default: str, lo: int, hi: int) -> str:
-        try:
-            n = int(str(val).strip())
-        except (TypeError, ValueError, AttributeError):
-            return default
-        if n < lo or n > hi:
-            return default
-        return f"{n:02d}"
-
-    return (
-        _one(h, "18", 0, 23),
-        _one(m, "00", 0, 59),
-        _one(s, "00", 0, 59),
-    )
-
-
 def _normalize_shift_hms(value: Any, default: str) -> str:
     """规范化班次时刻为 HH:MM:SS；非法则回退 default。"""
     parsed, err = parse_shift_hms(value)
@@ -247,12 +228,6 @@ def load_config(app: Any) -> None:
             app._last_update_check = luc if isinstance(luc, str) else ""
             ign = config.get("ignored_update_version")
             app._ignored_update_version = ign if isinstance(ign, str) else ""
-            # 上次到期时分秒（容错非法值）
-            app._last_hour, app._last_minute, app._last_second = _normalize_last_hms(
-                config.get("last_hour"),
-                config.get("last_minute"),
-                config.get("last_second"),
-            )
             if "shift_enabled" in config:
                 app._shift_enabled = bool(config.get("shift_enabled"))
             app._shift_start = _normalize_shift_hms(
@@ -283,7 +258,6 @@ def load_config(app: Any) -> None:
             app._last_update_check = ""
             app._ignored_update_version = ""
             app._startup_mode = "remember"
-            app._last_hour, app._last_minute, app._last_second = "18", "00", "00"
             app._shift_enabled = False
             app._shift_start = "09:00:00"
             app._shift_end = "18:00:00"
@@ -305,11 +279,6 @@ def save_config(app: Any) -> None:
             config = merge_mini_text(config, app._mini_text)
             mode = "mini" if app._is_mini else "full"
             history = normalize_sound_history(getattr(app, "_sound_history", []))
-            lh, lm, ls = _normalize_last_hms(
-                getattr(app, "_last_hour", "18"),
-                getattr(app, "_last_minute", "00"),
-                getattr(app, "_last_second", "00"),
-            )
             shift_start = _normalize_shift_hms(
                 getattr(app, "_shift_start", "09:00:00"), "09:00:00"
             )
@@ -332,15 +301,15 @@ def save_config(app: Any) -> None:
                 check_update_on_start=bool(getattr(app, "_check_update_on_start", True)),
                 last_update_check=str(getattr(app, "_last_update_check", "") or ""),
                 ignored_update_version=str(getattr(app, "_ignored_update_version", "") or ""),
-                last_hour=lh,
-                last_minute=lm,
-                last_second=ls,
                 shift_enabled=bool(getattr(app, "_shift_enabled", False)),
                 shift_start=shift_start,
                 shift_end=shift_end,
             )
             if app._theme_custom is not None:
                 config = merge_config(config, theme_custom=app._theme_custom)
+            # 不再记忆到期时分秒：清理旧配置残留键
+            for key in ("last_hour", "last_minute", "last_second"):
+                config.pop(key, None)
             _write_config(app._config_file, config)
         except (OSError, TypeError, ValueError, KeyError, AttributeError, ImportError):
             logger.exception("保存配置失败")

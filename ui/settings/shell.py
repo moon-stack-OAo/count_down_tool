@@ -8,10 +8,19 @@ import tkinter as tk
 
 from core.countdown_core import APP_NAME
 from ui.app_dialogs import show_error
-from ui.design.tokens import SETTINGS_HEIGHT, SETTINGS_WIDTH, SPACE_MD, SPACE_SM
+from ui.design.themed import register_themed
+from ui.design.tokens import (
+    FONT_BODY,
+    FONT_CAPTION,
+    SETTINGS_HEIGHT,
+    SETTINGS_WIDTH,
+    SPACE_LG,
+    SPACE_MD,
+    SPACE_SM,
+)
 from ui.settings.about_tab import build_about_section
 from ui.settings.appearance import build_appearance_section
-from ui.settings.layout import bind_wheel_tree, make_scroll_page
+from ui.settings.layout import accent_bar, bind_wheel_tree, divider, make_scroll_page
 from ui.settings.shift_tab import build_shift_section
 from ui.settings.sound_tab import build_sound_section
 from ui.settings.system_tab import build_system_section
@@ -25,7 +34,7 @@ _TOAST_DEFAULT_MS = 2200
 
 
 def close_settings(app) -> None:
-    """关闭设置窗（主题切换前调用，避免颜色过期的悬浮窗）。"""
+    """关闭设置窗（recolor 失败回退或主动关闭时调用）。"""
     win = getattr(app, "_settings_window", None)
     if win is None:
         return
@@ -41,7 +50,7 @@ def show_settings(app, initial_tab: str | None = None) -> None:
     """打开设置中心（单例：已存在则置前）。失败时向用户提示。
 
     initial_tab: 可选 Tab 键 appearance / sound / shift / system / about；
-    主题重建后重开时用于恢复原分区。
+    就地换肤失败关开后用于恢复原分区。
     """
     try:
         _show_settings_impl(app, initial_tab=initial_tab)
@@ -110,11 +119,11 @@ def show_settings_toast(
     c = getattr(app, "COLORS", {}) or {}
     kind_l = (kind or "ok").lower()
     if kind_l == "error":
-        fg = c.get("error", "#FB7185")
+        fg = c["error"]
     elif kind_l == "info":
-        fg = c.get("text_dim", c.get("text", "#F1F5F9"))
+        fg = c.get("text_dim", c["text"])
     else:
-        fg = c.get("success", c.get("accent_glow", c.get("accent", "#38BDF8")))
+        fg = c.get("success", c.get("accent_glow", c["accent"]))
 
     text = (message or "").replace("\n", " ").strip()
     if len(text) > 80:
@@ -212,31 +221,36 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
 
     # ===== 顶栏 Tab + 单页可滚动内容 =====
     shell = tk.Frame(win, bg=c["bg"])
+    register_themed(shell, bg="bg")
     shell.pack(fill=tk.BOTH, expand=True)
 
     tab_bar = tk.Frame(shell, bg=c.get("title_bar", c["bg"]))
+    register_themed(tab_bar, bg="title_bar")
     tab_bar.pack(fill=tk.X, side=tk.TOP)
-    tk.Frame(shell, bg=c["accent"], height=2).pack(fill=tk.X, side=tk.TOP)
+    accent_bar(shell, c, side=tk.TOP)
 
     # 底部轻提示（先 pack TOP 的 page 会占满；toast 用 BOTTOM 固定）
     toast_bar = tk.Frame(shell, bg=c.get("title_bar", c["bg"]))
+    register_themed(toast_bar, bg="title_bar")
     toast_bar.pack(fill=tk.X, side=tk.BOTTOM)
-    tk.Frame(toast_bar, bg=c.get("border", c["accent"]), height=1).pack(fill=tk.X, side=tk.TOP)
+    divider(toast_bar, c, pady=0, side=tk.TOP)
     toast_lbl = tk.Label(
         toast_bar,
         text="",
-        font=app._font("label", 9),
+        font=app._font("label", FONT_CAPTION),
         bg=c.get("title_bar", c["bg"]),
         fg=c.get("text_muted", c["text_dim"]),
         anchor="w",
         padx=SPACE_MD,
         pady=SPACE_SM,
     )
+    register_themed(toast_lbl, bg="title_bar", fg="text_muted")
     toast_lbl.pack(fill=tk.X)
     win._settings_toast = toast_lbl  # type: ignore[attr-defined]
     win._settings_toast_after = None  # type: ignore[attr-defined]
 
     page_host = tk.Frame(shell, bg=c["bg"])
+    register_themed(page_host, bg="bg")
     page_host.pack(fill=tk.BOTH, expand=True)
 
     tabs_spec = (
@@ -251,23 +265,28 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
     state = {"tab": start_tab}
     win._settings_tab = start_tab  # type: ignore[attr-defined]
 
-    def _style_tab(key: str, active: bool):
+    def _style_tab(key: str, active: bool, colors=None):
         btn = tab_btns.get(key)
         if btn is None:
             return
+        palette = colors if isinstance(colors, dict) and colors else (
+            getattr(app, "COLORS", None) or c
+        )
         try:
             if active:
                 btn.config(
-                    bg=c["bg"],
-                    fg=c.get("accent_glow", c["accent"]),
-                    font=app._font("label", 10, bold=True),
+                    bg=palette["bg"],
+                    fg=palette.get("accent_glow", palette["accent"]),
+                    font=app._font("label", FONT_BODY, bold=True),
                 )
+                register_themed(btn, bg="bg", fg="accent_glow")
             else:
                 btn.config(
-                    bg=c.get("title_bar", c["bg"]),
-                    fg=c["text_dim"],
-                    font=app._font("label", 10),
+                    bg=palette.get("title_bar", palette["bg"]),
+                    fg=palette["text_dim"],
+                    font=app._font("label", FONT_BODY),
                 )
+                register_themed(btn, bg="title_bar", fg="text_dim")
         except tk.TclError:
             pass
 
@@ -303,13 +322,14 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
         btn = tk.Label(
             tab_bar,
             text=label,
-            font=app._font("label", 10),
+            font=app._font("label", FONT_BODY),
             bg=c.get("title_bar", c["bg"]),
             fg=c["text_dim"],
-            padx=16,
-            pady=10,
+            padx=SPACE_LG,
+            pady=SPACE_SM + 2,
             cursor="hand2",
         )
+        register_themed(btn, bg="title_bar", fg="text_dim")
         btn.pack(side=tk.LEFT)
         btn.bind("<Button-1>", lambda e, k=key: _show_tab(k))
         tab_btns[key] = btn
@@ -326,6 +346,11 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
                 fn()
             except (tk.TclError, AttributeError, TypeError, ValueError, RuntimeError):
                 logger.debug("设置窗刷新失败", exc_info=True)
+
+    def _restyle_tabs(colors=None):
+        cur = state.get("tab") or win._settings_tab  # type: ignore[attr-defined]
+        for k in tab_btns:
+            _style_tab(k, k == cur, colors=colors)
 
     build_appearance_section(app, pages["appearance"]._settings_content, c, refreshers)
     build_sound_section(app, pages["sound"]._settings_content, c, refreshers, win)
@@ -345,5 +370,7 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
                 pass
     # 强制可见：多次居中 + 短暂 topmost，避免「点了没反应」
     ensure_dialog_visible(win, SETTINGS_WIDTH, SETTINGS_HEIGHT)
-    # 暴露刷新，供内部局部更新勾选
+    # 暴露刷新，供内部局部更新勾选 / 就地换肤后 Tab 态
     win._settings_refresh = _refresh_all  # type: ignore[attr-defined]
+    win._settings_restyle_tabs = _restyle_tabs  # type: ignore[attr-defined]
+    win._settings_tab_btns = tab_btns  # type: ignore[attr-defined]

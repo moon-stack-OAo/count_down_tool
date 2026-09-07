@@ -13,8 +13,9 @@ from core.countdown_core import (
     target_from_shift,
     validate_shift,
 )
-from ui.design.tokens import SPACE_SM, SPACE_XS
-from ui.settings.layout import card, pill
+from ui.design.tokens import FONT_CAPTION, FONT_BODY, SPACE_SM, SPACE_XS
+from ui.design.themed import register_themed, themed_frame, themed_label
+from ui.settings.layout import card, pill, section_title, selectable_row, set_selectable_selected
 
 logger = logging.getLogger("count_down_tool")
 
@@ -24,42 +25,27 @@ def build_shift_section(app, parent, c, refreshers) -> None:
     shift_card = card(parent, c)
     win = getattr(app, "_settings_window", None)
 
-    tk.Label(
-        shift_card,
-        text="班次顺延",
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c["text_muted"],
-        anchor="w",
-    ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_XS))
+    section_title(shift_card, app, c, "班次顺延")
 
-    tk.Label(
+    themed_label(
         shift_card,
-        text="晚到 Δ 分钟 → 下班目标顺延 Δ；第一版不支持跨日班次。",
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c["text_muted"],
-        anchor="w",
+        app,
+        "晚到 Δ 分钟 → 下班目标顺延 Δ；第一版不支持跨日班次。",
+        fg_role="text_muted",
+        bg_role="card",
+        font_size=FONT_CAPTION,
+        c=c,
         wraplength=420,
         justify=tk.LEFT,
         padx=SPACE_SM,
     ).pack(fill=tk.X, pady=(0, SPACE_SM))
 
-    enable_lbl = tk.Label(
-        shift_card,
-        text="",
-        font=app._font("label", 10),
-        bg=c["card"],
-        fg=c["text"],
-        anchor="w",
-        cursor="hand2",
-        padx=SPACE_SM,
-        pady=SPACE_SM,
-    )
-    enable_lbl.pack(fill=tk.X)
+    # 启用行占位：在 _toggle_enabled 定义后再创建
+    enable_host = themed_frame(shift_card, app, role="card", c=c)
+    enable_host.pack(fill=tk.X)
 
     # —— 开始 / 结束 ——
-    form = tk.Frame(shift_card, bg=c["card"])
+    form = themed_frame(shift_card, app, role="card", c=c)
     form.pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_XS, 0))
 
     start_var = tk.StringVar(
@@ -70,55 +56,59 @@ def build_shift_section(app, parent, c, refreshers) -> None:
     )
 
     def _row(label: str, var: tk.StringVar) -> tk.Entry:
-        row = tk.Frame(form, bg=c["card"])
+        row = themed_frame(form, app, role="card", c=c)
         row.pack(fill=tk.X, pady=(0, SPACE_XS))
-        tk.Label(
+        themed_label(
             row,
-            text=label,
-            font=app._font("label", 10),
-            bg=c["card"],
-            fg=c["text"],
+            app,
+            label,
+            fg_role="text",
+            bg_role="card",
+            font_size=FONT_BODY,
+            c=c,
             width=8,
-            anchor="w",
         ).pack(side=tk.LEFT)
         entry = tk.Entry(
             row,
             textvariable=var,
-            font=app._font("label", 10),
+            font=app._font("label", FONT_BODY),
             bg=c.get("input_bg", c["chip"]),
             fg=c["text"],
             insertbackground=c["text"],
             relief=tk.FLAT,
             width=12,
         )
-        entry.pack(side=tk.LEFT, padx=(SPACE_SM, 0), ipady=4)
-        tk.Label(
+        register_themed(entry, bg="input_bg", fg="text", insertbackground="text")
+        entry.pack(side=tk.LEFT, padx=(SPACE_SM, 0), ipady=SPACE_XS)
+        themed_label(
             row,
-            text="HH:MM:SS",
-            font=app._font("label", 9),
-            bg=c["card"],
-            fg=c["text_muted"],
-            anchor="w",
+            app,
+            "HH:MM:SS",
+            fg_role="text_muted",
+            bg_role="card",
+            font_size=FONT_CAPTION,
+            c=c,
         ).pack(side=tk.LEFT, padx=(SPACE_SM, 0))
         return entry
 
     start_entry = _row("开始", start_var)
     end_entry = _row("结束", end_var)
 
-    preview_lbl = tk.Label(
+    preview_lbl = themed_label(
         shift_card,
-        text="",
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c["text_dim"],
-        anchor="w",
+        app,
+        "",
+        fg_role="text_dim",
+        bg_role="card",
+        font_size=FONT_CAPTION,
+        c=c,
         justify=tk.LEFT,
         wraplength=420,
         padx=SPACE_SM,
     )
     preview_lbl.pack(fill=tk.X, pady=(SPACE_SM, SPACE_XS))
 
-    btn_row = tk.Frame(shift_card, bg=c["card"])
+    btn_row = themed_frame(shift_card, app, role="card", c=c)
     btn_row.pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_XS, 0))
 
     def _toast(msg: str, *, kind: str = "ok") -> None:
@@ -135,7 +125,7 @@ def build_shift_section(app, parent, c, refreshers) -> None:
                 show_info(app, msg, title="班次", parent=win or app.master)
 
     def _sync_main_shift_chip():
-        """按启用状态增删主界面「今日班次」chip（不整页重建）。"""
+        """刷新主界面「今日班次」chip 启用/置灰样式（不整页重建）。"""
         try:
             from ui.full_window import sync_shift_chip
 
@@ -156,6 +146,7 @@ def build_shift_section(app, parent, c, refreshers) -> None:
             pass
 
     def _update_preview(*_args):
+        palette = getattr(app, "COLORS", None) or c
         start = start_var.get().strip()
         end = end_var.get().strip()
         ok, err = validate_shift(start, end)
@@ -163,7 +154,7 @@ def build_shift_section(app, parent, c, refreshers) -> None:
             try:
                 preview_lbl.config(
                     text=err or "班次配置无效",
-                    fg=c.get("error", "#FB7185"),
+                    fg=palette["error"],
                 )
             except tk.TclError:
                 pass
@@ -188,7 +179,7 @@ def build_shift_section(app, parent, c, refreshers) -> None:
             try:
                 preview_lbl.config(
                     text=f"时长 {span} · {terr or '无法预览'}",
-                    fg=c.get("warning", c["text_dim"]),
+                    fg=palette.get("warning", palette["text_dim"]),
                 )
             except tk.TclError:
                 pass
@@ -199,7 +190,7 @@ def build_shift_section(app, parent, c, refreshers) -> None:
             preview_lbl.config(
                 text=f"时长 {span} · 若现在开始 → 目标 {label}"
                 + (f"（已晚 {delta_m} 分）" if delta_m > 0 else ""),
-                fg=c.get("text_dim", c["text"]),
+                fg=palette.get("text_dim", palette["text"]),
             )
         except tk.TclError:
             pass
@@ -235,12 +226,15 @@ def build_shift_section(app, parent, c, refreshers) -> None:
             pass
         _toast("班次配置已保存")
 
-    enable_lbl.bind("<Button-1>", lambda e: _toggle_enabled())
-    enable_lbl.bind(
-        "<Enter>",
-        lambda e: enable_lbl.config(bg=c.get("chip_hover", c["border"])),
+    enable_lbl = selectable_row(
+        enable_host,
+        app,
+        c,
+        "启用班次顺延",
+        selected=False,
+        on_click=_toggle_enabled,
+        pady=SPACE_SM,
     )
-    enable_lbl.bind("<Leave>", lambda e: enable_lbl.config(bg=c["card"]))
 
     for var in (start_var, end_var):
         try:
@@ -260,9 +254,7 @@ def build_shift_section(app, parent, c, refreshers) -> None:
     def _refresh():
         enabled = bool(getattr(app, "_shift_enabled", False))
         try:
-            enable_lbl.config(
-                text=("✓  启用班次顺延" if enabled else "    启用班次顺延")
-            )
+            set_selectable_selected(enable_lbl, enabled, text="启用班次顺延")
         except tk.TclError:
             pass
         # 外部刷新时同步输入框（主题重建后）

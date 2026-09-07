@@ -11,8 +11,17 @@ import webbrowser
 from core.countdown_core import APP_NAME, __version__
 from core.update import GITHUB_RELEASES_PAGE
 from ui.app_dialogs import show_error, show_log_viewer
-from ui.design.tokens import SETTINGS_WIDTH, SPACE_MD, SPACE_SM, SPACE_XS
-from ui.settings.layout import card, pill
+from ui.design.themed import themed_frame, themed_label
+from ui.design.tokens import (
+    FONT_BODY,
+    FONT_CAPTION,
+    FONT_SECTION,
+    SETTINGS_WIDTH,
+    SPACE_MD,
+    SPACE_SM,
+    SPACE_XS,
+)
+from ui.settings.layout import card, divider, pill
 
 logger = logging.getLogger("count_down_tool")
 
@@ -20,30 +29,34 @@ logger = logging.getLogger("count_down_tool")
 def build_about_section(app, parent, c) -> None:
     about_card = card(parent, c)
 
-    tk.Label(
+    themed_label(
         about_card,
-        text=APP_NAME,
-        font=app._font("label", 11, bold=True),
-        bg=c["card"],
-        fg=c["text"],
-        anchor="w",
+        app,
+        APP_NAME,
+        fg_role="text",
+        bg_role="card",
+        font_size=FONT_SECTION,
+        bold=True,
+        c=c,
     ).pack(fill=tk.X, padx=SPACE_SM)
-    tk.Label(
+    themed_label(
         about_card,
-        text=f"版本 {__version__}",
-        font=app._font("label", 10),
-        bg=c["card"],
-        fg=c["text_dim"],
-        anchor="w",
+        app,
+        f"版本 {__version__}",
+        fg_role="text_dim",
+        bg_role="card",
+        font_size=FONT_BODY,
+        c=c,
     ).pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_XS, SPACE_XS))
 
-    last_check_lbl = tk.Label(
+    last_check_lbl = themed_label(
         about_card,
-        text="",
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c["text_muted"],
-        anchor="w",
+        app,
+        "",
+        fg_role="text_muted",
+        bg_role="card",
+        font_size=FONT_CAPTION,
+        c=c,
     )
     last_check_lbl.pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_MD))
 
@@ -62,37 +75,39 @@ def build_about_section(app, parent, c) -> None:
 
     _refresh_last_check()
 
-    btn_row = tk.Frame(about_card, bg=c["card"])
+    btn_row = themed_frame(about_card, app, role="card", c=c)
     btn_row.pack(fill=tk.X)
 
-    status_lbl = tk.Label(
+    status_lbl = themed_label(
         about_card,
-        text="",
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c["text_muted"],
-        anchor="w",
+        app,
+        "",
+        fg_role="text_muted",
+        bg_role="card",
+        font_size=FONT_CAPTION,
+        c=c,
         justify=tk.LEFT,
         wraplength=SETTINGS_WIDTH - 96,
     )
     status_lbl.pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_MD, 0))
 
-    action_row = tk.Frame(about_card, bg=c["card"])
+    action_row = themed_frame(about_card, app, role="card", c=c)
 
     # 发现更新时再 pack
 
     def _set_status(message: str, kind: str = "info") -> None:
+        palette = getattr(app, "COLORS", None) or c
         colors = {
-            "busy": c.get("text_muted", c["text_dim"]),
-            "ok": c.get("success", c["text"]),
-            "error": c.get("error", c["text"]),
-            "update": c.get("accent_glow", c.get("accent", c["text"])),
-            "info": c.get("text_dim", c["text"]),
+            "busy": palette.get("text_muted", palette["text_dim"]),
+            "ok": palette.get("success", palette["text"]),
+            "error": palette.get("error", palette["text"]),
+            "update": palette.get("accent_glow", palette["accent"]),
+            "info": palette.get("text_dim", palette["text"]),
         }
         try:
             status_lbl.configure(
                 text=message or "",
-                fg=colors.get(kind, c.get("text_dim", c["text"])),
+                fg=colors.get(kind, palette.get("text_dim", palette["text"])),
             )
         except tk.TclError:
             return
@@ -148,9 +163,9 @@ def build_about_section(app, parent, c) -> None:
         _set_status(f"发现新版本 v{ver}" if ver else "发现新版本", "update")
 
     # —— 日志 / 版本信息 ——
-    tk.Frame(about_card, bg=c["border"], height=1).pack(fill=tk.X, pady=SPACE_MD)
+    divider(about_card, c, pady=SPACE_MD)
 
-    util_row = tk.Frame(about_card, bg=c["card"])
+    util_row = themed_frame(about_card, app, role="card", c=c)
     util_row.pack(fill=tk.X)
 
     parent_win = getattr(app, "_settings_window", None)

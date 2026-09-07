@@ -11,8 +11,9 @@ import tkinter as tk
 
 from services.autostart import is_autostart_enabled, set_autostart
 from ui.app_dialogs import show_error
-from ui.design.tokens import SPACE_SM, SPACE_XS
-from ui.settings.layout import card, pill
+from ui.design.themed import themed_frame, themed_label
+from ui.design.tokens import FONT_CAPTION, SPACE_SM, SPACE_XS
+from ui.settings.layout import card, divider, pill, selectable_row, set_selectable_selected
 
 logger = logging.getLogger("count_down_tool")
 
@@ -44,44 +45,6 @@ def build_system_section(app, parent, c, refreshers) -> None:
     win = getattr(app, "_settings_window", None)
 
     is_win = platform.system() == "Windows"
-
-    auto_lbl = None
-    if is_win:
-        auto_lbl = tk.Label(
-            sys_card,
-            text="",
-            font=app._font("label", 10),
-            bg=c["card"],
-            fg=c["text"],
-            anchor="w",
-            cursor="hand2",
-            padx=SPACE_SM,
-            pady=SPACE_SM,
-        )
-        auto_lbl.pack(fill=tk.X)
-
-    upd_lbl = tk.Label(
-        sys_card,
-        text="",
-        font=app._font("label", 10),
-        bg=c["card"],
-        fg=c["text"],
-        anchor="w",
-        cursor="hand2",
-        padx=SPACE_SM,
-        pady=SPACE_SM,
-    )
-    upd_lbl.pack(fill=tk.X)
-
-    tk.Label(
-        sys_card,
-        text="手动检查请到「关于」页",
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c["text_muted"],
-        anchor="w",
-        padx=SPACE_SM,
-    ).pack(fill=tk.X, pady=(0, SPACE_XS))
 
     def _toggle_autostart():
         target = not is_autostart_enabled()
@@ -118,21 +81,43 @@ def build_system_section(app, parent, c, refreshers) -> None:
         except (ImportError, AttributeError, RuntimeError, tk.TclError):
             pass
 
-    if auto_lbl is not None:
-        auto_lbl.bind("<Button-1>", lambda e: _toggle_autostart())
-    upd_lbl.bind("<Button-1>", lambda e: _toggle_check_update())
-    hover_widgets = [upd_lbl] + ([auto_lbl] if auto_lbl is not None else [])
-    for w in hover_widgets:
-        w.bind(
-            "<Enter>",
-            lambda e, x=w: x.config(bg=c.get("chip_hover", c["border"])),
+    auto_lbl = None
+    if is_win:
+        auto_lbl = selectable_row(
+            sys_card,
+            app,
+            c,
+            "开机自启",
+            selected=False,
+            on_click=_toggle_autostart,
+            pady=SPACE_SM,
         )
-        w.bind("<Leave>", lambda e, x=w: x.config(bg=c["card"]))
+
+    upd_lbl = selectable_row(
+        sys_card,
+        app,
+        c,
+        "启动时检查更新",
+        selected=False,
+        on_click=_toggle_check_update,
+        pady=SPACE_SM,
+    )
+
+    themed_label(
+        sys_card,
+        app,
+        "手动检查请到「关于」页",
+        fg_role="text_muted",
+        bg_role="card",
+        font_size=FONT_CAPTION,
+        c=c,
+        padx=SPACE_SM,
+    ).pack(fill=tk.X, pady=(0, SPACE_XS))
 
     # —— 配置目录 / Mini 重置 ——
-    tk.Frame(sys_card, bg=c["border"], height=1).pack(fill=tk.X, pady=SPACE_SM)
+    divider(sys_card, c)
 
-    util_row = tk.Frame(sys_card, bg=c["card"])
+    util_row = themed_frame(sys_card, app, role="card", c=c)
     util_row.pack(fill=tk.X, pady=(SPACE_XS, 0))
 
     def _open_config_dir():
@@ -191,20 +176,21 @@ def build_system_section(app, parent, c, refreshers) -> None:
     ).pack(side=tk.LEFT)
 
     # —— 忽略的更新版本 ——
-    tk.Frame(sys_card, bg=c["border"], height=1).pack(fill=tk.X, pady=SPACE_SM)
+    divider(sys_card, c)
 
-    ign_lbl = tk.Label(
+    ign_lbl = themed_label(
         sys_card,
-        text="",
-        font=app._font("label", 9),
-        bg=c["card"],
-        fg=c["text_muted"],
-        anchor="w",
+        app,
+        "",
+        fg_role="text_muted",
+        bg_role="card",
+        font_size=FONT_CAPTION,
+        c=c,
         padx=SPACE_SM,
     )
     ign_lbl.pack(fill=tk.X, pady=(0, SPACE_XS))
 
-    ign_btn_row = tk.Frame(sys_card, bg=c["card"])
+    ign_btn_row = themed_frame(sys_card, app, role="card", c=c)
     ign_btn_row.pack(fill=tk.X)
 
     def _clear_ignored():
@@ -251,10 +237,8 @@ def build_system_section(app, parent, c, refreshers) -> None:
         check = bool(getattr(app, "_check_update_on_start", True))
         try:
             if auto_lbl is not None:
-                auto_lbl.config(text=("✓  开机自启" if auto else "    开机自启"))
-            upd_lbl.config(
-                text=("✓  启动时检查更新" if check else "    启动时检查更新")
-            )
+                set_selectable_selected(auto_lbl, auto, text="开机自启")
+            set_selectable_selected(upd_lbl, check, text="启动时检查更新")
         except tk.TclError:
             pass
         ign = str(getattr(app, "_ignored_update_version", "") or "").strip()

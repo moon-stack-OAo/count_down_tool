@@ -81,9 +81,6 @@ def _make_app(**over):
         _duration_total_seconds=0.0,
         _progress_value=0.0,
         _paused_remaining=None,
-        _last_hour="18",
-        _last_minute="00",
-        _last_second="00",
         hour_var=_FakeVar("18"),
         minute_var=_FakeVar("00"),
         second_var=_FakeVar("00"),
@@ -100,13 +97,7 @@ def _make_app(**over):
         FONTS={},
         _preset_chips=[],
         _time_spinboxes=[],
-        _saved=[],
     )
-
-    def _save():
-        app._saved.append(
-            (app._last_hour, app._last_minute, app._last_second)
-        )
 
     def _sync():
         app._synced = True
@@ -114,7 +105,6 @@ def _make_app(**over):
     def _show_error(msg):
         app._last_error = msg
 
-    app._save_config = _save
     app._sync_mini_state = _sync
     app.show_error = _show_error
     app._font = lambda *a, **k: ("Segoe UI", 10)
@@ -124,36 +114,18 @@ def _make_app(**over):
 
 
 class TestCountdownController(unittest.TestCase):
-    def test_reset_restores_last_hms(self):
-        app = _make_app(_last_hour="09", _last_minute="30", _last_second="15")
+    def test_reset_restores_default_hms(self):
+        app = _make_app()
         ctrl = CountdownController(app)
         app.hour_var.set("12")
-        app.minute_var.set("00")
-        app.second_var.set("00")
+        app.minute_var.set("34")
+        app.second_var.set("56")
         ctrl.reset()
-        self.assertEqual(app.hour_var.get(), "09")
-        self.assertEqual(app.minute_var.get(), "30")
-        self.assertEqual(app.second_var.get(), "15")
+        self.assertEqual(app.hour_var.get(), "18")
+        self.assertEqual(app.minute_var.get(), "00")
+        self.assertEqual(app.second_var.get(), "00")
         self.assertEqual(app._state, STATE_IDLE)
         self.assertIsNone(app.target_time)
-
-    def test_start_remembers_last_hms(self):
-        app = _make_app()
-        app.hour_var.set("20")
-        app.minute_var.set("15")
-        app.second_var.set("30")
-        ctrl = CountdownController(app)
-        future = datetime.now() + timedelta(hours=10)
-        with mock.patch(
-            "app.countdown.target_from_hms",
-            return_value=future,
-        ):
-            with mock.patch.object(CountdownController, "update_countdown"):
-                ctrl.start_countdown()
-        self.assertEqual(app._last_hour, "20")
-        self.assertEqual(app._last_minute, "15")
-        self.assertEqual(app._last_second, "30")
-        self.assertTrue(app._saved)
 
     def test_set_preset_force_when_running(self):
         app = _make_app(_state=STATE_RUNNING)

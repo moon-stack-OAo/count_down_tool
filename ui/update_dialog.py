@@ -11,6 +11,10 @@ from typing import Callable, Optional
 
 from core.countdown_core import APP_NAME
 from ui.design.tokens import (
+    FONT_BODY,
+    FONT_CAPTION,
+    FONT_ICON,
+    FONT_TITLE,
     SPACE_LG,
     SPACE_MD,
     SPACE_SM,
@@ -97,14 +101,14 @@ def show_update_available(app, result, notes: str, on_action: ActionCb = None) -
     tk.Label(
         shell,
         text="发现新版本",
-        font=app._font("button", 13, bold=True),
+        font=app._font("button", FONT_TITLE, bold=True),
         bg=c["bg"],
         fg=c["text"],
     ).pack(anchor="w")
     tk.Label(
         shell,
         text=f"{ver}  ←  当前 {cur}",
-        font=app._font("label", 10),
+        font=app._font("label", FONT_BODY),
         bg=c["bg"],
         fg=c["accent_glow"],
     ).pack(anchor="w", pady=(SPACE_XS, SPACE_MD))
@@ -124,7 +128,7 @@ def show_update_available(app, result, notes: str, on_action: ActionCb = None) -
     tk.Label(
         notes_card,
         text="更新说明",
-        font=app._font("label", 9),
+        font=app._font("label", FONT_CAPTION),
         bg=c["card"],
         fg=c["text_muted"],
         anchor="w",
@@ -136,7 +140,7 @@ def show_update_available(app, result, notes: str, on_action: ActionCb = None) -
         notes_card,
         height=8,
         wrap=tk.WORD,
-        font=app._font("label", 9),
+        font=app._font("label", FONT_CAPTION),
         bg=c["input_bg"],
         fg=c["text"],
         insertbackground=c["accent"],
@@ -265,7 +269,7 @@ def show_update_progress(
     tk.Label(
         shell,
         text=title,
-        font=app._font("button", 12, bold=True),
+        font=app._font("button", FONT_ICON, bold=True),
         bg=c["bg"],
         fg=c["text"],
     ).pack(anchor="w")
@@ -273,7 +277,7 @@ def show_update_progress(
     msg_lbl = tk.Label(
         shell,
         text=message or "请稍候…",
-        font=app._font("label", 9),
+        font=app._font("label", FONT_CAPTION),
         bg=c["bg"],
         fg=c["text_muted"],
         wraplength=UPDATE_DIALOG_WIDTH - 48,
@@ -314,7 +318,7 @@ def show_update_progress(
     pct_lbl = tk.Label(
         shell,
         text="",
-        font=app._font("label", 9),
+        font=app._font("label", FONT_CAPTION),
         bg=c["bg"],
         fg=c["text_dim"],
         anchor="e",

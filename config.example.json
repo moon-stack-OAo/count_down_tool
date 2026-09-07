@@ -25,9 +25,6 @@
   "check_update_on_start": true,
   "last_update_check": "",
   "ignored_update_version": "",
-  "last_hour": "18",
-  "last_minute": "00",
-  "last_second": "00",
   "shift_enabled": false,
   "shift_start": "09:00:00",
   "shift_end": "18:00:00"

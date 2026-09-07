@@ -50,9 +50,7 @@ def _make_app(config_file: str, **overrides):
         "_check_update_on_start": True,
         "_last_update_check": "",
         "_ignored_update_version": "",
-        "_last_hour": "18",
-        "_last_minute": "00",
-        "_last_second": "00",
+
         "_autostart": False,
         "_is_mini": False,
     }
@@ -77,7 +75,8 @@ class TestConfigStoreLoad(unittest.TestCase):
                 resolve_theme(DEFAULT_THEME_ID)["accent"],
             )
 
-    def test_last_hms_load_and_save(self):
+    def test_last_hms_not_persisted(self):
+        """不再读写 last_hour/minute/second；保存时清除旧键。"""
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "config.json")
             with open(path, "w", encoding="utf-8") as f:
@@ -90,18 +89,13 @@ class TestConfigStoreLoad(unittest.TestCase):
                 "app.config_store.is_autostart_enabled", return_value=False
             ):
                 config_store.load_config(app)
-            self.assertEqual(app._last_hour, "09")
-            self.assertEqual(app._last_minute, "45")
-            self.assertEqual(app._last_second, "01")
-            app._last_hour = "21"
-            app._last_minute = "05"
-            app._last_second = "00"
+            self.assertFalse(hasattr(app, "_last_hour"))
             config_store.save_config(app)
             with open(path, encoding="utf-8") as f:
                 saved = json.load(f)
-            self.assertEqual(saved.get("last_hour"), "21")
-            self.assertEqual(saved.get("last_minute"), "05")
-            self.assertEqual(saved.get("last_second"), "00")
+            self.assertNotIn("last_hour", saved)
+            self.assertNotIn("last_minute", saved)
+            self.assertNotIn("last_second", saved)
 
     def test_missing_keys_keep_defaults(self):
         with tempfile.TemporaryDirectory() as tmp:

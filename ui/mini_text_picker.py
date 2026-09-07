@@ -21,7 +21,7 @@ from ui.context_menus import (
     reset_mini_text_colors,
     set_mini_text_color,
 )
-from ui.design.tokens import SPACE_MD, SPACE_SM, SPACE_XS
+from ui.design.tokens import FONT_BODY, FONT_CAPTION, FONT_META, SPACE_MD, SPACE_SM, SPACE_XS
 from ui.widgets import make_pill, make_settings_card
 from ui.window_chrome_dialog import center_dialog
 
@@ -192,7 +192,7 @@ def show_mini_text_picker(app):
     tk.Label(
         intro,
         text="点击色块即应用；带 ✓ 为当前选中。仅当前状态角色会立刻反映在 Mini 上。",
-        font=app._font("label", 9),
+        font=app._font("label", FONT_CAPTION),
         bg=c["card"],
         fg=c.get("text_muted", c["text_dim"]),
         wraplength=480,
@@ -218,14 +218,14 @@ def show_mini_text_picker(app):
             cv.delete("all")
         except tk.TclError:
             return
-        accent = c.get("accent", "#38BDF8")
+        accent = c["accent"]
         accent_glow = c.get("accent_glow", accent)
-        border = c.get("border", "#2A3A4E")
+        border = c["border"]
         s = _SW
         if selected:
             cv.create_rectangle(0, 0, s - 1, s - 1, outline=accent, width=3, fill="")
             cv.create_rectangle(
-                3, 3, s - 4, s - 4, outline=c.get("bg", "#0F1419"), width=1, fill=hex_val
+                3, 3, s - 4, s - 4, outline=c["bg"], width=1, fill=hex_val
             )
             mark = _contrast_fg(hex_val)
             cv.create_text(
@@ -233,7 +233,7 @@ def show_mini_text_picker(app):
                 s // 2,
                 text="✓",
                 fill=mark,
-                font=app._font("label", 10, bold=True),
+                font=app._font("label", FONT_BODY, bold=True),
             )
         elif hover:
             cv.create_rectangle(
@@ -263,7 +263,7 @@ def show_mini_text_picker(app):
             try:
                 lbl.config(
                     text="生效中" if show else "",
-                    fg=c.get("accent", "#38BDF8") if show else c.get("text_muted"),
+                    fg=c["accent"] if show else c.get("text_muted"),
                 )
             except tk.TclError:
                 pass
@@ -287,12 +287,12 @@ def show_mini_text_picker(app):
     tk.Label(
         roles_card,
         text="按角色设置",
-        font=app._font("label", 9),
+        font=app._font("label", FONT_CAPTION),
         bg=c["card"],
         fg=c.get("text_muted", c["text_dim"]),
         anchor="w",
     ).pack(fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_XS))
-    tk.Frame(roles_card, bg=c.get("border", "#2A3A4E"), height=1).pack(
+    tk.Frame(roles_card, bg=c["border"], height=1).pack(
         fill=tk.X, padx=SPACE_SM, pady=(0, SPACE_SM)
     )
 
@@ -307,7 +307,7 @@ def show_mini_text_picker(app):
         tk.Label(
             head,
             text=MINI_TEXT_ROLE_LABELS.get(role, role),
-            font=app._font("label", 9),
+            font=app._font("label", FONT_CAPTION),
             bg=c["card"],
             fg=c["text_dim"],
             anchor=tk.W,
@@ -315,10 +315,10 @@ def show_mini_text_picker(app):
         mark = tk.Label(
             head,
             text="",
-            font=app._font("label", 8, bold=True),
+            font=app._font("label", FONT_META, bold=True),
             bg=c["card"],
-            fg=c.get("accent", "#38BDF8"),
-            padx=4,
+            fg=c["accent"],
+            padx=SPACE_XS,
         )
         mark.pack(side=tk.LEFT)
         role_active_marks[role] = mark
@@ -327,7 +327,7 @@ def show_mini_text_picker(app):
         cur_lbl = tk.Label(
             name_col,
             text=MINI_TEXT_COLOR_LABELS.get(cur0, cur0),
-            font=app._font("label", 8, bold=True),
+            font=app._font("label", FONT_META, bold=True),
             bg=c["card"],
             fg=_hex_for(cur0),
             anchor=tk.W,
@@ -401,7 +401,7 @@ def show_mini_text_picker(app):
         tk.Label(
             item,
             text=MINI_TEXT_COLOR_LABELS.get(key, key),
-            font=app._font("label", 8),
+            font=app._font("label", FONT_META),
             bg=c["card"],
             fg=c["text_dim"],
         ).pack(side=tk.LEFT, padx=(2, 0))

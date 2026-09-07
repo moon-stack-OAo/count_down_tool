@@ -6,8 +6,19 @@ from __future__ import annotations
 import platform
 import tkinter as tk
 
-from ui.design.tokens import SPACE_MD, SPACE_SM
-from ui.widgets import ThinScrollbar, make_pill, make_settings_card
+from ui.design.themed import register_themed
+from ui.design.tokens import SPACE_MD, SPACE_SM, SPACE_XS
+from ui.widgets import (
+    ThinScrollbar,
+    accent_bar,
+    divider,
+    make_chip,
+    make_pill,
+    make_settings_card,
+    section_title,
+    selectable_row,
+    set_selectable_selected,
+)
 
 
 def make_scroll_page(host: tk.Frame, app, c) -> tk.Frame:
@@ -16,7 +27,9 @@ def make_scroll_page(host: tk.Frame, app, c) -> tk.Frame:
     内容未超出视口时：scrollregion 锁在可视高度，禁止空滚；滚动条由 ThinScrollbar 自动收起。
     """
     page = tk.Frame(host, bg=c["bg"])
+    register_themed(page, bg="bg")
     canvas = tk.Canvas(page, bg=c["bg"], highlightthickness=0, bd=0)
+    register_themed(canvas, bg="bg")
     scrollbar = ThinScrollbar(
         page,
         command=canvas.yview,
@@ -25,13 +38,21 @@ def make_scroll_page(host: tk.Frame, app, c) -> tk.Frame:
         thumb=c.get("border", c["text_muted"]),
         thumb_hover=c.get("text_muted", c["text_dim"]),
         width=6,
-        pad=3,
+        pad=SPACE_XS - 1,
+    )
+    register_themed(
+        scrollbar,
+        bg="bg",
+        trough="input_bg",
+        thumb="border",
+        thumb_hover="text_muted",
     )
     canvas.configure(yscrollcommand=scrollbar.set)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     body = tk.Frame(canvas, bg=c["bg"])
+    register_themed(body, bg="bg")
     body_id = canvas.create_window((0, 0), window=body, anchor="nw")
     scroll_state = {"needed": False}
 
@@ -104,6 +125,7 @@ def make_scroll_page(host: tk.Frame, app, c) -> tk.Frame:
     canvas.bind("<Button-5>", _wheel_down)
 
     content = tk.Frame(body, bg=c["bg"])
+    register_themed(content, bg="bg")
     content.pack(fill=tk.BOTH, expand=True, padx=SPACE_MD, pady=(SPACE_MD, SPACE_SM))
 
     page._settings_canvas = canvas  # type: ignore[attr-defined]
@@ -186,3 +208,18 @@ def card(parent, c) -> tk.Frame:
 def pill(parent, text, *, app, c, primary=True, command=None):
     """兼容旧调用：委托统一 make_pill。"""
     return make_pill(parent, text, app=app, c=c, primary=primary, command=command)
+
+
+# 小组件 re-export（设置 Tab 可从 layout 统一导入）
+__all__ = (
+    "make_scroll_page",
+    "bind_wheel_tree",
+    "card",
+    "pill",
+    "section_title",
+    "divider",
+    "accent_bar",
+    "selectable_row",
+    "set_selectable_selected",
+    "make_chip",
+)

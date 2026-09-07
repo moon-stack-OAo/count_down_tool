@@ -119,6 +119,19 @@ class TestThemes(unittest.TestCase):
         self.assertNotEqual(colors["title_bar"].upper(), "#FFFFFF")
         self.assertNotEqual(colors["title_bar"].upper(), "#FFF")
 
+    def test_light_theme_has_contrast_pairs(self):
+        """浅色主题关键对比色存在且与底色可辨（不测精确对比度数值）。"""
+        colors = resolve_theme("light")
+        bg = colors["bg"].upper()
+        self.assertNotEqual(colors["text"].upper(), bg)
+        self.assertNotEqual(colors["accent"].upper(), bg)
+        self.assertNotEqual(
+            colors["btn_primary"].upper(), colors["btn_on_primary"].upper()
+        )
+        self.assertTrue(colors["text"])
+        self.assertTrue(colors["text_dim"])
+        self.assertTrue(colors["border"])
+
 
 class TestMergeThemeAutostart(unittest.TestCase):
     def test_merge_theme_id_and_autostart(self):
@@ -154,9 +167,9 @@ class TestMergeThemeAutostart(unittest.TestCase):
 
 
 class TestApplyThemeReopenSettings(unittest.TestCase):
-    """apply_theme：设置窗打开时关后以新主题重开并保留 Tab。"""
+    """apply_theme：设置窗打开时优先就地换色；失败再关开并保留 Tab。"""
 
-    def test_apply_theme_reopens_settings_with_tab(self):
+    def test_apply_theme_recolors_open_settings(self):
         from app import theme as theme_mod
 
         app = mock.MagicMock()
@@ -172,12 +185,17 @@ class TestApplyThemeReopenSettings(unittest.TestCase):
         app.countdown_label = None
         app.master = mock.MagicMock()
         app.master.winfo_children.return_value = []
+        win = mock.MagicMock()
+        win.winfo_exists.return_value = True
+        app._settings_window = win
 
         with mock.patch.object(
             theme_mod, "resolve_theme", return_value={"bg": "#111"}
         ), mock.patch.object(theme_mod, "refresh_tray_menu"), mock.patch(
             "ui.settings_window.get_settings_open_tab", return_value="sound"
-        ) as m_tab, mock.patch(
+        ) as m_tab, mock.patch.object(
+            theme_mod, "recolor_settings_window", return_value=4
+        ) as m_recolor_s, mock.patch(
             "ui.settings_window.close_settings"
         ) as m_close, mock.patch(
             "ui.settings_window.show_settings"
@@ -185,10 +203,47 @@ class TestApplyThemeReopenSettings(unittest.TestCase):
             theme_mod.apply_theme(app, "emerald")
 
         m_tab.assert_called_once_with(app)
-        m_close.assert_called_once_with(app)
-        m_show.assert_called_once_with(app, initial_tab="sound")
+        m_recolor_s.assert_called_once()
+        m_close.assert_not_called()
+        m_show.assert_not_called()
         self.assertEqual(app._theme_id, "emerald")
         app._save_config.assert_called()
+
+    def test_apply_theme_falls_back_reopen_when_settings_recolor_fails(self):
+        from app import theme as theme_mod
+
+        app = mock.MagicMock()
+        app._theme_id = "slate_cyan"
+        app.COLORS = {"bg": "#000"}
+        app._theme_custom = None
+        app._is_mini = False
+        app.countdown_text = "--:--:--"
+        app.target_time = None
+        app._state = "idle"
+        app.hour_var = None
+        app.btn_start = None
+        app.countdown_label = None
+        app.master = mock.MagicMock()
+        app.master.winfo_children.return_value = []
+        win = mock.MagicMock()
+        win.winfo_exists.return_value = True
+        app._settings_window = win
+
+        with mock.patch.object(
+            theme_mod, "resolve_theme", return_value={"bg": "#111"}
+        ), mock.patch.object(theme_mod, "refresh_tray_menu"), mock.patch(
+            "ui.settings_window.get_settings_open_tab", return_value="system"
+        ), mock.patch.object(
+            theme_mod, "recolor_settings_window", return_value=0
+        ), mock.patch(
+            "ui.settings_window.close_settings"
+        ) as m_close, mock.patch(
+            "ui.settings_window.show_settings"
+        ) as m_show:
+            theme_mod.apply_theme(app, "emerald")
+
+        m_close.assert_called_once_with(app)
+        m_show.assert_called_once_with(app, initial_tab="system")
 
     def test_apply_theme_skips_reopen_when_settings_closed(self):
         from app import theme as theme_mod
@@ -206,12 +261,15 @@ class TestApplyThemeReopenSettings(unittest.TestCase):
         app.countdown_label = None
         app.master = mock.MagicMock()
         app.master.winfo_children.return_value = []
+        app._settings_window = None
 
         with mock.patch.object(
             theme_mod, "resolve_theme", return_value={"bg": "#111"}
         ), mock.patch.object(theme_mod, "refresh_tray_menu"), mock.patch(
             "ui.settings_window.get_settings_open_tab", return_value=None
-        ), mock.patch(
+        ), mock.patch.object(
+            theme_mod, "recolor_settings_window"
+        ) as m_recolor_s, mock.patch(
             "ui.settings_window.close_settings"
         ), mock.patch(
             "ui.settings_window.show_settings"
@@ -219,6 +277,7 @@ class TestApplyThemeReopenSettings(unittest.TestCase):
             theme_mod.apply_theme(app, "light")
 
         m_show.assert_not_called()
+        m_recolor_s.assert_not_called()
 
     def test_apply_theme_same_id_short_circuit(self):
         from app import theme as theme_mod
@@ -237,6 +296,46 @@ class TestApplyThemeReopenSettings(unittest.TestCase):
         m_close.assert_not_called()
         m_show.assert_not_called()
         app._setup_ui.assert_not_called()
+
+    def test_apply_theme_prefers_recolor_when_ui_ready(self):
+        from app import theme as theme_mod
+
+        app = mock.MagicMock()
+        app._theme_id = "slate_cyan"
+        app.COLORS = {"bg": "#000"}
+        app._theme_custom = None
+        app._is_mini = False
+        app.countdown_text = "01:00:00"
+        app.target_time = None
+        app._state = "idle"
+        app.hour_var = mock.MagicMock()
+        app.hour_var.get.return_value = "1"
+        app.minute_var = mock.MagicMock()
+        app.minute_var.get.return_value = "2"
+        app.second_var = mock.MagicMock()
+        app.second_var.get.return_value = "3"
+        app.btn_start = mock.MagicMock()
+        app.countdown_label = mock.MagicMock()
+        app.countdown_label.winfo_exists.return_value = True
+        app.master = mock.MagicMock()
+        app.master.winfo_exists.return_value = True
+        app.master.winfo_children.return_value = [mock.MagicMock()]
+        app._settings_window = None
+
+        with mock.patch.object(
+            theme_mod, "resolve_theme", return_value={"bg": "#111"}
+        ), mock.patch.object(theme_mod, "refresh_tray_menu"), mock.patch(
+            "ui.settings_window.get_settings_open_tab", return_value=None
+        ), mock.patch(
+            "ui.design.themed.recolor_app", return_value=5
+        ) as m_recolor:
+            theme_mod.apply_theme(app, "emerald")
+
+        m_recolor.assert_called_once()
+        app._setup_ui.assert_not_called()
+        app._apply_input_lock.assert_called()
+        app._refresh_progress_bar.assert_called()
+        self.assertEqual(app._theme_id, "emerald")
 
     def test_get_settings_open_tab_and_normalize(self):
         from ui.settings_window import (

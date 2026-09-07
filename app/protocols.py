@@ -32,9 +32,6 @@ class ConfigHost(Protocol):
     _mini_size: Optional[Tuple[int, int]]
     _mini_text: Dict[str, Any]
     _is_mini: bool
-    _last_hour: str
-    _last_minute: str
-    _last_second: str
     _shift_enabled: bool
     _shift_start: str
     _shift_end: str
