@@ -12,6 +12,7 @@ from ui.design.tokens import SETTINGS_HEIGHT, SETTINGS_WIDTH, SPACE_MD, SPACE_SM
 from ui.settings.about_tab import build_about_section
 from ui.settings.appearance import build_appearance_section
 from ui.settings.layout import bind_wheel_tree, make_scroll_page
+from ui.settings.shift_tab import build_shift_section
 from ui.settings.sound_tab import build_sound_section
 from ui.settings.system_tab import build_system_section
 from ui.time_picker import _picker_parent
@@ -19,7 +20,7 @@ from ui.window_chrome_dialog import ensure_dialog_visible
 
 logger = logging.getLogger("count_down_tool")
 
-_SETTINGS_TAB_KEYS = frozenset({"appearance", "sound", "system", "about"})
+_SETTINGS_TAB_KEYS = frozenset({"appearance", "sound", "shift", "system", "about"})
 _TOAST_DEFAULT_MS = 2200
 
 
@@ -39,7 +40,7 @@ def close_settings(app) -> None:
 def show_settings(app, initial_tab: str | None = None) -> None:
     """打开设置中心（单例：已存在则置前）。失败时向用户提示。
 
-    initial_tab: 可选 Tab 键 appearance / sound / system / about；
+    initial_tab: 可选 Tab 键 appearance / sound / shift / system / about；
     主题重建后重开时用于恢复原分区。
     """
     try:
@@ -241,6 +242,7 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
     tabs_spec = (
         ("appearance", "外观"),
         ("sound", "声音"),
+        ("shift", "班次"),
         ("system", "系统"),
         ("about", "关于"),
     )
@@ -327,6 +329,7 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
 
     build_appearance_section(app, pages["appearance"]._settings_content, c, refreshers)
     build_sound_section(app, pages["sound"]._settings_content, c, refreshers, win)
+    build_shift_section(app, pages["shift"]._settings_content, c, refreshers)
     build_system_section(app, pages["system"]._settings_content, c, refreshers)
     build_about_section(app, pages["about"]._settings_content, c)
 

@@ -25,6 +25,7 @@ from core.countdown_core import (
     normalize_mini_size,
     normalize_mini_text,
     normalize_startup_mode,
+    parse_shift_hms,
     resolve_mini_text_color,
     save_config_dict,
 )
@@ -157,6 +158,19 @@ def _normalize_last_hms(h: Any, m: Any, s: Any) -> Tuple[str, str, str]:
     )
 
 
+def _normalize_shift_hms(value: Any, default: str) -> str:
+    """规范化班次时刻为 HH:MM:SS；非法则回退 default。"""
+    parsed, err = parse_shift_hms(value)
+    if err or parsed is None:
+        fallback, _ = parse_shift_hms(default)
+        if fallback is None:
+            return "09:00:00"
+        h, m, s = fallback
+        return f"{h:02d}:{m:02d}:{s:02d}"
+    h, m, s = parsed
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
 def load_config(app: Any) -> None:
     """从磁盘读取配置并写入 app 字段（ConfigHost 兼容 duck-type）。
 
@@ -239,6 +253,14 @@ def load_config(app: Any) -> None:
                 config.get("last_minute"),
                 config.get("last_second"),
             )
+            if "shift_enabled" in config:
+                app._shift_enabled = bool(config.get("shift_enabled"))
+            app._shift_start = _normalize_shift_hms(
+                config.get("shift_start", "09:00:00"), "09:00:00"
+            )
+            app._shift_end = _normalize_shift_hms(
+                config.get("shift_end", "18:00:00"), "18:00:00"
+            )
             real_autostart = is_autostart_enabled()
             app._autostart = real_autostart
             if config.get("autostart") is not None and bool(config.get("autostart")) != real_autostart:
@@ -262,6 +284,9 @@ def load_config(app: Any) -> None:
             app._ignored_update_version = ""
             app._startup_mode = "remember"
             app._last_hour, app._last_minute, app._last_second = "18", "00", "00"
+            app._shift_enabled = False
+            app._shift_start = "09:00:00"
+            app._shift_end = "18:00:00"
 
 
 def save_config(app: Any) -> None:
@@ -285,6 +310,12 @@ def save_config(app: Any) -> None:
                 getattr(app, "_last_minute", "00"),
                 getattr(app, "_last_second", "00"),
             )
+            shift_start = _normalize_shift_hms(
+                getattr(app, "_shift_start", "09:00:00"), "09:00:00"
+            )
+            shift_end = _normalize_shift_hms(
+                getattr(app, "_shift_end", "18:00:00"), "18:00:00"
+            )
             config = merge_config(
                 config,
                 transparent_mode=bool(app._transparent_mode),
@@ -304,6 +335,9 @@ def save_config(app: Any) -> None:
                 last_hour=lh,
                 last_minute=lm,
                 last_second=ls,
+                shift_enabled=bool(getattr(app, "_shift_enabled", False)),
+                shift_start=shift_start,
+                shift_end=shift_end,
             )
             if app._theme_custom is not None:
                 config = merge_config(config, theme_custom=app._theme_custom)

@@ -14,6 +14,7 @@ from core.countdown_core import APP_NAME, button_text_for_state
 from services.menu_labels import (
     TRAY_QUICK_START_MENU_LABEL,
     TRAY_QUICK_START_PRESETS,
+    TRAY_SHIFT_MENU_LABEL,
     tray_mini_menu_label,
     tray_window_menu_label,
 )
@@ -92,6 +93,10 @@ def init_tray_icon(app, icon_path) -> bool:
             pystray.MenuItem(
                 TRAY_QUICK_START_MENU_LABEL,
                 pystray.Menu(*quick_items),
+            ),
+            pystray.MenuItem(
+                TRAY_SHIFT_MENU_LABEL,
+                lambda icon=None, item=None: tray_start_shift(app),
             ),
             pystray.MenuItem(lambda _: button_text_for_state(app._state),
                              lambda icon=None, item=None: tray_toggle_countdown(app)),
@@ -218,6 +223,18 @@ def tray_quick_start(app, hours, minutes, seconds, icon=None, item=None):
 
     def _do():
         app._set_preset_time(hours, minutes, seconds, force=True)
+        refresh_tray_menu(app)
+
+    app.master.after(0, _do)
+
+
+def tray_start_shift(app, icon=None, item=None):
+    """托盘按班次顺延启动（主线程，force 可覆盖 running）。"""
+
+    def _do():
+        starter = getattr(app, "_start_shift_countdown", None)
+        if callable(starter):
+            starter(force=True)
         refresh_tray_menu(app)
 
     app.master.after(0, _do)

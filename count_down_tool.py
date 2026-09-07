@@ -381,6 +381,9 @@ class CountdownApp:
     def _set_preset_time(self, hours, minutes, seconds, *, force: bool = False):
         self._ctrl.set_preset_time(hours, minutes, seconds, force=force)
 
+    def _start_shift_countdown(self, *, force: bool = False):
+        self._ctrl.start_shift_countdown(force=force)
+
     def _format_target_label(self, target, now=None):
         return format_target_label(target, now)
 

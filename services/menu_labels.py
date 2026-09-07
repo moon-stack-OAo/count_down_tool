@@ -13,6 +13,7 @@ TRAY_QUICK_START_PRESETS: Tuple[Tuple[str, int, int, int], ...] = (
 )
 
 TRAY_QUICK_START_MENU_LABEL = "快捷开始"
+TRAY_SHIFT_MENU_LABEL = "按班次"
 
 
 def tray_window_menu_label(is_mini: bool) -> str:

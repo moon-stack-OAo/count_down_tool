@@ -233,6 +233,124 @@ def target_from_duration(
     return now + duration, duration
 
 
+def parse_shift_hms(
+    value: Any,
+) -> Tuple[Optional[Tuple[int, int, int]], Optional[str]]:
+    """解析班次时刻字符串 "HH:MM" / "HH:MM:SS"，或 (h, m, s) 序列。
+
+    成功 ((h, m, s), None)；失败 (None, 中文错误信息)。
+    """
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        try:
+            h = int(value[0])
+            m = int(value[1])
+            s = int(value[2]) if len(value) >= 3 else 0
+        except (TypeError, ValueError):
+            return None, "请输入有效数字"
+        ok, err = validate_hms(h, m, s)
+        if not ok:
+            return None, err
+        return (h, m, s), None
+
+    if not isinstance(value, str):
+        return None, "班次时刻格式无效"
+    text = value.strip()
+    if not text:
+        return None, "班次时刻不能为空"
+    parts = text.split(":")
+    if len(parts) not in (2, 3):
+        return None, "班次时刻须为 HH:MM 或 HH:MM:SS"
+    try:
+        h = int(parts[0])
+        m = int(parts[1])
+        s = int(parts[2]) if len(parts) == 3 else 0
+    except (TypeError, ValueError):
+        return None, "请输入有效数字"
+    ok, err = validate_hms(h, m, s)
+    if not ok:
+        return None, err
+    return (h, m, s), None
+
+
+def validate_shift(start: Any, end: Any) -> Tuple[bool, Optional[str]]:
+    """校验班次开始/结束。结束须晚于开始（同日，禁止跨日）。
+
+    start/end 可为 "HH:MM"/"HH:MM:SS" 或 (h, m, s)。
+    成功 (True, None)；失败 (False, 中文错误信息)。
+    """
+    start_hms, err = parse_shift_hms(start)
+    if err or start_hms is None:
+        return False, err or "班次开始时刻无效"
+    end_hms, err = parse_shift_hms(end)
+    if err or end_hms is None:
+        return False, err or "班次结束时刻无效"
+    sh, sm, ss = start_hms
+    eh, em, es = end_hms
+    start_td = timedelta(hours=sh, minutes=sm, seconds=ss)
+    end_td = timedelta(hours=eh, minutes=em, seconds=es)
+    if end_td <= start_td:
+        return False, "班次结束须晚于开始（暂不支持跨日）"
+    return True, None
+
+
+def target_from_shift(
+    start_h: int,
+    start_m: int,
+    start_s: int,
+    end_h: int,
+    end_m: int,
+    end_s: int,
+    now: Optional[datetime] = None,
+) -> Tuple[
+    Optional[datetime],
+    Optional[timedelta],
+    Optional[timedelta],
+    Optional[str],
+]:
+    """班次顺延：Δ = Now − S，T = E + Δ，duration = E − S。
+
+    要求 Now >= S；第一版禁止 E <= S（跨日班次）。
+    成功 (target, duration, delta, None)；失败 (None, None, None, 错误信息)。
+    """
+    if now is None:
+        now = datetime.now()
+    ok, err = validate_hms(start_h, start_m, start_s)
+    if not ok:
+        return None, None, None, err or "班次开始时刻无效"
+    ok, err = validate_hms(end_h, end_m, end_s)
+    if not ok:
+        return None, None, None, err or "班次结束时刻无效"
+
+    start_td = timedelta(
+        hours=int(start_h), minutes=int(start_m), seconds=int(start_s)
+    )
+    end_td = timedelta(hours=int(end_h), minutes=int(end_m), seconds=int(end_s))
+    if end_td <= start_td:
+        return None, None, None, "班次结束须晚于开始（暂不支持跨日）"
+
+    start_dt = now.replace(
+        hour=int(start_h),
+        minute=int(start_m),
+        second=int(start_s),
+        microsecond=0,
+    )
+    end_dt = now.replace(
+        hour=int(end_h),
+        minute=int(end_m),
+        second=int(end_s),
+        microsecond=0,
+    )
+    # 比较到秒：去掉微秒，避免 now 略早于整秒 S 误判
+    now_cmp = now.replace(microsecond=0)
+    if now_cmp < start_dt:
+        return None, None, None, "当前时刻早于班次开始，无法顺延"
+
+    duration = end_dt - start_dt
+    delta = now_cmp - start_dt
+    target = end_dt + delta
+    return target, duration, delta, None
+
+
 def remaining_seconds(
     target_time: datetime,
     now: Optional[datetime] = None,
@@ -600,6 +718,9 @@ def merge_config(
     - last_update_check: Optional[str]  # YYYY-MM-DD
     - ignored_update_version: Optional[str]  # 用户忽略的版本号
     - last_hour / last_minute / last_second: Optional[str]  # 上次到期时分秒
+    - shift_enabled: Optional[bool]  # 是否启用班次顺延
+    - shift_start: Optional[str]  # 计划开始 HH:MM 或 HH:MM:SS
+    - shift_end: Optional[str]  # 计划结束 HH:MM 或 HH:MM:SS
     """
     result: Dict[str, Any] = dict(config) if isinstance(config, dict) else {}
     for key, value in updates.items():

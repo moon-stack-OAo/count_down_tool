@@ -38,6 +38,10 @@ class PersistedState:
     last_hour: str = "18"
     last_minute: str = "00"
     last_second: str = "00"
+    # 班次顺延：计划开始/结束（同日钟点）
+    shift_enabled: bool = False
+    shift_start: str = "09:00:00"
+    shift_end: str = "18:00:00"
 
 
 @dataclass
@@ -48,6 +52,8 @@ class CountdownRuntime:
     countdown_timer_id: Any = None
     preset_duration: Any = None
     applying_preset: bool = False
+    # 本次是否由班次顺延启动（重启时按当前 Now 重算，不冻住首次目标）
+    shift_mode: bool = False
     duration_total_seconds: float = 0.0
     progress_value: float = 0.0
     paused_remaining: Optional[float] = None

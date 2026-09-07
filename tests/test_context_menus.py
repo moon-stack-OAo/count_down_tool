@@ -12,6 +12,7 @@ if _ROOT not in sys.path:
 from services.menu_labels import (
     TRAY_QUICK_START_MENU_LABEL,
     TRAY_QUICK_START_PRESETS,
+    TRAY_SHIFT_MENU_LABEL,
     tray_mini_menu_label,
     tray_quick_start_labels,
     tray_window_menu_label,
@@ -55,6 +56,9 @@ class TestTrayMenuLabels(unittest.TestCase):
 class TestTrayQuickStartPresets(unittest.TestCase):
     def test_menu_label(self):
         self.assertEqual(TRAY_QUICK_START_MENU_LABEL, "快捷开始")
+
+    def test_shift_menu_label(self):
+        self.assertEqual(TRAY_SHIFT_MENU_LABEL, "按班次")
 
     def test_presets_labels_and_durations(self):
         labels = tray_quick_start_labels()

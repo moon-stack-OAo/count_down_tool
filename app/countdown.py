@@ -27,10 +27,12 @@ from core.countdown_core import (
     inputs_locked_for_state,
     next_second_delay_ms,
     next_state,
+    parse_shift_hms,
     progress_ratio,
     remaining_seconds,
     target_from_duration,
     target_from_hms,
+    target_from_shift,
     validate_hms,
 )
 from services.tray import refresh_tray_menu
@@ -119,6 +121,7 @@ class CountdownController:
                     logger.debug("预设 chip 禁用样式失败", exc_info=True)
             else:
                 hms = getattr(btn, "_preset_hms", None)
+                is_shift = bool(getattr(btn, "_shift_chip", False))
                 try:
                     btn.config(bg=c["chip"], fg=c.get("text_dim", c["text"]), cursor="hand2")
                     btn.bind(
@@ -133,7 +136,12 @@ class CountdownController:
                             bg=c["chip"], fg=c.get("text_dim", c["text"])
                         ),
                     )
-                    if hms is not None:
+                    if is_shift:
+                        btn.bind(
+                            "<Button-1>",
+                            lambda e: self.start_shift_countdown(force=False),
+                        )
+                    elif hms is not None:
                         hh, mm, ss = hms
                         btn.bind(
                             "<Button-1>",
@@ -246,6 +254,7 @@ class CountdownController:
         app = self.app
         if not app._applying_preset:
             app._preset_duration = None
+            app._shift_mode = False
         try:
             h = int(app.hour_var.get())
             m = int(app.minute_var.get())
@@ -329,6 +338,10 @@ class CountdownController:
     def restart_countdown(self):
         app = self.app
         self.clear_paused_remaining()
+        # 班次模式：按当前 Now 重新顺延，不冻住第一次目标钟点
+        if bool(getattr(app, "_shift_mode", False)):
+            self.start_shift_countdown(force=True)
+            return
         if app._preset_duration is not None:
             now = datetime.now()
             target = now + app._preset_duration
@@ -504,6 +517,7 @@ class CountdownController:
         app = self.app
         app._alarm_count = 0
         app._preset_duration = None
+        app._shift_mode = False
         self.clear_paused_remaining()
         app._duration_total_seconds = 0.0
         app._progress_value = 0.0
@@ -541,6 +555,7 @@ class CountdownController:
         now = datetime.now()
         target, duration = target_from_duration(hours, minutes, seconds, now)
         app._preset_duration = duration
+        app._shift_mode = False
         self.clear_paused_remaining()
 
         self.apply_target_to_spinboxes(target)
@@ -559,6 +574,61 @@ class CountdownController:
             self.set_state(ACTION_RESUME)
         else:
             # idle→running；running+force 保持 running
+            self.set_state(ACTION_START)
+        self.remember_last_hms(save=True)
+        self.update_countdown(target)
+        app._sync_mini_state()
+
+    def start_shift_countdown(self, *, force: bool = False):
+        """按班次顺延启动：Δ=Now−S，T=E+Δ；时长=E−S。
+
+        force=True 时允许 running 下强制重启（托盘「按班次」）；主界面 chip 仍受锁。
+        重启时按当前 Now 重新算顺延，不冻住第一次目标。
+        """
+        app = self.app
+        if self.inputs_locked() and not force:
+            return
+        if not bool(getattr(app, "_shift_enabled", False)):
+            app.show_error("请先在设置中启用班次")
+            return
+
+        start_hms, err = parse_shift_hms(getattr(app, "_shift_start", "09:00:00"))
+        if err or start_hms is None:
+            app.show_error(err or "班次开始时刻无效")
+            return
+        end_hms, err = parse_shift_hms(getattr(app, "_shift_end", "18:00:00"))
+        if err or end_hms is None:
+            app.show_error(err or "班次结束时刻无效")
+            return
+
+        now = datetime.now()
+        sh, sm, ss = start_hms
+        eh, em, es = end_hms
+        target, duration, _delta, err = target_from_shift(
+            sh, sm, ss, eh, em, es, now
+        )
+        if err or target is None or duration is None:
+            app.show_error(err or "无法按班次启动")
+            return
+
+        # 班次重启优先走重算；清掉相对时长预设，避免 restart 走 preset 分支
+        app._preset_duration = None
+        app._shift_mode = True
+        self.clear_paused_remaining()
+
+        self.apply_target_to_spinboxes(target)
+        app.target_time = target
+        if app.target_time_label:
+            app.target_time_label.config(text=format_target_label(target, now))
+
+        cancel_timer_attr(app, "_countdown_timer_id")
+
+        self.record_duration_total(target, now)
+        if app._state == STATE_FINISHED:
+            self.set_state(ACTION_RESTART)
+        elif app._state == STATE_PAUSED:
+            self.set_state(ACTION_RESUME)
+        else:
             self.set_state(ACTION_START)
         self.remember_last_hms(save=True)
         self.update_countdown(target)

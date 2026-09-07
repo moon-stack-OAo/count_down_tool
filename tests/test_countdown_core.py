@@ -58,11 +58,14 @@ from core.countdown_core import (
     should_start_mini,
     should_update_mini_clock,
     should_update_mini_countdown,
+    parse_shift_hms,
     target_from_duration,
     target_from_hms,
     target_from_remaining,
+    target_from_shift,
     try_acquire_weak_lock,
     validate_hms,
+    validate_shift,
     write_lock_pid,
 )
 
@@ -138,6 +141,98 @@ class TestTargetFromDuration(unittest.TestCase):
         now2 = datetime(2026, 7, 17, 15, 30, 0)
         target2 = now2 + duration
         self.assertEqual(target2, datetime(2026, 7, 17, 15, 35, 0))
+
+
+class TestParseShiftHms(unittest.TestCase):
+    def test_hhmm_and_hhmmss(self):
+        hms, err = parse_shift_hms("09:00")
+        self.assertIsNone(err)
+        self.assertEqual(hms, (9, 0, 0))
+        hms, err = parse_shift_hms("18:30:45")
+        self.assertIsNone(err)
+        self.assertEqual(hms, (18, 30, 45))
+
+    def test_tuple(self):
+        hms, err = parse_shift_hms((9, 30))
+        self.assertIsNone(err)
+        self.assertEqual(hms, (9, 30, 0))
+
+    def test_invalid(self):
+        hms, err = parse_shift_hms("25:00")
+        self.assertIsNone(hms)
+        self.assertIsNotNone(err)
+        hms, err = parse_shift_hms("")
+        self.assertIsNone(hms)
+        self.assertIsNotNone(err)
+
+
+class TestValidateShift(unittest.TestCase):
+    def test_ok(self):
+        ok, err = validate_shift("09:00", "18:00")
+        self.assertTrue(ok)
+        self.assertIsNone(err)
+
+    def test_end_before_or_equal_start(self):
+        ok, err = validate_shift("18:00", "09:00")
+        self.assertFalse(ok)
+        self.assertIn("晚于", err)
+        ok, err = validate_shift("09:00:00", "09:00:00")
+        self.assertFalse(ok)
+
+
+class TestTargetFromShift(unittest.TestCase):
+    def test_on_time_delta_zero(self):
+        """准时开始：Δ=0，T=E。"""
+        now = datetime(2026, 7, 17, 9, 0, 0)
+        target, duration, delta, err = target_from_shift(
+            9, 0, 0, 18, 0, 0, now
+        )
+        self.assertIsNone(err)
+        self.assertEqual(delta, timedelta(0))
+        self.assertEqual(target, datetime(2026, 7, 17, 18, 0, 0))
+        self.assertEqual(duration, timedelta(hours=9))
+
+    def test_late_30_minutes(self):
+        """晚到 30 分：T = E+30m。"""
+        now = datetime(2026, 7, 17, 9, 30, 0)
+        target, duration, delta, err = target_from_shift(
+            9, 0, 0, 18, 0, 0, now
+        )
+        self.assertIsNone(err)
+        self.assertEqual(delta, timedelta(minutes=30))
+        self.assertEqual(target, datetime(2026, 7, 17, 18, 30, 0))
+        self.assertEqual(duration, timedelta(hours=9))
+
+    def test_now_before_start_fails(self):
+        """Now < S：失败。"""
+        now = datetime(2026, 7, 17, 8, 59, 0)
+        target, duration, delta, err = target_from_shift(
+            9, 0, 0, 18, 0, 0, now
+        )
+        self.assertIsNone(target)
+        self.assertIsNone(duration)
+        self.assertIsNone(delta)
+        self.assertIsNotNone(err)
+        self.assertIn("早于", err)
+
+    def test_end_le_start_fails(self):
+        """E <= S：失败。"""
+        now = datetime(2026, 7, 17, 10, 0, 0)
+        target, _, _, err = target_from_shift(18, 0, 0, 9, 0, 0, now)
+        self.assertIsNone(target)
+        self.assertIsNotNone(err)
+        self.assertIn("晚于", err)
+        target, _, _, err = target_from_shift(9, 0, 0, 9, 0, 0, now)
+        self.assertIsNone(target)
+        self.assertIsNotNone(err)
+
+    def test_duration_always_e_minus_s(self):
+        """时长恒为 E−S（与顺延量无关）。"""
+        now = datetime(2026, 7, 17, 10, 15, 30)
+        _, duration, delta, err = target_from_shift(9, 0, 0, 18, 0, 0, now)
+        self.assertIsNone(err)
+        self.assertEqual(duration, timedelta(hours=9))
+        self.assertEqual(delta, timedelta(hours=1, minutes=15, seconds=30))
 
 
 class TestRemainingFreeze(unittest.TestCase):

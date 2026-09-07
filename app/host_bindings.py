@@ -27,10 +27,14 @@ _PERSISTED_COERCE: Dict[str, Callable[[Any], Any]] = {
     "last_hour": lambda v: str(v) if v is not None else "18",
     "last_minute": lambda v: str(v) if v is not None else "00",
     "last_second": lambda v: str(v) if v is not None else "00",
+    "shift_enabled": bool,
+    "shift_start": lambda v: str(v) if v is not None else "09:00:00",
+    "shift_end": lambda v: str(v) if v is not None else "18:00:00",
 }
 
 _RUNTIME_COERCE: Dict[str, Callable[[Any], Any]] = {
     "applying_preset": bool,
+    "shift_mode": bool,
     "duration_total_seconds": lambda v: float(v) if v is not None else 0.0,
     "progress_value": lambda v: float(v) if v is not None else 0.0,
     "alarm_count": lambda v: int(v) if v is not None else 0,

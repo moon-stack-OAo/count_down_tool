@@ -33,6 +33,54 @@ def refresh_update_badge(app) -> None:
         pass
 
 
+def sync_shift_chip(app) -> None:
+    """按 shift_enabled 增删主界面「今日班次」chip，并刷新锁定样式。"""
+    chips = getattr(app, "_preset_chips", None)
+    if chips is None:
+        return
+    enabled = bool(getattr(app, "_shift_enabled", False))
+    existing = None
+    for btn in list(chips):
+        if bool(getattr(btn, "_shift_chip", False)):
+            existing = btn
+            break
+
+    if enabled and existing is None:
+        parent = getattr(app, "_preset_row", None)
+        if parent is None:
+            return
+        c = app.COLORS
+        shift_btn = tk.Label(
+            parent,
+            text="今日班次",
+            font=app._font("label", 9),
+            bg=c["chip"],
+            fg=c["text_dim"],
+            padx=8,
+            pady=5,
+            cursor="hand2",
+        )
+        shift_btn.pack(side=tk.LEFT, padx=(0, 5))
+        shift_btn._shift_chip = True  # type: ignore[attr-defined]
+        chips.append(shift_btn)
+    elif not enabled and existing is not None:
+        try:
+            existing.destroy()
+        except tk.TclError:
+            pass
+        try:
+            chips.remove(existing)
+        except ValueError:
+            pass
+
+    apply_lock = getattr(app, "_apply_input_lock", None)
+    if callable(apply_lock):
+        try:
+            apply_lock()
+        except (tk.TclError, AttributeError, TypeError):
+            pass
+
+
 def setup_styles(app):
     """配置 ttk 样式。"""
     style = ttk.Style()
@@ -398,6 +446,7 @@ def build_full_ui(app):
 
     preset_row = tk.Frame(settings_inner, bg=c["card"])
     preset_row.pack(pady=(12, 0))
+    app._preset_row = preset_row
 
     ttk.Label(
         preset_row,
@@ -430,6 +479,22 @@ def build_full_ui(app):
         btn.pack(side=tk.LEFT, padx=(0, 5))
         btn._preset_hms = (h, m, s)  # type: ignore[attr-defined]
         app._preset_chips.append(btn)
+
+    # 班次启用时显示「今日班次」chip（锁定逻辑与预设一致）
+    if bool(getattr(app, "_shift_enabled", False)):
+        shift_btn = tk.Label(
+            preset_row,
+            text="今日班次",
+            font=app._font("label", 9),
+            bg=c["chip"],
+            fg=c["text_dim"],
+            padx=8,
+            pady=5,
+            cursor="hand2",
+        )
+        shift_btn.pack(side=tk.LEFT, padx=(0, 5))
+        shift_btn._shift_chip = True  # type: ignore[attr-defined]
+        app._preset_chips.append(shift_btn)
 
     # 按当前状态应用输入锁定、主按钮色、进度条
     if hasattr(app, "_apply_input_lock"):

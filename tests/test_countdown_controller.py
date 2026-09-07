@@ -74,6 +74,10 @@ def _make_app(**over):
         _alarm_count=0,
         _preset_duration=None,
         _applying_preset=False,
+        _shift_mode=False,
+        _shift_enabled=True,
+        _shift_start="09:00:00",
+        _shift_end="18:00:00",
         _duration_total_seconds=0.0,
         _progress_value=0.0,
         _paused_remaining=None,
@@ -206,6 +210,78 @@ class TestCountdownController(unittest.TestCase):
         # 若仍用冻结重建，target 会变成 now+frozen，与原 target 不同
         upd.assert_called_once_with(target)
 
+    def test_start_shift_success(self):
+        app = _make_app()
+        ctrl = CountdownController(app)
+        fixed = datetime(2026, 8, 7, 9, 30, 0)
+        with mock.patch("app.countdown.datetime") as dt:
+            dt.now.return_value = fixed
+            with mock.patch.object(CountdownController, "update_countdown") as upd:
+                ctrl.start_shift_countdown(force=False)
+        self.assertTrue(app._shift_mode)
+        self.assertIsNone(app._preset_duration)
+        self.assertEqual(app._state, STATE_RUNNING)
+        self.assertEqual(app.target_time, datetime(2026, 8, 7, 18, 30, 0))
+        self.assertEqual(app.hour_var.get(), "18")
+        self.assertEqual(app.minute_var.get(), "30")
+        upd.assert_called_once()
+
+    def test_start_shift_too_early_fails(self):
+        app = _make_app()
+        ctrl = CountdownController(app)
+        fixed = datetime(2026, 8, 7, 8, 0, 0)
+        with mock.patch("app.countdown.datetime") as dt:
+            dt.now.return_value = fixed
+            ctrl.start_shift_countdown(force=False)
+        self.assertEqual(app._state, STATE_IDLE)
+        self.assertFalse(app._shift_mode)
+        self.assertIn("早于", getattr(app, "_last_error", ""))
+
+    def test_start_shift_disabled_shows_error(self):
+        app = _make_app(_shift_enabled=False)
+        ctrl = CountdownController(app)
+        ctrl.start_shift_countdown(force=True)
+        self.assertIn("启用班次", getattr(app, "_last_error", ""))
+        self.assertFalse(app._shift_mode)
+
+    def test_start_shift_blocked_when_running_without_force(self):
+        app = _make_app(_state=STATE_RUNNING)
+        before = app.hour_var.get()
+        ctrl = CountdownController(app)
+        ctrl.start_shift_countdown(force=False)
+        self.assertEqual(app.hour_var.get(), before)
+        self.assertFalse(app._shift_mode)
+
+    def test_start_shift_force_when_running(self):
+        app = _make_app(_state=STATE_RUNNING)
+        ctrl = CountdownController(app)
+        fixed = datetime(2026, 8, 7, 10, 0, 0)
+        with mock.patch("app.countdown.datetime") as dt:
+            dt.now.return_value = fixed
+            with mock.patch.object(CountdownController, "update_countdown"):
+                ctrl.start_shift_countdown(force=True)
+        self.assertEqual(app._state, STATE_RUNNING)
+        self.assertTrue(app._shift_mode)
+        self.assertEqual(app.target_time, datetime(2026, 8, 7, 19, 0, 0))
+
+    def test_restart_in_shift_mode_recalculates(self):
+        app = _make_app(_state=STATE_FINISHED, _shift_mode=True)
+        ctrl = CountdownController(app)
+        fixed = datetime(2026, 8, 7, 11, 0, 0)
+        with mock.patch("app.countdown.datetime") as dt:
+            dt.now.return_value = fixed
+            with mock.patch.object(CountdownController, "update_countdown"):
+                ctrl.restart_countdown()
+        self.assertTrue(app._shift_mode)
+        self.assertEqual(app.target_time, datetime(2026, 8, 7, 20, 0, 0))
+
+    def test_reset_clears_shift_mode(self):
+        app = _make_app(_shift_mode=True, _preset_duration=timedelta(hours=1))
+        ctrl = CountdownController(app)
+        ctrl.reset()
+        self.assertFalse(app._shift_mode)
+        self.assertIsNone(app._preset_duration)
+
 
 class TestTrayActions(unittest.TestCase):
     def test_tray_quick_start_schedules_main_thread(self):
@@ -228,6 +304,26 @@ class TestTrayActions(unittest.TestCase):
         _ms, cb = after_calls[0]
         cb()
         app._set_preset_time.assert_called_once_with(0, 5, 0, force=True)
+
+    def test_tray_start_shift_schedules_main_thread(self):
+        from services import tray as tray_mod
+
+        after_calls = []
+
+        class Master:
+            def after(self, ms, cb):
+                after_calls.append((ms, cb))
+                return "id"
+
+        app = SimpleNamespace(
+            master=Master(),
+            _start_shift_countdown=mock.Mock(),
+        )
+        with mock.patch.object(tray_mod, "refresh_tray_menu"):
+            tray_mod.tray_start_shift(app)
+        self.assertEqual(len(after_calls), 1)
+        after_calls[0][1]()
+        app._start_shift_countdown.assert_called_once_with(force=True)
 
     def test_tray_reset_calls_app_reset(self):
         from services import tray as tray_mod

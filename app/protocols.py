@@ -32,6 +32,12 @@ class ConfigHost(Protocol):
     _mini_size: Optional[Tuple[int, int]]
     _mini_text: Dict[str, Any]
     _is_mini: bool
+    _last_hour: str
+    _last_minute: str
+    _last_second: str
+    _shift_enabled: bool
+    _shift_start: str
+    _shift_end: str
     COLORS: Dict[str, str]
 
     def _load_config(self) -> None: ...
@@ -49,6 +55,10 @@ class CountdownHost(Protocol):
     _countdown_timer_id: Any
     _preset_duration: Any
     _applying_preset: bool
+    _shift_mode: bool
+    _shift_enabled: bool
+    _shift_start: str
+    _shift_end: str
     _duration_total_seconds: float
     _progress_value: float
     _paused_remaining: Optional[float]

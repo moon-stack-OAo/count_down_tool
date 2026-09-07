@@ -18,6 +18,7 @@ from core.countdown_core import APP_NAME, __version__, button_text_for_state
 from services.menu_labels import (
     TRAY_QUICK_START_MENU_LABEL,
     TRAY_QUICK_START_PRESETS,
+    TRAY_SHIFT_MENU_LABEL,
     tray_mini_menu_label,
     tray_window_menu_label,
 )
@@ -120,6 +121,10 @@ def _fill_settings(menu: tk.Menu, app) -> None:
         )
     menu.add_cascade(label=TRAY_QUICK_START_MENU_LABEL, menu=quick)
     menu.add_command(
+        label=TRAY_SHIFT_MENU_LABEL,
+        command=lambda: _start_shift(app),
+    )
+    menu.add_command(
         label=button_text_for_state(app._state),
         command=app.toggle_countdown,
     )
@@ -159,6 +164,13 @@ def _fill_settings(menu: tk.Menu, app) -> None:
 def _quick_start(app, hours: int, minutes: int, seconds: int) -> None:
     """菜单栏快捷开始（已在主线程）。"""
     app._set_preset_time(hours, minutes, seconds, force=True)
+
+
+def _start_shift(app) -> None:
+    """菜单栏按班次顺延启动（已在主线程，force）。"""
+    starter = getattr(app, "_start_shift_countdown", None)
+    if callable(starter):
+        starter(force=True)
 
 
 def _reset_countdown(app) -> None:
