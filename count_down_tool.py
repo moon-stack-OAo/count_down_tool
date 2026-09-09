@@ -177,6 +177,7 @@ class CountdownApp:
         self._mini_geo_save_id = None
         self._startup_health_timer_id = None
         self._startup_update_timer_id = None
+        self._startup_shift_timer_id = None
 
         self._setup_styles()
         self._setup_ui()
@@ -210,6 +211,12 @@ class CountdownApp:
             schedule_startup_check(self)
         except (ImportError, AttributeError, RuntimeError, OSError):
             logger.debug("调度启动更新检查失败", exc_info=True)
+        try:
+            from app.countdown import schedule_startup_shift
+
+            schedule_startup_shift(self)
+        except (ImportError, AttributeError, RuntimeError, OSError):
+            logger.debug("调度启动自动班次失败", exc_info=True)
 
     def _startup_health_hints(self, tray_ok: bool) -> None:
         """启动后提示：网络解锁标记、托盘不可用。"""
@@ -381,8 +388,8 @@ class CountdownApp:
     def _set_preset_time(self, hours, minutes, seconds, *, force: bool = False):
         self._ctrl.set_preset_time(hours, minutes, seconds, force=force)
 
-    def _start_shift_countdown(self, *, force: bool = False):
-        self._ctrl.start_shift_countdown(force=force)
+    def _start_shift_countdown(self, *, force: bool = False, quiet: bool = False):
+        self._ctrl.start_shift_countdown(force=force, quiet=quiet)
 
     def _format_target_label(self, target, now=None):
         return format_target_label(target, now)

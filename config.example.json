@@ -27,5 +27,6 @@
   "ignored_update_version": "",
   "shift_enabled": false,
   "shift_start": "09:00:00",
-  "shift_end": "18:00:00"
+  "shift_end": "18:00:00",
+  "auto_start_shift": false
 }

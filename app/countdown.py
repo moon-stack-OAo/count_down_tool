@@ -553,26 +553,34 @@ class CountdownController:
         self.update_countdown(target)
         app._sync_mini_state()
 
-    def start_shift_countdown(self, *, force: bool = False):
+    def start_shift_countdown(self, *, force: bool = False, quiet: bool = False):
         """按班次顺延启动：Δ=Now−S，T=E+Δ；时长=E−S。
 
         force=True 时允许 running 下强制重启（托盘「按班次」）；主界面 chip 仍受锁。
+        quiet=True 时失败仅打日志、不弹错误（启动自动场景：早于班次开始则静默跳过）。
         重启时按当前 Now 重新算顺延，不冻住第一次目标。
         """
         app = self.app
+
+        def _fail(msg: str) -> None:
+            if quiet:
+                logger.info("启动自动班次跳过：%s", msg)
+            else:
+                app.show_error(msg)
+
         if self.inputs_locked() and not force:
             return
         if not bool(getattr(app, "_shift_enabled", False)):
-            app.show_error("请先在设置中启用班次")
+            _fail("请先在设置中启用班次")
             return
 
         start_hms, err = parse_shift_hms(getattr(app, "_shift_start", "09:00:00"))
         if err or start_hms is None:
-            app.show_error(err or "班次开始时刻无效")
+            _fail(err or "班次开始时刻无效")
             return
         end_hms, err = parse_shift_hms(getattr(app, "_shift_end", "18:00:00"))
         if err or end_hms is None:
-            app.show_error(err or "班次结束时刻无效")
+            _fail(err or "班次结束时刻无效")
             return
 
         now = datetime.now()
@@ -582,7 +590,7 @@ class CountdownController:
             sh, sm, ss, eh, em, es, now
         )
         if err or target is None or duration is None:
-            app.show_error(err or "无法按班次启动")
+            _fail(err or "无法按班次启动")
             return
 
         # 班次重启优先走重算；清掉相对时长预设，避免 restart 走 preset 分支
@@ -606,3 +614,39 @@ class CountdownController:
             self.set_state(ACTION_START)
         self.update_countdown(target)
         app._sync_mini_state()
+
+
+# 启动后延迟自动按班次（毫秒）；略早于更新检查，避免叠弹窗
+_STARTUP_SHIFT_DELAY_MS = 1200
+
+
+def schedule_startup_shift(app) -> None:
+    """若开启「启动自动按班次」且已启用班次，则延迟启动；早于开始等失败静默跳过。"""
+    if not bool(getattr(app, "_auto_start_shift", False)):
+        return
+    if not bool(getattr(app, "_shift_enabled", False)):
+        return
+
+    def _kick():
+        try:
+            app._startup_shift_timer_id = None
+        except (AttributeError, TypeError):
+            pass
+        starter = getattr(app, "_start_shift_countdown", None)
+        if not callable(starter):
+            return
+        try:
+            starter(force=True, quiet=True)
+        except (TypeError, AttributeError, RuntimeError, tk.TclError):
+            logger.debug("启动自动班次倒计时失败", exc_info=True)
+
+    try:
+        app._startup_shift_timer_id = app.master.after(
+            _STARTUP_SHIFT_DELAY_MS, _kick
+        )
+    except (RuntimeError, AttributeError, tk.TclError):
+        try:
+            app._startup_shift_timer_id = None
+        except (AttributeError, TypeError):
+            pass
+        logger.debug("调度启动自动班次失败", exc_info=True)

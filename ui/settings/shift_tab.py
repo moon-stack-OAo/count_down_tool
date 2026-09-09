@@ -44,6 +44,9 @@ def build_shift_section(app, parent, c, refreshers) -> None:
     enable_host = themed_frame(shift_card, app, role="card", c=c)
     enable_host.pack(fill=tk.X)
 
+    auto_host = themed_frame(shift_card, app, role="card", c=c)
+    auto_host.pack(fill=tk.X)
+
     # —— 开始 / 结束 ——
     form = themed_frame(shift_card, app, role="card", c=c)
     form.pack(fill=tk.X, padx=SPACE_SM, pady=(SPACE_XS, 0))
@@ -135,6 +138,9 @@ def build_shift_section(app, parent, c, refreshers) -> None:
 
     def _toggle_enabled():
         app._shift_enabled = not bool(getattr(app, "_shift_enabled", False))
+        # 关闭班次时同步关掉启动自动，避免配置矛盾
+        if not app._shift_enabled:
+            app._auto_start_shift = False
         app._save_config()
         _refresh()
         _sync_main_shift_chip()
@@ -144,6 +150,14 @@ def build_shift_section(app, parent, c, refreshers) -> None:
             refresh_tray_menu(app)
         except (ImportError, AttributeError, RuntimeError, tk.TclError):
             pass
+
+    def _toggle_auto_start():
+        if not bool(getattr(app, "_shift_enabled", False)):
+            _toast("请先启用班次顺延", kind="error")
+            return
+        app._auto_start_shift = not bool(getattr(app, "_auto_start_shift", False))
+        app._save_config()
+        _refresh()
 
     def _update_preview(*_args):
         palette = getattr(app, "COLORS", None) or c
@@ -236,6 +250,29 @@ def build_shift_section(app, parent, c, refreshers) -> None:
         pady=SPACE_SM,
     )
 
+    auto_lbl = selectable_row(
+        auto_host,
+        app,
+        c,
+        "启动时自动按班次倒计时",
+        selected=False,
+        on_click=_toggle_auto_start,
+        pady=SPACE_SM,
+    )
+
+    themed_label(
+        auto_host,
+        app,
+        "早于班次开始时静默跳过，不弹窗。",
+        fg_role="text_muted",
+        bg_role="card",
+        font_size=FONT_CAPTION,
+        c=c,
+        wraplength=420,
+        justify=tk.LEFT,
+        padx=SPACE_SM,
+    ).pack(fill=tk.X, pady=(0, SPACE_XS))
+
     for var in (start_var, end_var):
         try:
             var.trace_add("write", _update_preview)
@@ -253,8 +290,15 @@ def build_shift_section(app, parent, c, refreshers) -> None:
 
     def _refresh():
         enabled = bool(getattr(app, "_shift_enabled", False))
+        auto_on = bool(getattr(app, "_auto_start_shift", False)) and enabled
         try:
             set_selectable_selected(enable_lbl, enabled, text="启用班次顺延")
+        except tk.TclError:
+            pass
+        try:
+            set_selectable_selected(
+                auto_lbl, auto_on, text="启动时自动按班次倒计时"
+            )
         except tk.TclError:
             pass
         # 外部刷新时同步输入框（主题重建后）

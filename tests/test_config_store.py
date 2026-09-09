@@ -50,7 +50,10 @@ def _make_app(config_file: str, **overrides):
         "_check_update_on_start": True,
         "_last_update_check": "",
         "_ignored_update_version": "",
-
+        "_shift_enabled": False,
+        "_shift_start": "09:00:00",
+        "_shift_end": "18:00:00",
+        "_auto_start_shift": False,
         "_autostart": False,
         "_is_mini": False,
     }
@@ -119,6 +122,37 @@ class TestConfigStoreLoad(unittest.TestCase):
             self.assertEqual(app._ignored_update_version, "")
             self.assertEqual(app._startup_mode, "remember")
             self.assertFalse(app._autostart)
+            self.assertFalse(getattr(app, "_auto_start_shift", False))
+
+    def test_auto_start_shift_load_and_save(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "shift_enabled": True,
+                        "auto_start_shift": True,
+                        "shift_start": "08:30:00",
+                        "shift_end": "17:30:00",
+                    },
+                    f,
+                )
+            app = _make_app(path)
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.load_config(app)
+            self.assertTrue(app._shift_enabled)
+            self.assertTrue(app._auto_start_shift)
+            self.assertEqual(app._shift_start, "08:30:00")
+            app._auto_start_shift = False
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.save_config(app)
+            with open(path, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            self.assertFalse(saved.get("auto_start_shift"))
 
     def test_startup_mode_load_and_save(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -35,6 +35,7 @@ class ConfigHost(Protocol):
     _shift_enabled: bool
     _shift_start: str
     _shift_end: str
+    _auto_start_shift: bool
     COLORS: Dict[str, str]
 
     def _load_config(self) -> None: ...

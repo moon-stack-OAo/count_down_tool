@@ -38,6 +38,8 @@ class PersistedState:
     shift_enabled: bool = False
     shift_start: str = "09:00:00"
     shift_end: str = "18:00:00"
+    # 启动时自动按班次倒计时（需同时启用班次；早于开始则静默跳过）
+    auto_start_shift: bool = False
 
 
 @dataclass

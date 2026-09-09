@@ -11,7 +11,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple, Union
 
-__version__ = "1.4.3"
+__version__ = "1.4.4"
 APP_NAME = "倒计时工具"
 APP_NAME_EN = "Count Down Tool"
 
@@ -720,6 +720,7 @@ def merge_config(
     - shift_enabled: Optional[bool]  # 是否启用班次顺延
     - shift_start: Optional[str]  # 计划开始 HH:MM 或 HH:MM:SS
     - shift_end: Optional[str]  # 计划结束 HH:MM 或 HH:MM:SS
+    - auto_start_shift: Optional[bool]  # 启动时自动按班次倒计时
     """
     result: Dict[str, Any] = dict(config) if isinstance(config, dict) else {}
     for key, value in updates.items():

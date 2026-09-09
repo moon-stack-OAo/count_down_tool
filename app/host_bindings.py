@@ -27,6 +27,7 @@ _PERSISTED_COERCE: Dict[str, Callable[[Any], Any]] = {
     "shift_enabled": bool,
     "shift_start": lambda v: str(v) if v is not None else "09:00:00",
     "shift_end": lambda v: str(v) if v is not None else "18:00:00",
+    "auto_start_shift": bool,
 }
 
 _RUNTIME_COERCE: Dict[str, Callable[[Any], Any]] = {

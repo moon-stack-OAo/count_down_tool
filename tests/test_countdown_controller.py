@@ -209,6 +209,18 @@ class TestCountdownController(unittest.TestCase):
         self.assertFalse(app._shift_mode)
         self.assertIn("早于", getattr(app, "_last_error", ""))
 
+    def test_start_shift_too_early_quiet_skips(self):
+        app = _make_app()
+        app._last_error = ""
+        ctrl = CountdownController(app)
+        fixed = datetime(2026, 8, 7, 8, 0, 0)
+        with mock.patch("app.countdown.datetime") as dt:
+            dt.now.return_value = fixed
+            ctrl.start_shift_countdown(force=True, quiet=True)
+        self.assertEqual(app._state, STATE_IDLE)
+        self.assertFalse(app._shift_mode)
+        self.assertEqual(app._last_error, "")
+
     def test_start_shift_disabled_shows_error(self):
         app = _make_app(_shift_enabled=False)
         ctrl = CountdownController(app)
@@ -253,6 +265,33 @@ class TestCountdownController(unittest.TestCase):
         ctrl.reset()
         self.assertFalse(app._shift_mode)
         self.assertIsNone(app._preset_duration)
+
+    def test_schedule_startup_shift_when_enabled(self):
+        from app.countdown import schedule_startup_shift
+
+        starter = mock.Mock()
+        app = _make_app(
+            _auto_start_shift=True,
+            _shift_enabled=True,
+            _start_shift_countdown=starter,
+        )
+        schedule_startup_shift(app)
+        self.assertEqual(len(app.master.after_calls), 1)
+        app.master.after_calls[0][1]()
+        starter.assert_called_once_with(force=True, quiet=True)
+
+    def test_schedule_startup_shift_skipped_when_off(self):
+        from app.countdown import schedule_startup_shift
+
+        starter = mock.Mock()
+        app = _make_app(
+            _auto_start_shift=False,
+            _shift_enabled=True,
+            _start_shift_countdown=starter,
+        )
+        schedule_startup_shift(app)
+        self.assertEqual(len(app.master.after_calls), 0)
+        starter.assert_not_called()
 
 
 class TestTrayActions(unittest.TestCase):

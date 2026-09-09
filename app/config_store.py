@@ -236,6 +236,8 @@ def load_config(app: Any) -> None:
             app._shift_end = _normalize_shift_hms(
                 config.get("shift_end", "18:00:00"), "18:00:00"
             )
+            if "auto_start_shift" in config:
+                app._auto_start_shift = bool(config.get("auto_start_shift"))
             real_autostart = is_autostart_enabled()
             app._autostart = real_autostart
             if config.get("autostart") is not None and bool(config.get("autostart")) != real_autostart:
@@ -261,6 +263,7 @@ def load_config(app: Any) -> None:
             app._shift_enabled = False
             app._shift_start = "09:00:00"
             app._shift_end = "18:00:00"
+            app._auto_start_shift = False
 
 
 def save_config(app: Any) -> None:
@@ -304,6 +307,7 @@ def save_config(app: Any) -> None:
                 shift_enabled=bool(getattr(app, "_shift_enabled", False)),
                 shift_start=shift_start,
                 shift_end=shift_end,
+                auto_start_shift=bool(getattr(app, "_auto_start_shift", False)),
             )
             if app._theme_custom is not None:
                 config = merge_config(config, theme_custom=app._theme_custom)
