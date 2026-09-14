@@ -172,11 +172,11 @@ def should_update_mini_countdown(
     return prev_text != text or prev_state != state
 
 
-def should_update_mini_clock(prev_hm: Optional[str], hm: str) -> bool:
-    """Mini 时钟（仅 %H:%M）是否需 configure；分钟未变则跳过。"""
-    if prev_hm is None:
+def should_update_mini_clock(prev_hms: Optional[str], hms: str) -> bool:
+    """Mini 时钟（%H:%M:%S）是否需 configure；文案未变则跳过。"""
+    if prev_hms is None:
         return True
-    return prev_hm != hm
+    return prev_hms != hms
 
 
 def validate_hms(

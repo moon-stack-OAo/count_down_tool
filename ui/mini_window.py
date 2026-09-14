@@ -190,12 +190,25 @@ def create_mini_window(app):
     content_frame = tk.Frame(main_frame, bg=bg)
     content_frame.pack(fill=tk.BOTH, expand=True)
 
+    clock_fg = app.mini_text_fg("clock")
+    left_stack = tk.Frame(content_frame, bg=bg)
+    left_stack.pack(side=tk.LEFT)
+
     app.mini_time_label = tk.Label(
-        content_frame, text=datetime.now().strftime("%H:%M"),
+        left_stack, text=datetime.now().strftime("%H:%M:%S"),
         font=app.FONTS["mini_time"],
-        bg=bg, fg=app.mini_text_fg("clock"),
+        bg=bg, fg=clock_fg,
     )
-    app.mini_time_label.pack(side=tk.LEFT)
+    app.mini_time_label.pack(anchor=tk.W)
+
+    app.mini_target_label = tk.Label(
+        left_stack, text=_mini_target_text(app),
+        font=app.FONTS["mini_time"],
+        bg=bg, fg=clock_fg,
+    )
+    app.mini_target_label.pack(anchor=tk.W)
+
+    app.mini_left_stack = left_stack
 
     app.mini_sep_label = tk.Label(
         content_frame, text="│",
@@ -243,8 +256,9 @@ def create_mini_window(app):
     apply_mini_content_scale(app, win_w, win_h, force=True)
 
     drag_widgets = (
-        mini, main_frame, content_frame,
-        app.mini_time_label, app.mini_sep_label, app.mini_countdown_label,
+        mini, main_frame, content_frame, left_stack,
+        app.mini_time_label, app.mini_target_label,
+        app.mini_sep_label, app.mini_countdown_label,
     )
     for widget in drag_widgets:
         widget.bind("<Button-1>", lambda e: mini_on_press(app, e))
@@ -352,6 +366,8 @@ def destroy_mini_window(app, capture_size=True):
         app.mini_window = None
         app.mini_countdown_label = None
         app.mini_time_label = None
+        app.mini_target_label = None
+        app.mini_left_stack = None
         app.mini_sep_label = None
         app.mini_main_frame = None
         app.mini_content_frame = None
@@ -364,7 +380,7 @@ def destroy_mini_window(app, capture_size=True):
         app._mini_press = None
         # 重建后需强制同步
         app._mini_sync_cache = None
-        app._mini_clock_hm = None
+        app._mini_clock_hms = None
 
 
 def apply_mini_content_scale(app, width=None, height=None, force=False):
@@ -399,17 +415,22 @@ def apply_mini_content_scale(app, width=None, height=None, force=False):
     pad_x = _sz(base_pad_x, 2)
     pad_y = _sz(base_pad_y, 2)
     gap = _sz(base_gap, 2)
-    time_sz = _sz(app.FONTS["mini_time"][1], 8)
+    time_sz = _sz(app.FONTS["mini_time"][1], 7)
     count_sz = _sz(app.FONTS["mini_countdown"][1], 10)
     btn_sz = _sz(base_btn, 8)
+    sep_sz = max(time_sz, count_sz)
 
     try:
         if getattr(app, "mini_main_frame", None):
             app.mini_main_frame.pack_configure(padx=pad_x, pady=pad_y)
         if getattr(app, "mini_time_label", None):
             app.mini_time_label.config(font=app._font("mini_time", time_sz, bold=True))
+        if getattr(app, "mini_target_label", None):
+            app.mini_target_label.config(
+                font=app._font("mini_time", time_sz, bold=True)
+            )
         if getattr(app, "mini_sep_label", None):
-            app.mini_sep_label.config(font=app._font("mini_time", time_sz, bold=True))
+            app.mini_sep_label.config(font=app._font("mini_time", sep_sz, bold=True))
             app.mini_sep_label.pack_configure(padx=gap)
         if getattr(app, "mini_countdown_label", None):
             app.mini_countdown_label.config(
@@ -781,6 +802,17 @@ def _countdown_color_role(state: str) -> str:
     return "countdown_paused"
 
 
+def _mini_target_text(app) -> str:
+    """Mini 目标时间文案：有目标则 HH:MM:SS，否则占位。"""
+    target = getattr(app, "target_time", None)
+    if target is None:
+        return "--:--:--"
+    try:
+        return target.strftime("%H:%M:%S")
+    except (AttributeError, TypeError, ValueError):
+        return "--:--:--"
+
+
 def sync_mini_state(app):
     """同步 mini 窗口的状态显示（变更检测，避免每秒无意义 configure）。"""
     mini = getattr(app, "mini_window", None)
@@ -794,6 +826,7 @@ def sync_mini_state(app):
 
     text = app.countdown_text
     state = app._state
+    target_text = _mini_target_text(app)
     role = _countdown_color_role(state)
     try:
         countdown_fg = app.mini_text_fg(role)
@@ -802,7 +835,7 @@ def sync_mini_state(app):
         countdown_fg = None
         clock_fg = None
 
-    # 缓存：(text, state, countdown_fg, clock_fg)；纯函数只比 (text, state)
+    # 缓存：(text, state, countdown_fg, clock_fg, target_text)
     prev_full = getattr(app, "_mini_sync_cache", None)
     prev_ts = None
     if isinstance(prev_full, tuple) and len(prev_full) >= 2:
@@ -824,6 +857,11 @@ def sync_mini_state(app):
         or len(prev_full) < 4
         or prev_full[3] != clock_fg
     )
+    need_target = (
+        prev_full is None
+        or len(prev_full) < 5
+        or prev_full[4] != target_text
+    )
 
     if need_countdown and getattr(app, "mini_countdown_label", None):
         try:
@@ -841,5 +879,17 @@ def sync_mini_state(app):
         except tk.TclError:
             pass
 
-    if need_countdown or need_clock_fg:
-        app._mini_sync_cache = (text, state, countdown_fg, clock_fg)
+    if (need_target or need_clock_fg) and getattr(app, "mini_target_label", None):
+        try:
+            kw = {}
+            if need_target:
+                kw["text"] = target_text
+            if need_clock_fg and clock_fg is not None:
+                kw["fg"] = clock_fg
+            if kw:
+                app.mini_target_label.config(**kw)
+        except tk.TclError:
+            pass
+
+    if need_countdown or need_clock_fg or need_target:
+        app._mini_sync_cache = (text, state, countdown_fg, clock_fg, target_text)

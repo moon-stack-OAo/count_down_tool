@@ -88,7 +88,7 @@ _SIZES = {
         "countdown": 46,
         "label": 10,
         "button": 11,
-        "mini_time": 12,
+        "mini_time": 9,
         "mini_countdown": 16,
     },
     "Darwin": {
@@ -97,7 +97,7 @@ _SIZES = {
         "countdown": 46,
         "label": 10,
         "button": 11,
-        "mini_time": 14,
+        "mini_time": 11,
         "mini_countdown": 28,
     },
     "Linux": {
@@ -106,7 +106,7 @@ _SIZES = {
         "countdown": 46,
         "label": 10,
         "button": 11,
-        "mini_time": 12,
+        "mini_time": 9,
         "mini_countdown": 16,
     },
 }

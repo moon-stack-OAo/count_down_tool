@@ -84,18 +84,18 @@ class CountdownApp:
     WINDOW_WIDTH = 500
     WINDOW_HEIGHT = 520
     MINI_WIDTH = 236
-    MINI_HEIGHT = 48
+    MINI_HEIGHT = 56
     # macOS Retina / Tk 点阵下 Mini 易偏小，约为 Windows 的 1.9 倍
     MINI_WIDTH_MAC = 450
-    MINI_HEIGHT_MAC = 90
+    MINI_HEIGHT_MAC = 108
     MINI_MIN_WIDTH = 180
-    MINI_MIN_HEIGHT = 36
+    MINI_MIN_HEIGHT = 48
     MINI_MAX_WIDTH = 900
-    MINI_MAX_HEIGHT = 240
+    MINI_MAX_HEIGHT = 280
     MINI_MIN_WIDTH_MAC = 280
-    MINI_MIN_HEIGHT_MAC = 56
+    MINI_MIN_HEIGHT_MAC = 72
     MINI_MAX_WIDTH_MAC = 1400
-    MINI_MAX_HEIGHT_MAC = 360
+    MINI_MAX_HEIGHT_MAC = 400
     TITLE_DRAG_EXCLUDE_RIGHT = 190
     PICKER_WIDTH = 420
     PICKER_HEIGHT = 440
@@ -147,6 +147,8 @@ class CountdownApp:
         self.mini_window = None
         self.mini_countdown_label = None
         self.mini_time_label = None
+        self.mini_target_label = None
+        self.mini_left_stack = None
         self.mini_sep_label = None
         self.mini_main_frame = None
         self.mini_content_frame = None
@@ -166,7 +168,7 @@ class CountdownApp:
 
         self._resize_data = None  # Mini 边缘缩放状态
         self._mini_sync_cache = None  # Mini 倒计时/字色上次同步快照
-        self._mini_clock_hm = None  # Mini 时钟上次 "%H:%M"
+        self._mini_clock_hms = None  # Mini 时钟上次 "%H:%M:%S"
         self._config_file = user_config_path()
         self._load_config()
         self.master.configure(bg=self.COLORS["bg"])
@@ -525,12 +527,12 @@ class CountdownApp:
             now = datetime.now()
             # 主窗时钟仍每秒更新（含秒）
             self.current_time_label.config(text=now.strftime("%H:%M:%S"))
-            # Mini 仅显示 %H:%M：分钟未变则跳过 configure
+            # Mini 时钟 %H:%M:%S：秒未变则跳过 configure
             if self.mini_time_label:
-                hm = now.strftime("%H:%M")
-                if should_update_mini_clock(self._mini_clock_hm, hm):
-                    self.mini_time_label.config(text=hm)
-                    self._mini_clock_hm = hm
+                hms = now.strftime("%H:%M:%S")
+                if should_update_mini_clock(self._mini_clock_hms, hms):
+                    self.mini_time_label.config(text=hms)
+                    self._mini_clock_hms = hms
         except tk.TclError:
             # 窗口已毁时勿再调度
             self._clock_timer_id = None

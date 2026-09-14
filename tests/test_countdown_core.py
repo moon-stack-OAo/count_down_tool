@@ -389,11 +389,11 @@ class TestShouldUpdateMiniCountdown(unittest.TestCase):
 
 class TestShouldUpdateMiniClock(unittest.TestCase):
     def test_first_and_change(self):
-        self.assertTrue(should_update_mini_clock(None, "12:00"))
-        self.assertTrue(should_update_mini_clock("12:00", "12:01"))
+        self.assertTrue(should_update_mini_clock(None, "12:00:00"))
+        self.assertTrue(should_update_mini_clock("12:00:00", "12:00:01"))
 
-    def test_same_minute_skips(self):
-        self.assertFalse(should_update_mini_clock("12:00", "12:00"))
+    def test_same_second_skips(self):
+        self.assertFalse(should_update_mini_clock("12:00:00", "12:00:00"))
 
 
 class TestStateMachine(unittest.TestCase):
@@ -725,11 +725,11 @@ class TestMiniSizeHelpers(unittest.TestCase):
         self.assertEqual(cfg["mini_size"], [1, 2])
 
     def test_mini_content_scale(self):
-        self.assertAlmostEqual(mini_content_scale(236, 48, 236, 48), 1.0)
-        self.assertAlmostEqual(mini_content_scale(472, 96, 236, 48), 2.0)
-        self.assertAlmostEqual(mini_content_scale(118, 48, 236, 48), 0.55, places=2)
-        self.assertAlmostEqual(mini_content_scale(236, 24, 236, 48), 0.55, places=2)
-        self.assertEqual(mini_content_scale(0, 48, 236, 48), 1.0)
+        self.assertAlmostEqual(mini_content_scale(236, 56, 236, 56), 1.0)
+        self.assertAlmostEqual(mini_content_scale(472, 112, 236, 56), 2.0)
+        self.assertAlmostEqual(mini_content_scale(118, 56, 236, 56), 0.55, places=2)
+        self.assertAlmostEqual(mini_content_scale(236, 28, 236, 56), 0.55, places=2)
+        self.assertEqual(mini_content_scale(0, 56, 236, 56), 1.0)
 
 
 class TestResourcePath(unittest.TestCase):
