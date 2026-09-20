@@ -1,31 +1,11 @@
 # -*- coding: utf-8 -*-
-"""完整窗 chrome：居中、置前、任务栏/圆角、标题栏拖动。"""
+"""完整窗 chrome：居中、置前。"""
 
 from __future__ import annotations
 
 import tkinter as tk
 
-from services.windows_native import (
-    force_window_to_front,
-    get_work_area,
-    set_taskbar_visible,
-    set_window_rounded_corners,
-)
-
-
-def start_drag(app, event) -> None:
-    """开始拖动完整窗（标题栏右侧控件区除外）。"""
-    if event.x > app.TITLE_DRAG_EXCLUDE_RIGHT:
-        return
-    app._drag_x = event.x
-    app._drag_y = event.y
-
-
-def on_drag(app, event) -> None:
-    """拖动完整窗。"""
-    x = app.master.winfo_x() + (event.x - app._drag_x)
-    y = app.master.winfo_y() + (event.y - app._drag_y)
-    app.master.geometry(f"+{x}+{y}")
+from services.windows_native import force_window_to_front, get_work_area
 
 
 def center_window(app) -> None:
@@ -70,14 +50,6 @@ def center_window_later(app) -> None:
         app.master.after(50, lambda: center_window(app))
     except tk.TclError:
         pass
-
-
-def set_rounded_corners(app) -> None:
-    set_window_rounded_corners(app.master, app.CORNER_RADIUS)
-
-
-def set_taskbar(app) -> None:
-    set_taskbar_visible(app.master)
 
 
 def bring_full_to_front(app) -> None:

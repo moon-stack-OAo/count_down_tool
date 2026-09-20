@@ -82,7 +82,8 @@ _ICON_PATH = resource_path(os.path.join("assets", "count_down_tool.ico"))
 @install_state_properties
 class CountdownApp:
     WINDOW_WIDTH = 500
-    WINDOW_HEIGHT = 520
+    # 原生标题栏约 30px；原 520 含自绘标题 48px，改为内容区高度并略增工具条余量
+    WINDOW_HEIGHT = 510
     MINI_WIDTH = 236
     MINI_HEIGHT = 56
     # macOS Retina / Tk 点阵下 Mini 易偏小，约为 Windows 的 1.9 倍
@@ -96,10 +97,8 @@ class CountdownApp:
     MINI_MIN_HEIGHT_MAC = 72
     MINI_MAX_WIDTH_MAC = 1400
     MINI_MAX_HEIGHT_MAC = 400
-    TITLE_DRAG_EXCLUDE_RIGHT = 190
     PICKER_WIDTH = 420
     PICKER_HEIGHT = 440
-    CORNER_RADIUS = 20
     MINI_MARGIN_RIGHT = 20
     MINI_MARGIN_BOTTOM = 60
 
@@ -112,19 +111,12 @@ class CountdownApp:
         self.master.title(APP_NAME)
         self.master.geometry(f"{self.WINDOW_WIDTH}x{self.WINDOW_HEIGHT}")
         self.master.resizable(False, False)
-        # macOS 不支持 overrideredirect，会导致窗口无法显示
-        if platform.system() != "Darwin":
-            self.master.overrideredirect(True)
 
         # 结构化状态：app._xxx 由 install_state_properties 绑定（duck-type 兼容）
         self.state = PersistedState()
         self._runtime = CountdownRuntime()
 
         self._set_icon()
-
-        # 窗口拖动相关变量
-        self._drag_x = 0
-        self._drag_y = 0
 
         self.running = False
         self.btn_start = None
@@ -186,8 +178,6 @@ class CountdownApp:
         self._on_time_changed()
         self.update_clock()
         tray_ok = self._init_tray_icon()
-        self._set_window_rounded_corners()
-        self._set_taskbar_visible()
         self._center_window_later()
         # 启动模式：startup_mode + last_mode（见 should_start_mini）
         has_last = "last_mode" in getattr(self, "_loaded_keys", set())
@@ -407,23 +397,11 @@ class CountdownApp:
     # 窗口 chrome（委托 window_chrome）
     # ------------------------------------------------------------------
 
-    def _start_drag(self, event):
-        _chrome.start_drag(self, event)
-
-    def _on_drag(self, event):
-        _chrome.on_drag(self, event)
-
     def _center_window(self):
         _chrome.center_window(self)
 
     def _center_window_later(self):
         _chrome.center_window_later(self)
-
-    def _set_window_rounded_corners(self):
-        _chrome.set_rounded_corners(self)
-
-    def _set_taskbar_visible(self):
-        _chrome.set_taskbar(self)
 
     def _bring_full_to_front(self):
         _chrome.bring_full_to_front(self)

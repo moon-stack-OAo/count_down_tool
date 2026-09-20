@@ -23,7 +23,7 @@ from ui.design.tokens import (
     UPDATE_DIALOG_WIDTH,
 )
 from ui.time_picker import _activate_picker, _picker_parent
-from ui.window_chrome_dialog import CHROME_TITLE_HEIGHT, center_dialog_later, use_borderless_chrome
+from ui.window_chrome_dialog import center_dialog_later
 
 logger = logging.getLogger("count_down_tool")
 
@@ -91,9 +91,10 @@ def show_update_available(app, result, notes: str, on_action: ActionCb = None) -
                 logger.exception("更新对话框回调失败")
 
     win.protocol("WM_DELETE_WINDOW", lambda: _finish("later"))
-    borderless = use_borderless_chrome(
-        win, app, title="发现更新", on_close=lambda: _finish("later")
-    )
+    try:
+        win.bind("<Escape>", lambda e: _finish("later"))
+    except tk.TclError:
+        pass
 
     shell = tk.Frame(win, bg=c["bg"], padx=SPACE_LG, pady=SPACE_LG)
     shell.pack(fill=tk.BOTH, expand=True)
@@ -188,8 +189,7 @@ def show_update_available(app, result, notes: str, on_action: ActionCb = None) -
     win.update_idletasks()
     w = max(UPDATE_DIALOG_WIDTH, win.winfo_reqwidth() + 24)
     h = max(UPDATE_DIALOG_MIN_HEIGHT, win.winfo_reqheight() + 16)
-    # 无边框后不再加系统标题栏余量；自绘标题栏高度已计入 reqheight
-    if not borderless and platform.system() == "Windows":
+    if platform.system() == "Windows":
         h += 28
         w += 12
     _center(win, w, h)
@@ -245,23 +245,17 @@ def show_update_progress(
 
     if allow_cancel:
         win.protocol("WM_DELETE_WINDOW", _do_cancel)
-        borderless = use_borderless_chrome(
-            win,
-            app,
-            title=title or "更新",
-            on_close=_do_cancel,
-            close_enabled=True,
-        )
+        try:
+            win.bind("<Escape>", lambda e: _do_cancel())
+        except tk.TclError:
+            pass
     else:
         # 下载中禁止关窗误操作（× / Esc / 协议均 no-op）
         win.protocol("WM_DELETE_WINDOW", lambda: None)
-        borderless = use_borderless_chrome(
-            win,
-            app,
-            title=title or "更新",
-            on_close=lambda: None,
-            close_enabled=False,
-        )
+        try:
+            win.bind("<Escape>", lambda e: "break")
+        except tk.TclError:
+            pass
 
     shell = tk.Frame(win, bg=c["bg"], padx=SPACE_LG, pady=SPACE_LG)
     shell.pack(fill=tk.BOTH, expand=True)
@@ -345,11 +339,13 @@ def show_update_progress(
 
     win.update_idletasks()
     w = UPDATE_DIALOG_WIDTH
-    # 自绘标题栏已计入 reqheight；无边框不再加系统标题栏余量
-    min_h = 140 + (CHROME_TITLE_HEIGHT if borderless else 0)
+    min_h = 140
     if allow_cancel:
         min_h += 36
     h = max(min_h, win.winfo_reqheight() + 24)
+    if platform.system() == "Windows":
+        h += 28
+        w += 12
     _center(win, w, h)
     _activate_picker(win)
     return win
@@ -429,5 +425,5 @@ def _pill(parent, text, *, app, c, primary=True, command=None):
 
 
 def _center(win, w: int, h: int) -> None:
-    """居中（含 overrideredirect 后补定位）。"""
+    """居中到工作区。"""
     center_dialog_later(win, int(w), int(h))

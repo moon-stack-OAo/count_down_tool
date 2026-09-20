@@ -4,17 +4,14 @@
 import tkinter as tk
 from tkinter import ttk
 
-from core.countdown_core import APP_NAME, __version__
-from ui.chrome_titlebar import MAIN_TITLE_HEIGHT, add_circle_button, build_title_bar
+from core.countdown_core import __version__
 from ui.context_menus import bind_full_context_menu, bind_full_context_menu_tree
 from ui.design.themed import register_themed
 from ui.design.tokens import (
     BTN_FONT_SIZE,
     BTN_PAD_X,
     BTN_PAD_Y,
-    FONT_BODY,
     FONT_CAPTION,
-    FONT_ICON,
     FONT_META,
     FONT_SPIN,
     MAIN_CONTENT_PAD_X,
@@ -202,40 +199,49 @@ def build_full_ui(app):
     """构建完整模式主界面，控件引用挂到 app 上。可重复调用（主题重建）。"""
     c = app.COLORS
 
-    # ===== 标题栏（公共自绘组件）=====
-    chrome = build_title_bar(
-        app.master,
-        app,
-        title=f"⏱  {APP_NAME}",
-        height=MAIN_TITLE_HEIGHT,
-        on_drag_start=app._start_drag,
-        on_drag_motion=app._on_drag,
-    )
-    title_bar = chrome.frame
-    title_label = chrome.title_label
-
     def _on_update_from_title(_e=None):
         from services.updater import open_update_from_ui
 
         open_update_from_ui(app)
 
-    # 弱样式版本号：点击等同检查更新
+    def _open_settings(_e=None):
+        if hasattr(app, "_show_settings"):
+            app._show_settings()
+        else:
+            from ui.settings_window import show_settings
+
+            show_settings(app)
+
+    # ===== 主内容区域（系统原生标题栏；工具条保留版本 / NEW / Mini / 设置）=====
+    main_frame = tk.Frame(app.master, bg=c["bg"])
+    register_themed(main_frame, bg="bg")
+    app._main_frame = main_frame
+    main_frame.pack(
+        fill=tk.BOTH,
+        expand=True,
+        padx=MAIN_CONTENT_PAD_X,
+        pady=(MAIN_CONTENT_PAD_Y_TOP, MAIN_CONTENT_PAD_Y_BOTTOM),
+    )
+
+    toolbar = tk.Frame(main_frame, bg=c["bg"])
+    register_themed(toolbar, bg="bg")
+    toolbar.pack(fill=tk.X, pady=(0, SPACE_SM))
+
     version_label = tk.Label(
-        title_bar,
+        toolbar,
         text=f"v{__version__}",
-        bg=c["title_bar"],
+        bg=c["bg"],
         fg=c.get("text_muted", c.get("text_dim", c["text"])),
         font=app._font("label", FONT_META),
         cursor="hand2",
     )
-    register_themed(version_label, bg="title_bar", fg="text_muted")
-    version_label.pack(side=tk.LEFT, padx=(SPACE_XS + 2, 0))
+    register_themed(version_label, bg="bg", fg="text_muted")
+    version_label.pack(side=tk.LEFT)
     version_label.bind("<Button-1>", _on_update_from_title)
     app._title_version_label = version_label
 
-    # 标题旁 NEW：有可用更新时显示，点击打开更新流程
     update_badge = tk.Label(
-        title_bar,
+        toolbar,
         text=" NEW ",
         bg=c["error"],
         fg=c["white"],
@@ -249,56 +255,18 @@ def build_full_ui(app):
     update_badge.bind("<Button-1>", _on_update_from_title)
     refresh_update_badge(app)
 
-    def _open_settings(_e=None):
-        if hasattr(app, "_show_settings"):
-            app._show_settings()
-        else:
-            from ui.settings_window import show_settings
-
-            show_settings(app)
-
-    # pack side=RIGHT：先 close → min → settings，视觉从左到右 ⚙ − ×
-    add_circle_button(
-        chrome.btn_frame,
-        app,
-        text="×",
-        command=lambda _e=None: app._hide_to_tray(),
-        hover_fill=c["btn_hover_close"],
-        font_size=FONT_ICON,
-        name="close",
-        chrome=chrome,
-    )
-    add_circle_button(
-        chrome.btn_frame,
-        app,
-        text="−",
-        command=lambda _e=None: app._switch_to_mini(),
-        hover_fill=c["btn_hover_min"],
-        font_size=FONT_ICON,
-        name="mini",
-        chrome=chrome,
-    )
-    add_circle_button(
-        chrome.btn_frame,
-        app,
-        text="⚙",
+    ttk.Button(
+        toolbar,
+        text="设置",
+        style="Secondary.TButton",
         command=_open_settings,
-        hover_fill=c["accent"],
-        font_size=FONT_BODY,
-        name="settings",
-        chrome=chrome,
-    )
-
-    # ===== 主内容区域 =====
-    main_frame = tk.Frame(app.master, bg=c["bg"])
-    register_themed(main_frame, bg="bg")
-    app._main_frame = main_frame
-    main_frame.pack(
-        fill=tk.BOTH,
-        expand=True,
-        padx=MAIN_CONTENT_PAD_X,
-        pady=(MAIN_CONTENT_PAD_Y_TOP, MAIN_CONTENT_PAD_Y_BOTTOM),
-    )
+    ).pack(side=tk.RIGHT)
+    ttk.Button(
+        toolbar,
+        text="Mini",
+        style="Secondary.TButton",
+        command=app._switch_to_mini,
+    ).pack(side=tk.RIGHT, padx=(0, SPACE_XS))
 
     # ----- 倒计时主视觉卡（置顶）-----
     _display_border = c.get("card_border", c["border"])
@@ -549,7 +517,6 @@ def build_full_ui(app):
 
     app.master.protocol("WM_DELETE_WINDOW", app._hide_to_tray)
 
-    # 右键菜单：标题区 + 主内容树（不绑关闭/最小化按钮，避免误触）
-    # Button-3 与标题拖动（Button-1）互不干扰
-    bind_full_context_menu(app, title_bar, title_label, version_label, update_badge)
+    # 右键菜单：工具条 + 主内容树
+    bind_full_context_menu(app, toolbar, version_label, update_badge)
     bind_full_context_menu_tree(app, main_frame)

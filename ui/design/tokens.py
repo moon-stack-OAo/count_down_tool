@@ -23,13 +23,10 @@ FONT_ICON = 12
 FONT_TITLE = 13
 FONT_SPIN = 14
 
-# 主窗 / 标题栏几何（语义命名，数值对齐既有布局）
+# 主窗内容区边距（语义命名，数值对齐既有布局）
 MAIN_CONTENT_PAD_X = 22
 MAIN_CONTENT_PAD_Y_TOP = 14
 MAIN_CONTENT_PAD_Y_BOTTOM = SPACE_LG
-MAIN_TITLE_HEIGHT = 48
-DIALOG_TITLE_HEIGHT = 40
-CIRCLE_BTN_SIZE = SPACE_LG
 
 # 按钮几何（ttk 主按钮 / make_pill / make_chip 共用；勿再散落魔法数）
 # - ttk Accent|Primary*|Secondary.padding ↔ PILL_PAD_*

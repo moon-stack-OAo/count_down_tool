@@ -49,7 +49,6 @@ def show_full_mode(app) -> None:
         switch_to_full(app)
         return
     app.master.deiconify()
-    app._set_taskbar_visible()
     app._bring_full_to_front()
     app._center_window_later()
 
@@ -105,8 +104,6 @@ def switch_to_full(app) -> None:
     app._last_mode = "full"
     app._destroy_mini_window()
     app.master.deiconify()
-    # withdraw/deiconify 后需重新声明任务栏/Alt+Tab 可见
-    app._set_taskbar_visible()
     app._bring_full_to_front()
     app._center_window_later()
     app._save_config()

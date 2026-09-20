@@ -18,13 +18,13 @@ from ui.design.tokens import (
     SPACE_XS,
 )
 from ui.widgets import RoundedFrame, init_circle_button, make_pill, update_circle_button
-from ui.window_chrome_dialog import center_dialog_later, use_borderless_chrome
+from ui.window_chrome_dialog import center_dialog_later
 
 logger = logging.getLogger("count_down_tool")
 
 
 def _picker_parent(app):
-    """优先挂到当前可见窗口，避免主窗 withdraw + overrideredirect 导致子窗无法交互。"""
+    """优先挂到当前可见窗口，避免主窗 withdraw 后子窗无法交互。"""
     if getattr(app, "_is_mini", False):
         mini = getattr(app, "mini_window", None)
         if mini is not None:
@@ -86,20 +86,15 @@ def _bind_hover_bg(widget, normal, hover):
     widget.bind("<Leave>", lambda e: widget.config(bg=normal))
 
 
-def _fit_picker_window(picker, shell, min_w, min_h, *, borderless: bool = False):
-
+def _fit_picker_window(picker, shell, min_w, min_h):
     """按内容请求尺寸调整窗口，并居中到工作区。"""
     try:
         picker.update_idletasks()
         need_w = max(min_w, shell.winfo_reqwidth() + 48)
         need_h = max(min_h, shell.winfo_reqheight() + 40)
-        if not borderless and platform.system() == "Windows":
+        if platform.system() == "Windows":
             need_h += 32
             need_w += 16
-        if borderless:
-            from ui.window_chrome_dialog import CHROME_TITLE_HEIGHT
-
-            need_h += CHROME_TITLE_HEIGHT
         center_dialog_later(picker, int(need_w), int(need_h))
     except tk.TclError:
         pass
@@ -146,10 +141,6 @@ def show_time_picker(app):
             picker.destroy()
         except tk.TclError:
             pass
-
-    borderless = use_borderless_chrome(
-        picker, app, title="选择时间", on_close=cancel
-    )
 
     shell = tk.Frame(picker, bg=c["bg"])
     shell.pack(fill=tk.BOTH, expand=True, padx=SPACE_LG, pady=SPACE_MD)
@@ -468,9 +459,7 @@ def show_time_picker(app):
     picker.protocol("WM_DELETE_WINDOW", cancel)
 
     def _ready():
-        _fit_picker_window(
-            picker, shell, min_w, min_h, borderless=borderless
-        )
+        _fit_picker_window(picker, shell, min_w, min_h)
         _activate_picker(picker)
         # 按需 grab：模态输入，关闭时已 grab_release
         try:
@@ -481,9 +470,4 @@ def show_time_picker(app):
 
     picker.after_idle(_ready)
     picker.after(50, _ready)
-    picker.after(
-        120,
-        lambda: _fit_picker_window(
-            picker, shell, min_w, min_h, borderless=borderless
-        ),
-    )
+    picker.after(120, lambda: _fit_picker_window(picker, shell, min_w, min_h))

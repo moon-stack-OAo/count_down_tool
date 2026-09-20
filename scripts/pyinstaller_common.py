@@ -66,7 +66,6 @@ HIDDENIMPORTS_COMMON: list[str] = [
     "ui.widgets",
     "ui.mini_window",
     "ui.time_picker",
-    "ui.chrome_titlebar",
     "ui.full_window",
     "ui.context_menus",
     "ui.mini_text_picker",

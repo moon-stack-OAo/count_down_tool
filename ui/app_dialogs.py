@@ -13,7 +13,7 @@ from core.countdown_core import APP_NAME
 from ui.design.themed import themed_button, themed_frame, themed_label
 from ui.design.tokens import FONT_BODY, FONT_CAPTION, FONT_META, SPACE_MD, SPACE_SM, SPACE_XS
 from ui.widgets import ThinScrollbar, make_settings_card
-from ui.window_chrome_dialog import center_dialog_later, use_borderless_chrome
+from ui.window_chrome_dialog import center_dialog_later
 
 logger = logging.getLogger("count_down_tool")
 
@@ -117,7 +117,7 @@ def temporary_release_topmost(*windows) -> _TopmostGuard:
 
 
 class _WithdrawGuard:
-    """打开系统对话框前隐藏无边框窗（Windows overrideredirect 会盖住文件框）。"""
+    """打开系统对话框前暂时隐藏父窗，避免挡住文件选择框。"""
 
     def __init__(self, *windows):
         self._windows = [w for w in windows if w is not None]
@@ -209,7 +209,10 @@ def _show_message(
         return "break"
 
     win.protocol("WM_DELETE_WINDOW", _close)
-    use_borderless_chrome(win, app, title=display_title, on_close=_close)
+    try:
+        win.bind("<Escape>", _close)
+    except tk.TclError:
+        pass
 
     # 内容区对齐设置中心：外层 bg 边距 + card 卡片 + 分区标题/正文/胶囊钮
     shell = themed_frame(
@@ -255,6 +258,9 @@ def _show_message(
     win.update_idletasks()
     w = max(320, min(_DIALOG_WIDTH, win.winfo_reqwidth() + 24))
     h = max(160, win.winfo_reqheight() + 12)
+    if platform.system() == "Windows":
+        h += 28
+        w += 12
     center_dialog_later(win, int(w), int(h))
     _activate(win)
     # 再抬一次，压过设置窗
@@ -356,7 +362,10 @@ def show_log_viewer(app, *, parent=None) -> None:
         return "break"
 
     win.protocol("WM_DELETE_WINDOW", _close)
-    use_borderless_chrome(win, app, title="运行日志", on_close=_close)
+    try:
+        win.bind("<Escape>", _close)
+    except tk.TclError:
+        pass
 
     shell = themed_frame(
         win, app, role="bg", c=c, padx=_DIALOG_CONTENT_PAD, pady=_DIALOG_CONTENT_PAD
@@ -554,7 +563,10 @@ def ask_yes_no(
             pass
 
     win.protocol("WM_DELETE_WINDOW", lambda: _finish(False))
-    use_borderless_chrome(win, app, title=title, on_close=lambda: _finish(False))
+    try:
+        win.bind("<Escape>", lambda e: _finish(False))
+    except tk.TclError:
+        pass
 
     shell = themed_frame(
         win, app, role="bg", c=c, padx=_DIALOG_CONTENT_PAD, pady=_DIALOG_CONTENT_PAD
@@ -606,6 +618,9 @@ def ask_yes_no(
     win.update_idletasks()
     w = max(320, min(_DIALOG_WIDTH, win.winfo_reqwidth() + 24))
     h = max(170, win.winfo_reqheight() + 12)
+    if platform.system() == "Windows":
+        h += 28
+        w += 12
     center_dialog_later(win, int(w), int(h))
     _activate(win)
     try:
