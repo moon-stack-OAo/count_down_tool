@@ -4,7 +4,7 @@
 import tkinter as tk
 from tkinter import ttk
 
-from core.countdown_core import __version__
+from core.countdown_core import APP_NAME, __version__
 from ui.context_menus import bind_full_context_menu, bind_full_context_menu_tree
 from ui.design.themed import register_themed
 from ui.design.tokens import (
@@ -23,7 +23,7 @@ from ui.design.tokens import (
     SPACE_SM,
     SPACE_XS,
 )
-from ui.widgets import RoundedFrame, make_chip
+from ui.widgets import RoundedFrame, make_chip, make_ghost_button
 
 
 def refresh_update_badge(app) -> None:
@@ -92,29 +92,31 @@ def setup_styles(app):
                     foreground=c["white"], background=c["bg"])
     style.configure("Subtitle.TLabel", font=app.FONTS["label"],
                     foreground=c["text_muted"], background=c["bg"])
+    _card = c.get("card", c["glass"])
+    _secondary = c.get("text_secondary", c["text_dim"])
     style.configure("Time.TLabel", font=app.FONTS["time"],
-                    foreground=c["accent_glow"], background=c["glass"])
+                    foreground=c["accent_glow"], background=_card)
     style.configure("Countdown.TLabel", font=app.FONTS["countdown"],
-                    foreground=c["white"], background=c["glass"])
+                    foreground=c["text"], background=_card)
     style.configure("Success.TLabel", font=app.FONTS["countdown"],
-                    foreground=c["success"], background=c["glass"])
+                    foreground=c["success"], background=_card)
     style.configure("Error.TLabel", font=app.FONTS["label"],
                     foreground=c["error"], background=c["bg"])
-    style.configure("Dim.TLabel", foreground=c["text_dim"], background=c["glass"])
+    style.configure("Dim.TLabel", foreground=_secondary, background=_card)
     style.configure("Caption.TLabel", font=app._font("label", FONT_CAPTION),
-                    foreground=c["text_muted"], background=c["glass"])
+                    foreground=c["text_muted"], background=_card)
     style.configure("Meta.TLabel", font=app._font("label", FONT_CAPTION),
-                    foreground=c["text_dim"], background=c["glass"])
+                    foreground=_secondary, background=_card)
     style.configure("MetaMuted.TLabel", font=app._font("label", FONT_META),
-                    foreground=c["text_muted"], background=c["glass"])
+                    foreground=c["text_muted"], background=_card)
     # 结束闪烁：预注册奇偶色，flash_visual 只切换 style
     style.configure("FlashEven.TLabel", font=app.FONTS["countdown"],
-                    foreground=c["success"], background=c["glass"])
+                    foreground=c["success"], background=_card)
     style.configure("FlashOdd.TLabel", font=app.FONTS["countdown"],
-                    foreground=c["error"], background=c["glass"])
+                    foreground=c["error"], background=_card)
     # 兼容旧 style 名（等同奇数帧 error 色）
     style.configure("Flash.TLabel", font=app.FONTS["countdown"],
-                    foreground=c["error"], background=c["glass"])
+                    foreground=c["error"], background=_card)
 
     _btn_fg = c.get("btn_on_primary", c["bg"])
     _btn_font = app._font("button", BTN_FONT_SIZE, bold=True)
@@ -162,15 +164,15 @@ def setup_styles(app):
               foreground=[("disabled", c["text_muted"]),
                           ("!disabled", _btn_fg)])
 
-    # 次要：与 make_pill(primary=False) 同 chip 语义
+    # 次要：描边次按钮（card 底，对齐 make_pill secondary）
     style.configure("Secondary.TButton",
                     font=app._font("label", FONT_CAPTION),
-                    background=c.get("chip", c["card"]),
+                    background=c.get("card", c["chip"]),
                     foreground=c["text"],
-                    borderwidth=0,
+                    borderwidth=1,
                     padding=_btn_pad)
     style.map("Secondary.TButton",
-              background=[("active", c.get("chip_hover", c["border"])),
+              background=[("active", c.get("glass", c.get("chip_hover", c["border"]))),
                           ("pressed", c["border"])],
               foreground=[("active", c["text"]),
                           ("!disabled", c["text"])])
@@ -212,7 +214,7 @@ def build_full_ui(app):
 
             show_settings(app)
 
-    # ===== 主内容区域（系统原生标题栏；工具条保留版本 / NEW / Mini / 设置）=====
+    # ===== 主内容区域（系统原生标题栏；工具条 + 主卡）=====
     main_frame = tk.Frame(app.master, bg=c["bg"])
     register_themed(main_frame, bg="bg")
     app._main_frame = main_frame
@@ -227,6 +229,16 @@ def build_full_ui(app):
     register_themed(toolbar, bg="bg")
     toolbar.pack(fill=tk.X, pady=(0, SPACE_SM))
 
+    title_lbl = tk.Label(
+        toolbar,
+        text=APP_NAME,
+        bg=c["bg"],
+        fg=c["text"],
+        font=app._font("label", FONT_CAPTION, bold=True),
+    )
+    register_themed(title_lbl, bg="bg", fg="text")
+    title_lbl.pack(side=tk.LEFT)
+
     version_label = tk.Label(
         toolbar,
         text=f"v{__version__}",
@@ -236,7 +248,7 @@ def build_full_ui(app):
         cursor="hand2",
     )
     register_themed(version_label, bg="bg", fg="text_muted")
-    version_label.pack(side=tk.LEFT)
+    version_label.pack(side=tk.LEFT, padx=(SPACE_SM, 0))
     version_label.bind("<Button-1>", _on_update_from_title)
     app._title_version_label = version_label
 
@@ -255,52 +267,54 @@ def build_full_ui(app):
     update_badge.bind("<Button-1>", _on_update_from_title)
     refresh_update_badge(app)
 
-    ttk.Button(
-        toolbar,
-        text="设置",
-        style="Secondary.TButton",
-        command=_open_settings,
+    make_ghost_button(
+        toolbar, "设置", app=app, c=c, command=_open_settings
     ).pack(side=tk.RIGHT)
-    ttk.Button(
-        toolbar,
-        text="Mini",
-        style="Secondary.TButton",
-        command=app._switch_to_mini,
+    make_ghost_button(
+        toolbar, "Mini", app=app, c=c, command=app._switch_to_mini
     ).pack(side=tk.RIGHT, padx=(0, SPACE_XS))
 
+    # 工具条底部分隔
+    tk.Frame(
+        main_frame,
+        bg=c.get("border_subtle", c.get("border", c["card"])),
+        height=1,
+    ).pack(fill=tk.X, pady=(0, SPACE_MD))
+
     # ----- 倒计时主视觉卡（置顶）-----
+    _card_bg = c.get("card", c["glass"])
     _display_border = c.get("card_border", c["border"])
     countdown_card = RoundedFrame(
         main_frame,
-        bg_color=c["glass"],
+        bg_color=_card_bg,
         border_color=_display_border,
         corner_radius=RADIUS_CARD,
         border_width=1,
         height=172,
     )
-    register_themed(countdown_card, bg="glass", border="card_border")
+    register_themed(countdown_card, bg="card", border="card_border")
     countdown_card.pack(fill=tk.X, pady=(0, SPACE_MD))
     app._countdown_card = countdown_card
-    countdown_inner = tk.Frame(countdown_card, bg=c["glass"])
-    register_themed(countdown_inner, bg="glass")
+    countdown_inner = tk.Frame(countdown_card, bg=_card_bg)
+    register_themed(countdown_inner, bg="card")
     countdown_inner.place(relx=0.5, rely=0.5, anchor="center")
 
     _cap = ttk.Label(
         countdown_inner,
         text="剩余时间",
         style="Caption.TLabel",
-        background=c["glass"],
+        background=_card_bg,
     )
-    register_themed(_cap, bg="glass")
+    register_themed(_cap, bg="card")
     _cap.pack(pady=(0, 2))
 
     app.countdown_label = ttk.Label(
         countdown_inner,
         text="--:--:--",
         style="Countdown.TLabel",
-        background=c["glass"],
+        background=_card_bg,
     )
-    register_themed(app.countdown_label, bg="glass")
+    register_themed(app.countdown_label, bg="card")
     app.countdown_label.pack(pady=(0, SPACE_XS))
 
     # 进度条（细条；主题重建后需重新挂到 app）
@@ -309,11 +323,11 @@ def build_full_ui(app):
         countdown_inner,
         width=_progress_w,
         height=_progress_h,
-        bg=c["glass"],
+        bg=_card_bg,
         highlightthickness=0,
         bd=0,
     )
-    register_themed(app.progress_canvas, bg="glass")
+    register_themed(app.progress_canvas, bg="card")
     app.progress_canvas.pack(pady=(SPACE_XS, SPACE_SM))
     app._progress_bar_w = _progress_w
     app._progress_bar_h = _progress_h
@@ -330,18 +344,18 @@ def build_full_ui(app):
         countdown_inner,
         text="",
         style="Meta.TLabel",
-        background=c["glass"],
+        background=_card_bg,
     )
-    register_themed(app.target_time_label, bg="glass")
+    register_themed(app.target_time_label, bg="card")
     app.target_time_label.pack()
 
     app.current_time_label = ttk.Label(
         countdown_inner,
         text="",
         style="MetaMuted.TLabel",
-        background=c["glass"],
+        background=_card_bg,
     )
-    register_themed(app.current_time_label, bg="glass")
+    register_themed(app.current_time_label, bg="card")
     app.current_time_label.pack(pady=(SPACE_XS, 0))
 
     # ----- 设置卡：到期时间 + 快捷预设 -----

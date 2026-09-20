@@ -412,24 +412,90 @@ def make_chip(
     c=None,
     padx=CHIP_PAD_X,
     pady=CHIP_PAD_Y,
+    active=False,
 ):
     """轻量 chip（快捷预设等）；非主 CTA，与 make_pill / ttk Button 区分。
 
-    几何：CHIP_PAD_* + FONT_CAPTION；色：chip / text_dim。
+    几何：CHIP_PAD_* + FONT_CAPTION；色：chip / chip_text；选中用 chip_active。
     """
     colors = c if isinstance(c, dict) else getattr(app, "COLORS", {}) or {}
+    if active:
+        bg = colors.get("chip_active", colors.get("accent_soft", colors.get("chip")))
+        fg = colors.get("chip_text", colors.get("accent_glow", colors.get("text")))
+        bg_role, fg_role = "chip_active", "chip_text"
+    else:
+        bg = colors.get("chip", colors.get("card", "#1E293B"))
+        fg = colors.get("chip_text", colors.get("text_dim", colors.get("text", "#94A3B8")))
+        bg_role, fg_role = "chip", "chip_text"
     chip = tk.Label(
         parent,
         text=text,
         font=app._font("label", FONT_CAPTION),
-        bg=colors.get("chip", colors.get("card", "#1A2332")),
-        fg=colors.get("text_dim", colors.get("text", "#94A3B8")),
+        bg=bg,
+        fg=fg,
         padx=padx,
         pady=pady,
         cursor="hand2",
+        highlightthickness=1 if active else 0,
+        highlightbackground=colors.get("accent", bg),
+        highlightcolor=colors.get("accent", bg),
     )
-    register_themed(chip, bg="chip", fg="text_dim")
+    register_themed(chip, bg=bg_role, fg=fg_role)
     return chip
+
+
+def make_ghost_button(
+    parent,
+    text,
+    *,
+    app,
+    c=None,
+    command=None,
+    padx=SPACE_SM + 2,
+    pady=SPACE_XS + 2,
+    font_size=FONT_CAPTION,
+):
+    """工具条 ghost：透明底，悬停 glass + border。"""
+    colors = c if isinstance(c, dict) else getattr(app, "COLORS", {}) or {}
+    bg = colors.get("bg", "#0F172A")
+    fg = colors.get("text_secondary", colors.get("text_dim", colors["text"]))
+    hover_bg = colors.get("glass", colors.get("card", bg))
+    btn = tk.Label(
+        parent,
+        text=text,
+        font=app._font("label", font_size),
+        bg=bg,
+        fg=fg,
+        padx=padx,
+        pady=pady,
+        cursor="hand2",
+        highlightthickness=1,
+        highlightbackground=bg,
+        highlightcolor=colors.get("border", bg),
+    )
+    register_themed(btn, bg="bg", fg="text_dim")
+    btn._theme_hover_role = "glass"  # type: ignore[attr-defined]
+
+    def _enter(_e=None):
+        try:
+            btn.config(
+                bg=hover_bg,
+                highlightbackground=colors.get("border", hover_bg),
+            )
+        except tk.TclError:
+            pass
+
+    def _leave(_e=None):
+        try:
+            btn.config(bg=bg, highlightbackground=bg)
+        except tk.TclError:
+            pass
+
+    if command:
+        btn.bind("<Button-1>", lambda e: command())
+    btn.bind("<Enter>", _enter)
+    btn.bind("<Leave>", _leave)
+    return btn
 
 
 def make_pill(
@@ -448,29 +514,32 @@ def make_pill(
     """对话框/设置胶囊按钮；primary 与主窗 Accent.TButton 同色同 pad。
 
     - primary：btn_primary / btn_on_primary，字号 BTN_FONT_SIZE（对齐 ttk）
-    - secondary：chip / text（同 Secondary.TButton 语义）
-    - danger：error / white
+    - secondary：card + border 描边次按钮
+    - danger：btn_danger_bg / white
     - chip 请用 make_chip，勿用本函数冒充第三套
     """
     colors = c if isinstance(c, dict) else getattr(app, "COLORS", {}) or {}
     if danger:
-        bg = colors["error"]
-        fg = colors["white"]
+        bg = colors.get("btn_danger_bg", colors["error"])
+        fg = colors.get("btn_danger_fg", colors["white"])
         hover = colors.get("btn_hover_close", bg)
         bold = True
         size = FONT_CAPTION if font_size is None else font_size
+        hl = bg
     elif primary:
         bg = colors.get("btn_primary", colors["accent"])
         fg = colors.get("btn_on_primary", colors["bg"])
         hover = colors.get("btn_primary_hover", colors.get("accent_hover", bg))
         bold = True
         size = BTN_FONT_SIZE if font_size is None else font_size
+        hl = bg
     else:
-        bg = colors.get("chip", colors["card"])
+        bg = colors.get("card", colors.get("chip", "#1E293B"))
         fg = colors["text"]
-        hover = colors.get("chip_hover", colors.get("border", bg))
+        hover = colors.get("glass", colors.get("chip_hover", bg))
         bold = False
         size = FONT_CAPTION if font_size is None else font_size
+        hl = colors.get("border", bg)
 
     font = app._font("label", size, bold=bold) if bold else app._font("label", size)
     btn = tk.Label(
@@ -482,6 +551,9 @@ def make_pill(
         padx=padx,
         pady=pady,
         cursor="hand2",
+        highlightthickness=0 if primary or danger else 1,
+        highlightbackground=hl,
+        highlightcolor=hl,
     )
     if danger:
         register_themed(btn, bg="error", fg="white")
@@ -490,8 +562,8 @@ def make_pill(
         register_themed(btn, bg="btn_primary", fg="btn_on_primary")
         btn._theme_hover_role = "btn_primary_hover"  # type: ignore[attr-defined]
     else:
-        register_themed(btn, bg="chip", fg="text")
-        btn._theme_hover_role = "chip_hover"  # type: ignore[attr-defined]
+        register_themed(btn, bg="card", fg="text")
+        btn._theme_hover_role = "glass"  # type: ignore[attr-defined]
     if command:
         btn.bind("<Button-1>", lambda e: command())
     btn.bind("<Enter>", lambda e: btn.config(bg=hover))

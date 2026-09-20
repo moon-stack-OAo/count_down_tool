@@ -16,10 +16,14 @@ _FRAME_ROLES = frozenset(
         "glass",
         "title_bar",
         "chip",
+        "chip_active",
         "input_bg",
         "border",
+        "border_subtle",
         "accent",
         "error",
+        "toast_bg",
+        "tab_active",
     }
 )
 
@@ -29,6 +33,8 @@ _LABEL_FG_ROLES = frozenset(
         "text",
         "text_dim",
         "text_muted",
+        "text_secondary",
+        "chip_text",
         "accent",
         "accent_glow",
         "success",
@@ -300,8 +306,8 @@ def recolor_app(app, colors: Optional[Mapping[str, str]] = None) -> int:
     progress = getattr(app, "progress_canvas", None)
     if progress is not None:
         try:
-            glass = _resolve_role_color(c, "glass") or color_of(c, "card", "bg")
-            progress.configure(bg=glass)
+            card_bg = _resolve_role_color(c, "card") or color_of(c, "card", "bg")
+            progress.configure(bg=card_bg)
             n += 1
         except tk.TclError:
             pass
@@ -315,7 +321,7 @@ def recolor_app(app, colors: Optional[Mapping[str, str]] = None) -> int:
     # 显式 RoundedFrame 兜底（树遍历应已覆盖；缺登记时仍更新）
     for attr, bg_key, border_key in (
         ("_settings_card", "card", "card_border"),
-        ("_countdown_card", "glass", "card_border"),
+        ("_countdown_card", "card", "card_border"),
     ):
         card = getattr(app, attr, None)
         if card is None or not callable(getattr(card, "configure_colors", None)):

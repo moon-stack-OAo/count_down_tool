@@ -12,6 +12,8 @@ from ui.design.themed import register_themed
 from ui.design.tokens import (
     FONT_BODY,
     FONT_CAPTION,
+    SETTINGS_ALPHA,
+    SETTINGS_BESIDE_GAP,
     SETTINGS_HEIGHT,
     SETTINGS_WIDTH,
     SPACE_LG,
@@ -20,7 +22,7 @@ from ui.design.tokens import (
 )
 from ui.settings.about_tab import build_about_section
 from ui.settings.appearance import build_appearance_section
-from ui.settings.layout import accent_bar, bind_wheel_tree, divider, make_scroll_page
+from ui.settings.layout import bind_wheel_tree, divider, make_scroll_page
 from ui.settings.shift_tab import build_shift_section
 from ui.settings.sound_tab import build_sound_section
 from ui.settings.system_tab import build_system_section
@@ -100,7 +102,8 @@ def show_settings_toast(
 ) -> bool:
     """设置中心底部轻提示（不弹窗）。
 
-    kind: ok / info / error（影响文字颜色）。
+    kind: ok / info / error（影响文字与左侧色条）。
+    无提示时 toast 条隐藏，避免占底遮挡内容。
     设置窗未打开时返回 False，调用方可回退到 show_info。
     """
     win = getattr(app, "_settings_window", None)
@@ -113,6 +116,7 @@ def show_settings_toast(
         return False
 
     toast = getattr(win, "_settings_toast", None)
+    toast_bar = getattr(win, "_settings_toast_bar", None)
     if toast is None:
         return False
 
@@ -120,10 +124,13 @@ def show_settings_toast(
     kind_l = (kind or "ok").lower()
     if kind_l == "error":
         fg = c["error"]
+        bar_fg = c["error"]
     elif kind_l == "info":
         fg = c.get("text_dim", c["text"])
+        bar_fg = c.get("accent", c.get("border", fg))
     else:
         fg = c.get("success", c.get("accent_glow", c["accent"]))
+        bar_fg = c.get("success", c.get("accent", fg))
 
     text = (message or "").replace("\n", " ").strip()
     if len(text) > 80:
@@ -131,6 +138,12 @@ def show_settings_toast(
 
     try:
         toast.config(text=text, fg=fg)
+        accent = getattr(win, "_settings_toast_accent", None)
+        if accent is not None:
+            accent.config(bg=bar_fg)
+        # 有文案时再显示底栏，避免空条遮挡
+        if toast_bar is not None and not toast_bar.winfo_ismapped():
+            toast_bar.pack(fill=tk.X, side=tk.BOTTOM)
     except tk.TclError:
         return False
 
@@ -147,6 +160,8 @@ def show_settings_toast(
         try:
             if getattr(app, "_settings_window", None) is win and win.winfo_exists():
                 toast.config(text="")
+                if toast_bar is not None and toast_bar.winfo_ismapped():
+                    toast_bar.pack_forget()
         except tk.TclError:
             pass
         try:
@@ -176,7 +191,12 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
                     except (tk.TclError, TypeError, ValueError):
                         pass
                 ensure_dialog_visible(
-                    existing, SETTINGS_WIDTH, SETTINGS_HEIGHT
+                    existing,
+                    SETTINGS_WIDTH,
+                    SETTINGS_HEIGHT,
+                    anchor_win=_picker_parent(app),
+                    gap=SETTINGS_BESIDE_GAP,
+                    alpha=SETTINGS_ALPHA,
                 )
                 return
         except tk.TclError:
@@ -227,27 +247,34 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
     tab_bar = tk.Frame(shell, bg=c.get("title_bar", c["bg"]))
     register_themed(tab_bar, bg="title_bar")
     tab_bar.pack(fill=tk.X, side=tk.TOP)
-    accent_bar(shell, c, side=tk.TOP)
 
-    # 底部轻提示（先 pack TOP 的 page 会占满；toast 用 BOTTOM 固定）
-    toast_bar = tk.Frame(shell, bg=c.get("title_bar", c["bg"]))
-    register_themed(toast_bar, bg="title_bar")
-    toast_bar.pack(fill=tk.X, side=tk.BOTTOM)
+    # 底部轻提示：默认不 pack，有 toast 时再贴底，避免空条遮挡内容
+    toast_bg = c.get("toast_bg", c.get("card", c["bg"]))
+    toast_bar = tk.Frame(shell, bg=toast_bg)
+    register_themed(toast_bar, bg="toast_bg")
     divider(toast_bar, c, pady=0, side=tk.TOP)
+    toast_row = tk.Frame(toast_bar, bg=toast_bg)
+    register_themed(toast_row, bg="toast_bg")
+    toast_row.pack(fill=tk.X)
+    toast_accent = tk.Frame(toast_row, bg=c.get("accent", c["border"]), width=3)
+    register_themed(toast_accent, bg="accent")
+    toast_accent.pack(side=tk.LEFT, fill=tk.Y)
     toast_lbl = tk.Label(
-        toast_bar,
+        toast_row,
         text="",
         font=app._font("label", FONT_CAPTION),
-        bg=c.get("title_bar", c["bg"]),
+        bg=toast_bg,
         fg=c.get("text_muted", c["text_dim"]),
         anchor="w",
         padx=SPACE_MD,
         pady=SPACE_SM,
     )
-    register_themed(toast_lbl, bg="title_bar", fg="text_muted")
-    toast_lbl.pack(fill=tk.X)
+    register_themed(toast_lbl, bg="toast_bg", fg="text_muted")
+    toast_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
     win._settings_toast = toast_lbl  # type: ignore[attr-defined]
+    win._settings_toast_bar = toast_bar  # type: ignore[attr-defined]
     win._settings_toast_after = None  # type: ignore[attr-defined]
+    win._settings_toast_accent = toast_accent  # type: ignore[attr-defined]
 
     page_host = tk.Frame(shell, bg=c["bg"])
     register_themed(page_host, bg="bg")
@@ -265,6 +292,8 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
     state = {"tab": start_tab}
     win._settings_tab = start_tab  # type: ignore[attr-defined]
 
+    tab_indicators: dict = {}
+
     def _style_tab(key: str, active: bool, colors=None):
         btn = tab_btns.get(key)
         if btn is None:
@@ -272,21 +301,30 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
         palette = colors if isinstance(colors, dict) and colors else (
             getattr(app, "COLORS", None) or c
         )
+        indicator = tab_indicators.get(key)
         try:
             if active:
                 btn.config(
-                    bg=palette["bg"],
-                    fg=palette.get("accent_glow", palette["accent"]),
+                    bg=palette.get("title_bar", palette["bg"]),
+                    fg=palette["text"],
                     font=app._font("label", FONT_BODY, bold=True),
                 )
-                register_themed(btn, bg="bg", fg="accent_glow")
+                register_themed(btn, bg="title_bar", fg="text")
+                if indicator is not None:
+                    indicator.config(
+                        bg=palette.get("tab_active", palette["accent"])
+                    )
+                    register_themed(indicator, bg="tab_active")
             else:
                 btn.config(
                     bg=palette.get("title_bar", palette["bg"]),
-                    fg=palette["text_dim"],
+                    fg=palette.get("muted", palette["text_muted"]),
                     font=app._font("label", FONT_BODY),
                 )
-                register_themed(btn, bg="title_bar", fg="text_dim")
+                register_themed(btn, bg="title_bar", fg="text_muted")
+                if indicator is not None:
+                    indicator.config(bg=palette.get("title_bar", palette["bg"]))
+                    register_themed(indicator, bg="title_bar")
         except tk.TclError:
             pass
 
@@ -319,20 +357,29 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
     win._settings_show_tab = _show_tab  # type: ignore[attr-defined]
 
     for key, label in tabs_spec:
+        col = tk.Frame(tab_bar, bg=c.get("title_bar", c["bg"]))
+        register_themed(col, bg="title_bar")
+        col.pack(side=tk.LEFT)
         btn = tk.Label(
-            tab_bar,
+            col,
             text=label,
             font=app._font("label", FONT_BODY),
             bg=c.get("title_bar", c["bg"]),
-            fg=c["text_dim"],
+            fg=c.get("muted", c["text_muted"]),
             padx=SPACE_LG,
             pady=SPACE_SM + 2,
             cursor="hand2",
         )
-        register_themed(btn, bg="title_bar", fg="text_dim")
-        btn.pack(side=tk.LEFT)
+        register_themed(btn, bg="title_bar", fg="text_muted")
+        btn.pack(side=tk.TOP)
         btn.bind("<Button-1>", lambda e, k=key: _show_tab(k))
+        indicator = tk.Frame(
+            col, bg=c.get("title_bar", c["bg"]), height=2
+        )
+        register_themed(indicator, bg="title_bar")
+        indicator.pack(side=tk.TOP, fill=tk.X)
         tab_btns[key] = btn
+        tab_indicators[key] = indicator
 
         page = make_scroll_page(page_host, app, c)
         pages[key] = page
@@ -368,8 +415,15 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
                 page.after_idle(sync)
             except tk.TclError:
                 pass
-    # 强制可见：多次居中 + 短暂 topmost，避免「点了没反应」
-    ensure_dialog_visible(win, SETTINGS_WIDTH, SETTINGS_HEIGHT)
+    # 强制可见：偏侧父窗 + 略透明 + 短暂 topmost，避免「点了没反应」
+    ensure_dialog_visible(
+        win,
+        SETTINGS_WIDTH,
+        SETTINGS_HEIGHT,
+        anchor_win=parent,
+        gap=SETTINGS_BESIDE_GAP,
+        alpha=SETTINGS_ALPHA,
+    )
     # 暴露刷新，供内部局部更新勾选 / 就地换肤后 Tab 态
     win._settings_refresh = _refresh_all  # type: ignore[attr-defined]
     win._settings_restyle_tabs = _restyle_tabs  # type: ignore[attr-defined]
