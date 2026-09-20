@@ -178,9 +178,9 @@ class TestRecolor(unittest.TestCase):
                 self.COLORS = colors
                 self.master = master
                 self.progress_canvas = tk.Canvas(
-                    master, bg=colors["glass"], width=10, height=4
+                    master, bg=colors["card"], width=10, height=4
                 )
-                register_themed(self.progress_canvas, bg="glass")
+                register_themed(self.progress_canvas, bg="card")
                 self._refresh_called = False
 
             def _refresh_progress_bar(self):
@@ -192,7 +192,8 @@ class TestRecolor(unittest.TestCase):
         n = recolor_app(app, colors_b)
         self.assertGreaterEqual(n, 1)
         self.assertTrue(app._refresh_called)
-        self.assertEqual(app.progress_canvas["bg"], colors_b["glass"])
+        # 进度条底板随倒计时主卡，用 card（非 glass）
+        self.assertEqual(app.progress_canvas["bg"], colors_b["card"])
 
 
 if __name__ == "__main__":
