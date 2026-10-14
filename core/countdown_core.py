@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 import re
 import sys
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple, Union
+
+logger = logging.getLogger("count_down_tool")
 
 __version__ = "1.4.6"
 APP_NAME = "倒计时工具"
@@ -505,18 +508,57 @@ def mini_content_scale(
     return scale
 
 
-def load_config_dict(path: str) -> Dict[str, Any]:
-    """读取 JSON 配置；不存在或损坏时返回空 dict。"""
+class ConfigCorruptError(OSError):
+    """配置文件存在但 JSON 损坏或根节点不是对象。
+
+    调用方应备份原文件并拒绝用默认值覆盖，避免用户数据丢失。
+    """
+
+
+def backup_corrupt_config(path: str) -> Optional[str]:
+    """把损坏的配置改名为备份。
+
+    优先 ``config.json.bak``；已存在则用 ``config.json.bak.1``，
+    再冲突则带时间戳。返回备份路径；原文件已不存在时返回 None。
+    """
+    if not path or not os.path.isfile(path):
+        return None
+    candidates = [path + ".bak", path + ".bak.1"]
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    candidates.append(f"{path}.bak.{stamp}")
+    dest = candidates[-1]
+    for candidate in candidates:
+        if not os.path.exists(candidate):
+            dest = candidate
+            break
     try:
-        if not path or not os.path.exists(path):
-            return {}
+        os.replace(path, dest)
+    except OSError:
+        logger.exception("备份损坏配置失败: %s", path)
+        raise
+    logger.warning("配置已损坏，已备份到 %s", dest)
+    return dest
+
+
+def load_config_dict(path: str) -> Dict[str, Any]:
+    """读取 JSON 配置。
+
+    文件不存在返回空 dict（首次运行）。
+    JSON 损坏或根节点不是 dict 时备份原文件并抛出 ConfigCorruptError，
+    不把损坏结果伪装成成功的空配置。
+    """
+    if not path or not os.path.exists(path):
+        return {}
+    try:
         with open(path, "r", encoding="utf-8") as f:
             loaded = json.load(f)
-        if isinstance(loaded, dict):
-            return loaded
-        return {}
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
-        return {}
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError) as exc:
+        backup_corrupt_config(path)
+        raise ConfigCorruptError(f"配置文件损坏: {path}") from exc
+    if not isinstance(loaded, dict):
+        backup_corrupt_config(path)
+        raise ConfigCorruptError(f"配置根节点不是对象: {path}")
+    return loaded
 
 
 def merge_mini_position(

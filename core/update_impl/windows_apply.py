@@ -8,7 +8,11 @@ import tempfile
 from typing import Optional
 
 from core.update_impl.extract import extract_windows_exe
-from core.update_impl.util import current_executable_path
+from core.update_impl.util import (
+    WINDOWS_EXE_NAME,
+    current_executable_path,
+    is_frozen_app,
+)
 
 
 def _ps_single_quoted(path: str) -> str:
@@ -35,6 +39,12 @@ def write_windows_replace_script(
     source_abs = os.path.abspath(source_exe)
     target_dir = os.path.dirname(target_abs) or "."
     source_dir = os.path.dirname(source_abs) or "."
+    if os.path.normcase(target_dir) == os.path.normcase(source_dir):
+        raise RuntimeError("拒绝覆盖：更新源目录与安装目录相同")
+    if os.path.basename(target_abs).lower() != WINDOWS_EXE_NAME.lower():
+        raise RuntimeError(
+            f"拒绝覆盖：安装目标必须是 {WINDOWS_EXE_NAME}，实际为 {os.path.basename(target_abs)!r}"
+        )
     zip_abs = os.path.abspath(zip_path) if zip_path else ""
     log_path = os.path.join(
         os.environ.get("TEMP") or os.environ.get("TMP") or tempfile.gettempdir(),
@@ -71,6 +81,15 @@ def write_windows_replace_script(
         "  return $true",
         "}",
         "Write-UpdateLog 'update script start (onedir sync)'",
+        "if ($sourceDir -eq $targetDir) {",
+        "  Write-UpdateLog 'sourceDir equals targetDir'",
+        "  exit 3",
+        "}",
+        "$targetName = [System.IO.Path]::GetFileName($target)",
+        "if ($targetName -ine 'count_down_tool.exe') {",
+        "  Write-UpdateLog ('target name rejected: ' + $targetName)",
+        "  exit 3",
+        "}",
         "$deadline = (Get-Date).AddSeconds(120)",
         "while ((Get-Date) -lt $deadline) {",
         "  $p = Get-Process -Id $pidWait -ErrorAction SilentlyContinue",
@@ -214,8 +233,20 @@ def launch_windows_replace_and_exit_prep(
 def apply_windows_update_from_zip(zip_path: str, target_exe: Optional[str] = None) -> str:
     """
     解压 zip 并启动替换脚本。返回脚本路径；调用方需退出应用。
+
+    仅允许打包态（sys.frozen）。目标必须是 count_down_tool.exe，
+    且默认取该 exe 所在目录；开发态不得把 python.exe 目录当安装目标。
     """
+    if not is_frozen_app():
+        raise RuntimeError("拒绝安装：仅打包后的 count_down_tool.exe 可应用更新")
     target = target_exe or current_executable_path()
+    target_abs = os.path.abspath(target)
+    if os.path.basename(target_abs).lower() != WINDOWS_EXE_NAME.lower():
+        raise RuntimeError(
+            f"拒绝安装：目标必须是 {WINDOWS_EXE_NAME}，实际为 {os.path.basename(target_abs)!r}"
+        )
+    if not os.path.dirname(target_abs):
+        raise RuntimeError("拒绝安装：目标可执行文件必须位于一个目录中")
     work = tempfile.mkdtemp(prefix="cdt_new_exe_")
     new_exe = extract_windows_exe(zip_path, work)
-    return launch_windows_replace_and_exit_prep(target, new_exe, zip_path=zip_path)
+    return launch_windows_replace_and_exit_prep(target_abs, new_exe, zip_path=zip_path)

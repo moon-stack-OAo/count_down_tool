@@ -10,25 +10,93 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+import tkinter as tk
+
 from app.timers import (
     APP_TIMER_ATTRS,
     cancel_all_timers,
     cancel_timer_attr,
+    safe_after,
     safe_after_cancel,
 )
 
 
 class FakeMaster:
-    """记录 after_cancel 调用的假 Tk master。"""
+    """记录 after / after_cancel 调用的假 Tk master。"""
 
-    def __init__(self, *, raise_on_cancel=None):
+    def __init__(self, *, raise_on_cancel=None, exists=True, raise_on_after=None):
         self.cancelled = []
+        self.scheduled = []
         self._raise_on_cancel = raise_on_cancel
+        self._exists = exists
+        self._raise_on_after = raise_on_after
+        self._seq = 0
+
+    def winfo_exists(self):
+        return self._exists
+
+    def after(self, delay_ms, callback):
+        if self._raise_on_after is not None:
+            raise self._raise_on_after
+        self._seq += 1
+        tid = f"after-{self._seq}"
+        self.scheduled.append((delay_ms, callback, tid))
+        return tid
 
     def after_cancel(self, tid):
         if self._raise_on_cancel is not None:
             raise self._raise_on_cancel
         self.cancelled.append(tid)
+
+
+class TestSafeAfter(unittest.TestCase):
+    def test_missing_widget_does_not_call(self):
+        called = []
+        self.assertIsNone(safe_after(None, 0, lambda: called.append(1)))
+        dead = FakeMaster(exists=False)
+        self.assertIsNone(safe_after(dead, 0, lambda: called.append(1)))
+        self.assertEqual(called, [])
+        self.assertEqual(dead.scheduled, [])
+
+    def test_schedules_when_alive(self):
+        m = FakeMaster()
+        called = []
+        tid = safe_after(m, 10, lambda: called.append("ok"))
+        self.assertEqual(tid, "after-1")
+        self.assertEqual(len(m.scheduled), 1)
+        _delay, cb, _tid = m.scheduled[0]
+        cb()
+        self.assertEqual(called, ["ok"])
+
+    def test_swallows_tcl_error_in_callback(self):
+        m = FakeMaster()
+
+        def boom():
+            raise tk.TclError("invalid command name")
+
+        safe_after(m, 0, boom)
+        _delay, cb, _tid = m.scheduled[0]
+        cb()
+
+    def test_reraises_business_error(self):
+        m = FakeMaster()
+
+        def boom():
+            raise ValueError("biz")
+
+        safe_after(m, 0, boom)
+        _delay, cb, _tid = m.scheduled[0]
+        with self.assertRaises(ValueError):
+            cb()
+
+    def test_dead_at_fire_skips_callback(self):
+        m = FakeMaster()
+        called = []
+        safe_after(m, 0, lambda: called.append(1))
+        m._exists = False
+        _delay, cb, _tid = m.scheduled[0]
+        cb()
+        self.assertEqual(called, [])
 
 
 class TestSafeAfterCancel(unittest.TestCase):
@@ -43,8 +111,6 @@ class TestSafeAfterCancel(unittest.TestCase):
         self.assertEqual(m.cancelled, [])
 
     def test_swallows_tcl_error(self):
-        import tkinter as tk
-
         m = FakeMaster(raise_on_cancel=tk.TclError("invalid command name"))
         self.assertFalse(safe_after_cancel(m, "gone"))
 
@@ -145,8 +211,9 @@ class TestQuitAppWiresCancel(unittest.TestCase):
             src = f.read()
         self.assertIn("def _cancel_all_timers", src)
         self.assertIn("self._cancel_all_timers()", src)
-        # update_clock 必须登记 id
-        self.assertIn("self._clock_timer_id = self.master.after(", src)
+        # update_clock 必须登记 id（经 safe_after，避免窗口已毁再调度）
+        self.assertIn("safe_after(self.master, next_second_delay_ms(), self.update_clock)", src)
+        self.assertIn("self._clock_timer_id = tid", src)
         self.assertIn("cancel_all_timers(self)", src)
 
 

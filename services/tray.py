@@ -10,6 +10,7 @@ import os
 import platform
 import threading
 
+from app.timers import safe_after
 from core.countdown_core import APP_NAME, button_text_for_state
 from services.menu_labels import (
     TRAY_QUICK_START_MENU_LABEL,
@@ -188,7 +189,7 @@ def tray_show_settings(app, icon=None, item=None):
         if ui is not None:
             ui.show_settings(app)
 
-    app.master.after(0, _do)
+    safe_after(getattr(app, "master", None), 0, _do)
 
 
 def load_tray_icon(icon_path):
@@ -215,11 +216,11 @@ def create_fallback_icon():
 
 
 def tray_show_window(app, icon=None, item=None):
-    app.master.after(0, app._show_full_mode)
+    safe_after(getattr(app, "master", None), 0, app._show_full_mode)
 
 
 def tray_show_time_picker(app, icon=None, item=None):
-    app.master.after(0, app._show_time_picker)
+    safe_after(getattr(app, "master", None), 0, app._show_time_picker)
 
 
 def tray_quick_start(app, hours, minutes, seconds, icon=None, item=None):
@@ -229,7 +230,7 @@ def tray_quick_start(app, hours, minutes, seconds, icon=None, item=None):
         app._set_preset_time(hours, minutes, seconds, force=True)
         refresh_tray_menu(app)
 
-    app.master.after(0, _do)
+    safe_after(getattr(app, "master", None), 0, _do)
 
 
 def tray_start_shift(app, icon=None, item=None):
@@ -241,7 +242,7 @@ def tray_start_shift(app, icon=None, item=None):
             starter(force=True)
         refresh_tray_menu(app)
 
-    app.master.after(0, _do)
+    safe_after(getattr(app, "master", None), 0, _do)
 
 
 def tray_toggle_countdown(app, icon=None, item=None):
@@ -250,7 +251,7 @@ def tray_toggle_countdown(app, icon=None, item=None):
         # 状态变更后强制重建托盘原生菜单（Windows 缓存）
         refresh_tray_menu(app)
 
-    app.master.after(0, _do)
+    safe_after(getattr(app, "master", None), 0, _do)
 
 
 def tray_reset_countdown(app, icon=None, item=None):
@@ -260,7 +261,7 @@ def tray_reset_countdown(app, icon=None, item=None):
         app.reset()
         refresh_tray_menu(app)
 
-    app.master.after(0, _do)
+    safe_after(getattr(app, "master", None), 0, _do)
 
 
 def tray_open_update(app, icon=None, item=None):
@@ -271,11 +272,11 @@ def tray_open_update(app, icon=None, item=None):
 
         open_update_from_ui(app)
 
-    app.master.after(0, _do)
+    safe_after(getattr(app, "master", None), 0, _do)
 
 
 def tray_toggle_mini(app, icon=None, item=None):
-    app.master.after(0, app._toggle_mini_mode)
+    safe_after(getattr(app, "master", None), 0, app._toggle_mini_mode)
 
 
 def tray_toggle_transparent(app, icon=None, item=None):
@@ -283,7 +284,7 @@ def tray_toggle_transparent(app, icon=None, item=None):
         app._toggle_transparent_mode()
         refresh_tray_menu(app)
 
-    app.master.after(0, _do)
+    safe_after(getattr(app, "master", None), 0, _do)
 
 
 def tray_reset_mini_size(app, icon=None, item=None):
@@ -293,7 +294,7 @@ def tray_reset_mini_size(app, icon=None, item=None):
             ui.reset_mini_size(app)
         refresh_tray_menu(app)
 
-    app.master.after(0, _do)
+    safe_after(getattr(app, "master", None), 0, _do)
 
 
 def tray_show_mini_text_picker(app, icon=None, item=None):
@@ -302,11 +303,11 @@ def tray_show_mini_text_picker(app, icon=None, item=None):
         if ui is not None:
             ui.show_mini_text_picker(app)
 
-    app.master.after(0, _do)
+    safe_after(getattr(app, "master", None), 0, _do)
 
 
 def tray_quit(app, icon=None, item=None):
-    app.master.after(0, app._quit_app)
+    safe_after(getattr(app, "master", None), 0, app._quit_app)
 
 
 def stop_tray(app):

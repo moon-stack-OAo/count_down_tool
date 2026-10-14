@@ -81,8 +81,15 @@ def _restore_runtime_ui(app, *, saved_h, saved_m, saved_s, saved_countdown, save
 
 
 def _rebuild_full_ui(app, *, was_mini, saved_h, saved_m, saved_s, saved_countdown, saved_target) -> None:
-    """旧路径：destroy 全部子控件后 `_setup_ui` 重建。"""
+    """旧路径：destroy 全部子控件后 `_setup_ui` 重建。
+
+    重建前取消时钟 after，避免回调打到已销毁的标签；成功后再重新调度。
+    """
     import tkinter as tk
+
+    from app.timers import cancel_timer_attr
+
+    cancel_timer_attr(app, "_clock_timer_id")
 
     if was_mini:
         app._destroy_mini_window()
@@ -115,6 +122,14 @@ def _rebuild_full_ui(app, *, was_mini, saved_h, saved_m, saved_s, saved_countdow
     if was_mini:
         app._is_mini = True
         app._create_mini_window()
+
+    # 重建成功且时钟标签回来了才重新调度，避免和启动时的 update_clock 双开
+    if getattr(app, "current_time_label", None) is not None and hasattr(app, "update_clock"):
+        if getattr(app, "_clock_timer_id", None) is None:
+            try:
+                app.update_clock()
+            except (tk.TclError, AttributeError):
+                logger.debug("重建后重新调度时钟失败", exc_info=True)
 
 
 def _settings_window_open(app) -> bool:

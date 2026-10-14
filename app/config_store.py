@@ -17,6 +17,7 @@ import threading
 from typing import Any, Dict, Optional, Tuple
 
 from core.countdown_core import (
+    ConfigCorruptError,
     load_config_dict,
     merge_config,
     merge_mini_position,
@@ -28,6 +29,7 @@ from core.countdown_core import (
     parse_shift_hms,
     resolve_mini_text_color,
     save_config_dict,
+    validate_shift,
 )
 from core.themes import (
     DEFAULT_THEME_ID,
@@ -39,9 +41,11 @@ from services.autostart import is_autostart_enabled
 
 logger = logging.getLogger("count_down_tool")
 
-# 进程内缓存：path_key -> 配置 dict 深拷贝
+# 进程内缓存：path_key -> 配置 dict 深拷贝（仅「本次读取成功」）
 _config_lock = threading.RLock()
 _config_cache: Dict[str, Dict[str, Any]] = {}
+# 本次磁盘读取失败（损坏）的路径：save 拒绝覆盖原文件
+_corrupt_paths: set[str] = set()
 
 
 def _path_key(path: str) -> str:
@@ -69,14 +73,46 @@ def _set_cached(path: str, config: Dict[str, Any]) -> None:
     _config_cache[key] = copy.deepcopy(data)
 
 
+def _mark_corrupt(path: str) -> None:
+    """标记路径本次读取失败，并丢掉可能残留的成功缓存。调用方须已持锁。"""
+    key = _path_key(path)
+    if key:
+        _corrupt_paths.add(key)
+        _config_cache.pop(key, None)
+
+
+def _clear_corrupt(path: str) -> None:
+    """成功读到 dict 后清除损坏标记。调用方须已持锁。"""
+    key = _path_key(path)
+    if key:
+        _corrupt_paths.discard(key)
+
+
+def _is_corrupt(path: str) -> bool:
+    key = _path_key(path)
+    return bool(key) and key in _corrupt_paths
+
+
 def _load_for_merge(path: str) -> Dict[str, Any]:
-    """优先内存缓存；未命中则读盘并热缓存。调用方须已持有 _config_lock。"""
+    """优先内存缓存；未命中则读盘并热缓存。调用方须已持有 _config_lock。
+
+    损坏文件不写入缓存，并抛出 ConfigCorruptError，避免用空 dict 覆盖用户文件。
+    文件不存在（首次运行）仍返回 {} 并允许随后创建。
+    """
+    if _is_corrupt(path):
+        raise ConfigCorruptError(f"配置已损坏，拒绝覆盖: {path}")
     cached = _get_cached(path)
     if cached is not None:
         return cached
-    config = load_config_dict(path)
+    try:
+        config = load_config_dict(path)
+    except ConfigCorruptError:
+        _mark_corrupt(path)
+        raise
     if not isinstance(config, dict):
-        config = {}
+        _mark_corrupt(path)
+        raise ConfigCorruptError(f"配置根节点不是对象: {path}")
+    _clear_corrupt(path)
     _set_cached(path, config)
     return copy.deepcopy(config)
 
@@ -89,13 +125,15 @@ def _write_config(path: str, config: Dict[str, Any]) -> None:
 
 
 def clear_config_cache(path: Optional[str] = None) -> None:
-    """测试/调试：清空全部或指定路径的配置缓存。"""
+    """测试/调试：清空全部或指定路径的配置缓存与损坏标记。"""
     with _config_lock:
         if path is None:
             _config_cache.clear()
+            _corrupt_paths.clear()
             return
         key = _path_key(path)
         _config_cache.pop(key, None)
+        _corrupt_paths.discard(key)
 
 
 def default_mini_size(app: Any) -> Tuple[int, int]:
@@ -162,7 +200,10 @@ def load_config(app: Any) -> None:
         try:
             config = load_config_dict(app._config_file)
             if not isinstance(config, dict):
-                config = {}
+                raise ConfigCorruptError(
+                    f"配置根节点不是对象: {app._config_file}"
+                )
+            _clear_corrupt(app._config_file)
             _set_cached(app._config_file, config)
             app._loaded_keys = set(config.keys())
             app._mini_pos = config.get("mini_position")
@@ -230,12 +271,22 @@ def load_config(app: Any) -> None:
             app._ignored_update_version = ign if isinstance(ign, str) else ""
             if "shift_enabled" in config:
                 app._shift_enabled = bool(config.get("shift_enabled"))
-            app._shift_start = _normalize_shift_hms(
+            shift_start = _normalize_shift_hms(
                 config.get("shift_start", "09:00:00"), "09:00:00"
             )
-            app._shift_end = _normalize_shift_hms(
+            shift_end = _normalize_shift_hms(
                 config.get("shift_end", "18:00:00"), "18:00:00"
             )
+            ok, shift_err = validate_shift(shift_start, shift_end)
+            if not ok:
+                logger.warning(
+                    "班次配置无效（%s），回退默认 09:00:00 / 18:00:00",
+                    shift_err or "结束须晚于开始",
+                )
+                shift_start = "09:00:00"
+                shift_end = "18:00:00"
+            app._shift_start = shift_start
+            app._shift_end = shift_end
             if "auto_start_shift" in config:
                 app._auto_start_shift = bool(config.get("auto_start_shift"))
             real_autostart = is_autostart_enabled()
@@ -246,6 +297,26 @@ def load_config(app: Any) -> None:
                     _write_config(app._config_file, cfg)
                 except (OSError, TypeError, ValueError):
                     logger.debug("回写 autostart 配置失败", exc_info=True)
+        except ConfigCorruptError:
+            logger.exception("配置文件损坏，已备份且不写入成功缓存")
+            _mark_corrupt(app._config_file)
+            app._loaded_keys = set()
+            app._mini_pos = None
+            app._mini_size = None
+            app._mini_text = {}
+            app.COLORS = resolve_theme(app._theme_id, app._theme_custom)
+            app._sound_muted = False
+            app._sound_id = "soft"
+            app._sound_path = ""
+            app._sound_history = []
+            app._check_update_on_start = True
+            app._last_update_check = ""
+            app._ignored_update_version = ""
+            app._startup_mode = "remember"
+            app._shift_enabled = False
+            app._shift_start = "09:00:00"
+            app._shift_end = "18:00:00"
+            app._auto_start_shift = False
         except (OSError, TypeError, ValueError, KeyError, AttributeError, ImportError):
             logger.exception("读取配置失败")
             app._mini_pos = None
@@ -276,6 +347,10 @@ def save_config(app: Any) -> None:
         try:
             from services.sound import normalize_sound_history
 
+            if _is_corrupt(app._config_file):
+                raise ConfigCorruptError(
+                    f"配置已损坏，拒绝覆盖: {app._config_file}"
+                )
             config = _load_for_merge(app._config_file)
             config = merge_mini_position(config, app._mini_pos)
             config = merge_mini_size(config, app._mini_size)
@@ -315,5 +390,8 @@ def save_config(app: Any) -> None:
             for key in ("last_hour", "last_minute", "last_second"):
                 config.pop(key, None)
             _write_config(app._config_file, config)
+        except ConfigCorruptError:
+            logger.exception("配置已损坏，拒绝用默认值覆盖原文件")
+            raise
         except (OSError, TypeError, ValueError, KeyError, AttributeError, ImportError):
             logger.exception("保存配置失败")

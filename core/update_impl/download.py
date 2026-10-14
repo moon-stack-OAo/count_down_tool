@@ -14,7 +14,13 @@ from typing import Optional, Tuple, Type
 
 from core.update_impl.checksum import verify_file_sha256
 from core.update_impl.models import DownloadCancelled
-from core.update_impl.util import USER_AGENT, ProgressCb, logger
+from core.update_impl.util import (
+    USER_AGENT,
+    ProgressCb,
+    UpdateUrlNotAllowedError,
+    assert_allowed_update_url,
+    logger,
+)
 
 # 瞬时网络错误：可重试（含重定向过程中的 RemoteDisconnected）
 _TRANSIENT_EXC: Tuple[Type[BaseException], ...] = (
@@ -151,6 +157,8 @@ def _download_once(
     """单次下载尝试。"""
     if cancel_event is not None and cancel_event.is_set():
         raise DownloadCancelled("下载已取消")
+    # 请求前先拒非白名单；urlopen 会跟随重定向，响应后再核最终主机。
+    assert_allowed_update_url(url)
     req = urllib.request.Request(
         url,
         headers={
@@ -162,6 +170,11 @@ def _download_once(
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
+            final_url = str(resp.geturl() or url)
+            try:
+                assert_allowed_update_url(final_url)
+            except UpdateUrlNotAllowedError:
+                raise
             total = -1
             try:
                 total = int(resp.headers.get("Content-Length") or -1)
@@ -211,6 +224,7 @@ def _download_once(
         ValueError,
         TypeError,
         DownloadCancelled,
+        UpdateUrlNotAllowedError,
         http.client.HTTPException,
     ):
         _remove_partial(abs_dest)

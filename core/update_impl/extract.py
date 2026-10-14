@@ -16,6 +16,13 @@ from core.update_impl.util import (
     logger,
 )
 
+# 解压未压缩体积上限：单文件 200MB，整包累计 300MB
+_MAX_MEMBER_UNCOMPRESSED = 200 * 1024 * 1024
+_MAX_EXTRACT_UNCOMPRESSED = 300 * 1024 * 1024
+# Unix 文件类型：符号链接 S_IFLNK
+_S_IFMT = 0o170000
+_S_IFLNK = 0o120000
+
 
 def _normalize_zip_member_name(name: str) -> str:
     """规范化 zip 成员路径为相对 POSIX 风格；非法则抛错。"""
@@ -66,6 +73,12 @@ def is_allowed_extract_member(rel_posix: str) -> bool:
     return False
 
 
+def _is_zip_symlink(member: zipfile.ZipInfo) -> bool:
+    """Unix external_attr 高 16 位文件类型为符号链接则拒绝。"""
+    mode = (int(getattr(member, "external_attr", 0) or 0) >> 16) & _S_IFMT
+    return mode == _S_IFLNK
+
+
 def _safe_extract_member(zf: zipfile.ZipFile, member: zipfile.ZipInfo, dest_dir: str) -> str:
     """
     安全解压单个成员到 dest_dir。
@@ -75,6 +88,13 @@ def _safe_extract_member(zf: zipfile.ZipFile, member: zipfile.ZipInfo, dest_dir:
     # 跳过纯目录
     if not name or name.endswith("/") or name.endswith("\\"):
         return ""
+    if _is_zip_symlink(member):
+        raise RuntimeError(f"拒绝符号链接 zip 成员: {name!r}")
+    size = int(getattr(member, "file_size", 0) or 0)
+    if size > _MAX_MEMBER_UNCOMPRESSED:
+        raise RuntimeError(
+            f"拒绝过大 zip 成员（未压缩 {size} 字节，上限 {_MAX_MEMBER_UNCOMPRESSED}）: {name!r}"
+        )
     rel = _normalize_zip_member_name(name)
     if not is_allowed_extract_member(rel):
         raise RuntimeError(f"拒绝非白名单路径 zip 成员: {name!r}")
@@ -93,6 +113,9 @@ def _safe_extract_member(zf: zipfile.ZipFile, member: zipfile.ZipInfo, dest_dir:
     parent = os.path.dirname(target)
     if parent:
         os.makedirs(parent, exist_ok=True)
+    # 目标若已是符号链接，先删链接再写，避免跟随链接写出目录外。不删除普通目录。
+    if os.path.islink(target):
+        os.remove(target)
     # 显式流式写出，避免 extract 内部路径歧义
     with zf.open(member, "r") as src, open(target, "wb") as out:
         shutil.copyfileobj(src, out)
@@ -218,7 +241,21 @@ def extract_windows_exe(zip_path: str, dest_dir: str) -> str:
             ]
             # 解压前完整预检：全部成员必须可规范化且在白名单，且含主程序
             has_exe = False
+            total_uncompressed = 0
             for m in members:
+                if _is_zip_symlink(m):
+                    raise RuntimeError(f"拒绝符号链接 zip 成员: {m.filename!r}")
+                size = int(getattr(m, "file_size", 0) or 0)
+                if size < 0 or size > _MAX_MEMBER_UNCOMPRESSED:
+                    raise RuntimeError(
+                        f"拒绝过大 zip 成员（未压缩 {size} 字节，上限 {_MAX_MEMBER_UNCOMPRESSED}）: {m.filename!r}"
+                    )
+                total_uncompressed += size
+                if total_uncompressed > _MAX_EXTRACT_UNCOMPRESSED:
+                    raise RuntimeError(
+                        f"拒绝过大更新包（未压缩累计 {total_uncompressed} 字节，"
+                        f"上限 {_MAX_EXTRACT_UNCOMPRESSED}）"
+                    )
                 rel = _normalize_zip_member_name(m.filename)
                 if not is_allowed_extract_member(rel):
                     raise RuntimeError(f"拒绝非白名单路径 zip 成员: {m.filename!r}")

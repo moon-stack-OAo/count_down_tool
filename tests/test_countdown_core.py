@@ -31,6 +31,7 @@ from core.countdown_core import (
     STATE_IDLE,
     STATE_PAUSED,
     STATE_RUNNING,
+    ConfigCorruptError,
     button_text_for_state,
     format_remaining,
     format_target_label,
@@ -552,12 +553,32 @@ class TestStartupMode(unittest.TestCase):
             self.assertFalse(again["transparent_mode"])
             self.assertEqual(again["last_mode"], "full")
 
-    def test_load_invalid_returns_empty(self):
+    def test_load_invalid_backs_up_and_raises(self):
+        """损坏 JSON 不伪装成空配置：备份原文件并抛 ConfigCorruptError。"""
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "bad.json")
             with open(path, "w", encoding="utf-8") as f:
                 f.write("not-json")
-            self.assertEqual(load_config_dict(path), {})
+            with self.assertRaises(ConfigCorruptError):
+                load_config_dict(path)
+            self.assertFalse(os.path.exists(path))
+            self.assertTrue(os.path.isfile(path + ".bak"))
+            with open(path + ".bak", encoding="utf-8") as f:
+                self.assertEqual(f.read(), "not-json")
+
+    def test_load_non_dict_backs_up(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("[1, 2, 3]")
+            with open(path + ".bak", "w", encoding="utf-8") as f:
+                f.write("old-bak")
+            with self.assertRaises(ConfigCorruptError):
+                load_config_dict(path)
+            self.assertFalse(os.path.exists(path))
+            self.assertTrue(os.path.isfile(path + ".bak.1"))
+            with open(path + ".bak", encoding="utf-8") as f:
+                self.assertEqual(f.read(), "old-bak")
 
     def test_save_config_atomic_valid_json(self):
         with tempfile.TemporaryDirectory() as tmp:

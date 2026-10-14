@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import tkinter as tk
 
+from app.timers import safe_after, safe_after_cancel
 from core.countdown_core import APP_NAME
 from ui.app_dialogs import show_error
 from ui.design.themed import register_themed
@@ -35,11 +36,30 @@ _SETTINGS_TAB_KEYS = frozenset({"appearance", "sound", "shift", "system", "about
 _TOAST_DEFAULT_MS = 2200
 
 
+def _cancel_settings_afters(win) -> None:
+    """关窗前取消 toast / 试听刷新 after，避免打到已销毁的 Tk。"""
+    if win is None:
+        return
+    for attr in ("_settings_toast_after", "_preview_refresh_after_ids"):
+        value = getattr(win, attr, None)
+        ids = value if isinstance(value, list) else ([value] if value is not None else [])
+        for tid in ids:
+            safe_after_cancel(win, tid)
+        try:
+            if attr == "_preview_refresh_after_ids":
+                win._preview_refresh_after_ids = []  # type: ignore[attr-defined]
+            else:
+                setattr(win, attr, None)
+        except (tk.TclError, AttributeError):
+            pass
+
+
 def close_settings(app) -> None:
     """关闭设置窗（recolor 失败回退或主动关闭时调用）。"""
     win = getattr(app, "_settings_window", None)
     if win is None:
         return
+    _cancel_settings_afters(win)
     try:
         if win.winfo_exists():
             win.destroy()
@@ -150,10 +170,7 @@ def show_settings_toast(
     # 取消上一次自动清空
     prev = getattr(win, "_settings_toast_after", None)
     if prev is not None:
-        try:
-            win.after_cancel(prev)
-        except (tk.TclError, ValueError):
-            pass
+        safe_after_cancel(win, prev)
         win._settings_toast_after = None  # type: ignore[attr-defined]
 
     def _clear():
@@ -171,9 +188,9 @@ def show_settings_toast(
 
     try:
         ms = max(800, int(duration_ms))
-        win._settings_toast_after = win.after(ms, _clear)  # type: ignore[attr-defined]
-    except (tk.TclError, ValueError, TypeError):
-        pass
+    except (TypeError, ValueError):
+        ms = _TOAST_DEFAULT_MS
+    win._settings_toast_after = safe_after(win, ms, _clear)  # type: ignore[attr-defined]
     return True
 
 
@@ -225,6 +242,7 @@ def _show_settings_impl(app, initial_tab: str | None = None) -> None:
             stop_playback()
         except (ImportError, OSError, AttributeError, RuntimeError):
             pass
+        _cancel_settings_afters(win)
         try:
             win.destroy()
         except tk.TclError:

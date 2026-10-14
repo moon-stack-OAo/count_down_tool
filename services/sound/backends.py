@@ -9,6 +9,8 @@ import signal
 import subprocess
 from typing import Optional
 
+from app.timers import safe_after
+
 logger = logging.getLogger("count_down_tool")
 
 
@@ -183,12 +185,10 @@ def play_file(
 
     # Windows：尽量在 Tk 主线程开播，避免设置窗/托盘异步线程里 winsound 无声
     if root is not None and S.platform.system() == "Windows":
-        try:
-            # 调度后立刻返回 True，但不要清 pending——等 _start 内实际开播后再清
-            root.after(0, _start)
+        # 调度后立刻返回 True，但不要清 pending——等 _start 内实际开播后再清
+        if safe_after(root, 0, _start) is not None:
             return True
-        except (RuntimeError, AttributeError):
-            logger.debug("调度主线程播放失败，回退同步", exc_info=True)
+        logger.debug("调度主线程播放失败，回退同步")
     return _start()
 
 

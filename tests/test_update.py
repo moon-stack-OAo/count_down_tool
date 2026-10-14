@@ -23,6 +23,7 @@ from core.update import (
     ReleaseInfo,
     _format_http_error,
     _synthetic_assets,
+    apply_windows_update_from_zip,
     check_for_update,
     download_file,
     expected_asset_name,
@@ -37,10 +38,17 @@ from core.update import (
     parse_version,
     platform_asset_suffix,
     require_expected_sha256,
+    resolve_expected_sha256,
     select_asset,
     validate_windows_extract_layout,
     verify_file_sha256,
     write_windows_replace_script,
+)
+
+# 下载测试用白名单主机，避免被 URL 主机校验拦截
+_ALLOWED_DL = (
+    "https://github.com/moon-stack-OAo/count_down_tool"
+    "/releases/download/v1.0.0/a.zip"
 )
 
 
@@ -241,6 +249,8 @@ class TestExtractAndScript(unittest.TestCase):
             self.assertIn("Test-ExeReady", body)
             self.assertIn("onedir", body.lower())
             self.assertIn("sourceDir", body)
+            self.assertIn("sourceDir -eq $targetDir", body)
+            self.assertIn("count_down_tool.exe", body)
             self.assertIn("count_down_tool_update.log", body)
             self.assertNotIn("tasklist", body)
             self.assertNotIn("find ", body.lower())
@@ -261,6 +271,9 @@ class TestDownloadFile(unittest.TestCase):
 
             def __exit__(self, *a):
                 return False
+
+            def geturl(self):
+                return _ALLOWED_DL
 
             def read(self, n=-1):
                 if self._pos >= len(self._data):
@@ -283,7 +296,7 @@ class TestDownloadFile(unittest.TestCase):
                 "core.update_impl.download.urllib.request.urlopen",
                 return_value=self._mock_resp(payload, content_length=len(payload)),
             ):
-                path = download_file("https://example.com/a.zip", dest)
+                path = download_file(_ALLOWED_DL, dest)
             self.assertEqual(path, os.path.abspath(dest))
             with open(dest, "rb") as f:
                 self.assertEqual(f.read(), payload)
@@ -299,7 +312,7 @@ class TestDownloadFile(unittest.TestCase):
                 with self.assertRaises(RuntimeError) as ctx:
                     # max_retries=0：本用例只验证不完整落盘清理，不测退避
                     download_file(
-                        "https://example.com/a.zip",
+                        _ALLOWED_DL,
                         dest,
                         max_retries=0,
                     )
@@ -327,7 +340,7 @@ class TestDownloadFile(unittest.TestCase):
             ):
                 with mock.patch("core.update_impl.download.time.sleep", return_value=None):
                     path = download_file(
-                        "https://example.com/a.zip",
+                        _ALLOWED_DL,
                         dest,
                         max_retries=3,
                     )
@@ -343,7 +356,7 @@ class TestDownloadFile(unittest.TestCase):
                 return_value=self._mock_resp(b""),
             ):
                 with self.assertRaises(RuntimeError) as ctx:
-                    download_file("https://example.com/a.zip", dest)
+                    download_file(_ALLOWED_DL, dest)
             self.assertIn("空", str(ctx.exception))
             self.assertFalse(os.path.isfile(dest))
 
@@ -357,7 +370,7 @@ class TestDownloadFile(unittest.TestCase):
             ):
                 with self.assertRaises(RuntimeError) as ctx:
                     download_file(
-                        "https://example.com/a.zip",
+                        _ALLOWED_DL,
                         dest,
                         expected_size=99,
                     )
@@ -374,7 +387,7 @@ class TestDownloadFile(unittest.TestCase):
                 return_value=self._mock_resp(payload, content_length=len(payload)),
             ):
                 path = download_file(
-                    "https://example.com/a.zip",
+                    _ALLOWED_DL,
                     dest,
                     expected_sha256=digest,
                 )
@@ -391,7 +404,7 @@ class TestDownloadFile(unittest.TestCase):
             ):
                 with self.assertRaises(RuntimeError) as ctx:
                     download_file(
-                        "https://example.com/a.zip",
+                        _ALLOWED_DL,
                         dest,
                         expected_sha256="0" * 64,
                     )
@@ -416,6 +429,9 @@ class TestDownloadFile(unittest.TestCase):
             def __exit__(self, *a):
                 return False
 
+            def geturl(self):
+                return _ALLOWED_DL
+
             def read(self, n=-1):
                 self._reads += 1
                 # 第一次读后触发取消
@@ -437,7 +453,7 @@ class TestDownloadFile(unittest.TestCase):
             ):
                 with self.assertRaises(DownloadCancelled):
                     download_file(
-                        "https://example.com/a.zip",
+                        _ALLOWED_DL,
                         dest,
                         cancel_event=cancel_event,
                     )
@@ -450,7 +466,7 @@ class TestDownloadFile(unittest.TestCase):
             dest = os.path.join(tmp, "never.zip")
             with self.assertRaises(DownloadCancelled):
                 download_file(
-                    "https://example.com/a.zip",
+                    _ALLOWED_DL,
                     dest,
                     cancel_event=cancel_event,
                 )
@@ -477,6 +493,9 @@ class TestSha256Helpers(unittest.TestCase):
         self.assertIsNone(
             parse_sha256_text(f"{h}  other.zip", "pkg.zip")
         )
+        # 指定了当前包时，单行纯哈希不能因为「只有一行」就接受
+        self.assertIsNone(parse_sha256_text(h + "\n", "pkg.zip"))
+        self.assertIsNone(parse_sha256_text(h, "pkg.zip"))
 
     def test_verify_file_sha256_ok_and_fail(self):
         payload = b"verify-me"
@@ -601,6 +620,10 @@ class TestInAppUpdateRequiresSha256(unittest.TestCase):
             upd.core_update,
             "resolve_expected_sha256",
             return_value=digest,
+        ), mock.patch.object(
+            upd.core_update,
+            "is_frozen_app",
+            return_value=True,
         ), mock.patch.object(
             upd.core_update,
             "download_file",
@@ -787,6 +810,193 @@ class TestCheckForUpdate(unittest.TestCase):
         body = parse_release_body_from_html(page)
         self.assertIn("主题弹窗统一", body)
         self.assertIn("NEW 角标", body)
+
+
+class TestUpdateUrlAllowlist(unittest.TestCase):
+    def test_download_rejects_non_allowlisted_host(self):
+        """非白名单主机不得开始下载，也不得落盘。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "pkg.zip")
+            with mock.patch(
+                "core.update_impl.download.urllib.request.urlopen",
+            ) as urlopen:
+                with self.assertRaises(ValueError) as ctx:
+                    download_file(
+                        "https://evil.example/a.zip",
+                        dest,
+                        max_retries=0,
+                    )
+            self.assertIn("白名单", str(ctx.exception))
+            urlopen.assert_not_called()
+            self.assertFalse(os.path.isfile(dest))
+
+    def test_download_rejects_redirect_to_disallowed_host(self):
+        """重定向后的最终主机不在白名单时，丢弃内容且不落盘。"""
+        payload = b"should-not-keep"
+
+        class _Resp:
+            def __init__(self):
+                self.headers = {"Content-Length": str(len(payload))}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def geturl(self):
+                return "https://evil.example/stolen.zip"
+
+            def read(self, n=-1):
+                raise AssertionError("拒绝主机后不应读取正文")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "pkg.zip")
+            with mock.patch(
+                "core.update_impl.download.urllib.request.urlopen",
+                return_value=_Resp(),
+            ):
+                with self.assertRaises(ValueError) as ctx:
+                    download_file(_ALLOWED_DL, dest, max_retries=0)
+            self.assertIn("白名单", str(ctx.exception))
+            self.assertFalse(os.path.isfile(dest))
+
+    def test_checksum_fetch_rejects_non_allowlisted_asset_url(self):
+        """资产里的非白名单 .sha256 URL 必须丢弃，不能当校验源。"""
+        asset = "count_down_tool-1.0.0-win64.zip"
+        other_hash = "ab" * 32
+        release = ReleaseInfo(
+            version="1.0.0",
+            tag_name="v1.0.0",
+            body="",
+            html_url="https://github.com/moon-stack-OAo/count_down_tool/releases/tag/v1.0.0",
+            assets=(
+                {
+                    "name": f"{asset}.sha256",
+                    "browser_download_url": "https://evil.example/pkg.sha256",
+                },
+            ),
+        )
+        def _urlopen(req, timeout=15.0):
+            target = getattr(req, "full_url", "") or ""
+            self.assertNotIn("evil.example", target)
+            raise urllib.error.URLError("no sidecar published")
+
+        with mock.patch(
+            "core.update_impl.fetch.urllib.request.urlopen",
+            side_effect=_urlopen,
+        ):
+            digest = resolve_expected_sha256(
+                asset_name=asset,
+                asset_url="https://evil.example/pkg.zip",
+                release=release,
+            )
+        self.assertIsNone(digest)
+        self.assertNotEqual(other_hash, digest)
+
+
+class TestChecksumAssetBinding(unittest.TestCase):
+    def test_unrelated_sha256_asset_not_used_for_zip(self):
+        """别的包的 .sha256 不能当成当前 zip 的校验，即使只有一行哈希。"""
+        asset = "count_down_tool-1.2.3-win64.zip"
+        other_hash = "cd" * 32
+        release = ReleaseInfo(
+            version="1.2.3",
+            tag_name="v1.2.3",
+            body="",
+            html_url="https://github.com/moon-stack-OAo/count_down_tool/releases/tag/v1.2.3",
+            assets=(
+                {
+                    "name": "other-tool.zip.sha256",
+                    "browser_download_url": (
+                        "https://github.com/moon-stack-OAo/count_down_tool"
+                        "/releases/download/v1.2.3/other-tool.zip.sha256"
+                    ),
+                },
+            ),
+        )
+
+        def _urlopen(req, timeout=15.0):
+            target = str(getattr(req, "full_url", req))
+            self.assertNotIn("other-tool", target)
+            raise urllib.error.URLError("sidecar missing")
+
+        with mock.patch(
+            "core.update_impl.fetch.urllib.request.urlopen",
+            side_effect=_urlopen,
+        ):
+            digest = resolve_expected_sha256(
+                asset_name=asset,
+                asset_url=(
+                    "https://github.com/moon-stack-OAo/count_down_tool"
+                    "/releases/download/v1.2.3/" + asset
+                ),
+                release=release,
+            )
+        self.assertIsNone(digest)
+        self.assertIsNone(parse_sha256_text(other_hash, asset_name=asset))
+
+
+class TestExtractSymlink(unittest.TestCase):
+    def test_symlink_member_rejected(self):
+        """Unix 符号链接成员必须拒绝，且不得写出目标。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = os.path.join(tmp, "link.zip")
+            out_dir = os.path.join(tmp, "out")
+            payload = b"MZ" + b"\0" * 1200
+            with zipfile.ZipFile(zpath, "w") as zf:
+                zf.writestr("count_down_tool.exe", payload)
+                info = zipfile.ZipInfo("_internal/python311.dll")
+                # 高 16 位文件类型 = 0o120000（S_IFLNK）
+                info.external_attr = 0o120777 << 16
+                info.create_system = 3
+                zf.writestr(info, b"../outside")
+            with self.assertRaises(RuntimeError) as ctx:
+                extract_windows_exe(zpath, out_dir)
+            self.assertIn("符号链接", str(ctx.exception))
+            self.assertFalse(os.path.isdir(out_dir))
+
+
+class TestWindowsApplyFrozen(unittest.TestCase):
+    def test_apply_refuses_when_not_frozen(self):
+        """开发态不得把 python 目录当安装目标，且不得启动替换脚本。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = os.path.join(tmp, "a.zip")
+            payload = b"MZ" + b"\0" * 1200
+            with zipfile.ZipFile(zpath, "w") as zf:
+                zf.writestr("count_down_tool.exe", payload)
+            with mock.patch(
+                "core.update_impl.windows_apply.is_frozen_app",
+                return_value=False,
+            ), mock.patch(
+                "core.update_impl.windows_apply.current_executable_path",
+                return_value=r"C:\Python\python.exe",
+            ), mock.patch(
+                "core.update_impl.windows_apply.launch_windows_replace_and_exit_prep",
+            ) as launch:
+                with self.assertRaises(RuntimeError) as ctx:
+                    apply_windows_update_from_zip(zpath)
+            self.assertIn("打包", str(ctx.exception))
+            launch.assert_not_called()
+
+    def test_apply_refuses_non_exe_target_even_if_frozen(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = os.path.join(tmp, "a.zip")
+            with zipfile.ZipFile(zpath, "w") as zf:
+                zf.writestr("count_down_tool.exe", b"MZ" + b"\0" * 1200)
+            with mock.patch(
+                "core.update_impl.windows_apply.is_frozen_app",
+                return_value=True,
+            ), mock.patch(
+                "core.update_impl.windows_apply.launch_windows_replace_and_exit_prep",
+            ) as launch:
+                with self.assertRaises(RuntimeError) as ctx:
+                    apply_windows_update_from_zip(
+                        zpath,
+                        target_exe=r"C:\App\python.exe",
+                    )
+            self.assertIn("count_down_tool.exe", str(ctx.exception))
+            launch.assert_not_called()
 
 
 if __name__ == "__main__":

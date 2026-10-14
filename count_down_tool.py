@@ -39,7 +39,7 @@ from app.config_store import (
 from app.countdown import CountdownController
 from app.host_bindings import install_state_properties
 from app.state import CountdownRuntime, PersistedState
-from app.timers import cancel_all_timers, cancel_timer_attr
+from app.timers import cancel_all_timers, cancel_timer_attr, safe_after
 from core.app_logging import setup_app_logging
 from core.countdown_core import (
     APP_NAME,
@@ -443,9 +443,24 @@ class CountdownApp:
         _mode.hide_to_tray(self)
 
     def _quit_app(self):
-        self._save_config()
+        try:
+            self._save_config()
+        except OSError:
+            logger.exception("退出时保存配置失败")
         # destroy 前统一取消全部 after，避免幽灵回调 / TclError
         self._cancel_all_timers()
+        try:
+            from services.sound import cancel_system_bell
+
+            cancel_system_bell()
+        except (ImportError, AttributeError, OSError):
+            logger.debug("退出时取消系统铃失败", exc_info=True)
+        try:
+            from ui.settings.shell import close_settings
+
+            close_settings(self)
+        except (ImportError, tk.TclError, AttributeError):
+            logger.debug("退出时关闭设置窗失败", exc_info=True)
         stop_tray(self)
         self._destroy_mini_window()
         self.master.destroy()
@@ -503,8 +518,10 @@ class CountdownApp:
     def update_clock(self):
         try:
             now = datetime.now()
-            # 主窗时钟仍每秒更新（含秒）
-            self.current_time_label.config(text=now.strftime("%H:%M:%S"))
+            # 主窗时钟：重建窗口期间标签可能暂时为 None，跳过本次但不停链
+            label = self.current_time_label
+            if label is not None:
+                label.config(text=now.strftime("%H:%M:%S"))
             # Mini 时钟 %H:%M:%S：秒未变则跳过 configure
             if self.mini_time_label:
                 hms = now.strftime("%H:%M:%S")
@@ -515,12 +532,10 @@ class CountdownApp:
             # 窗口已毁时勿再调度
             self._clock_timer_id = None
             return
-        try:
-            self._clock_timer_id = self.master.after(
-                next_second_delay_ms(), self.update_clock
-            )
-        except tk.TclError:
-            self._clock_timer_id = None
+        except AttributeError:
+            logger.debug("时钟标签已失效，跳过本次刷新", exc_info=True)
+        tid = safe_after(self.master, next_second_delay_ms(), self.update_clock)
+        self._clock_timer_id = tid
 
     def show_error(self, message):
         cancel_timer_attr(self, "_error_timer_id")

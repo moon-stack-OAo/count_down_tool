@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from app.timers import safe_after, safe_after_cancel
 from services.sound.constants import _SYSTEM_BELL_INTERVAL_MS, _SYSTEM_BELL_TIMES
 
 logger = logging.getLogger("count_down_tool")
@@ -36,41 +37,54 @@ def ring_system_bell_times(root, times: int = _SYSTEM_BELL_TIMES) -> None:
     with S._bell_lock:
         S._bell_gen += 1
         gen = S._bell_gen
+        prev = getattr(S, "_bell_after_id", None)
+        S._bell_after_id = None
+        S._bell_root = root
+    if prev is not None:
+        safe_after_cancel(root, prev)
     # 菜单「停止试听」可点时长 ≈ 间隔 * 次数
     S._mark_playing_until(n * (_SYSTEM_BELL_INTERVAL_MS / 1000.0) + 0.4)
+
+    def _remember(tid) -> None:
+        with S._bell_lock:
+            if gen == S._bell_gen:
+                S._bell_after_id = tid
 
     def _ring(left: int) -> None:
         with S._bell_lock:
             if gen != S._bell_gen:
                 return
+            S._bell_after_id = None
         if left <= 0:
             return
         S.ring_system_bell(root)
         if left > 1:
-            try:
-                root.after(_SYSTEM_BELL_INTERVAL_MS, lambda: _ring(left - 1))
-            except (RuntimeError, AttributeError):
-                for _ in range(left - 1):
-                    with S._bell_lock:
-                        if gen != S._bell_gen:
-                            return
-                    S.ring_system_bell(root)
+            tid = safe_after(root, _SYSTEM_BELL_INTERVAL_MS, lambda: _ring(left - 1))
+            if tid is None:
+                return
+            _remember(tid)
 
-    try:
-        root.after(0, lambda: _ring(n))
-    except (RuntimeError, AttributeError):
+    tid = safe_after(root, 0, lambda: _ring(n))
+    if tid is None:
         for _ in range(n):
             with S._bell_lock:
                 if gen != S._bell_gen:
                     return
             S.ring_system_bell(root)
+        return
+    _remember(tid)
 
 
 def cancel_system_bell() -> None:
-    """取消尚未响完的系统铃循环。"""
+    """取消尚未响完的系统铃循环，并 after_cancel 已登记的 timer。"""
     S = _pkg()
     with S._bell_lock:
         S._bell_gen += 1
+        tid = getattr(S, "_bell_after_id", None)
+        root = getattr(S, "_bell_root", None)
+        S._bell_after_id = None
+    if tid is not None:
+        safe_after_cancel(root, tid)
 
 
 def play_finish_sound(

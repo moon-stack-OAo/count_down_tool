@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import tkinter as tk
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 logger = logging.getLogger("count_down_tool")
 
@@ -25,6 +25,50 @@ APP_TIMER_ATTRS: tuple[str, ...] = (
     "_startup_update_timer_id",
     "_startup_shift_timer_id",
 )
+
+
+def _widget_alive(widget: Any) -> bool:
+    """控件仍存在才允许调度 after。
+
+    无 winfo_exists 但有 after 的对象（测试替身 / 尚未包装的 Tk）视为存活；
+    winfo_exists 为 False 或抛 TclError 则视为已销毁。
+    """
+    if widget is None:
+        return False
+    exists = getattr(widget, "winfo_exists", None)
+    if not callable(exists):
+        return callable(getattr(widget, "after", None))
+    try:
+        return bool(exists())
+    except (tk.TclError, AttributeError, RuntimeError):
+        return False
+
+
+def safe_after(widget: Any, delay_ms: int, callback: Callable[..., Any]) -> Any:
+    """在控件仍存在时调度 after；回调里窗口已毁则吞掉 TclError。
+
+    widget 为 None 或 winfo_exists() 为 False 时不调度，返回 None。
+    业务异常记 debug 后重新抛出，只吞 tk.TclError。
+    """
+    if not _widget_alive(widget):
+        return None
+
+    def _wrapped() -> None:
+        if not _widget_alive(widget):
+            return
+        try:
+            callback()
+        except tk.TclError:
+            logger.debug("after 回调时窗口已销毁", exc_info=True)
+        except Exception:
+            logger.debug("after 回调异常", exc_info=True)
+            raise
+
+    try:
+        return widget.after(int(delay_ms), _wrapped)
+    except tk.TclError:
+        logger.debug("safe_after 调度失败", exc_info=True)
+        return None
 
 
 def safe_after_cancel(widget: Any, timer_id: Any) -> bool:

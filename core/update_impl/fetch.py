@@ -18,6 +18,8 @@ from core.update_impl.util import (
     GITHUB_RELEASES_PAGE,
     GITHUB_REPO,
     USER_AGENT,
+    UpdateUrlNotAllowedError,
+    assert_allowed_update_url,
     logger,
 )
 from core.update_impl.version import (
@@ -120,7 +122,16 @@ def fetch_latest_tag_via_redirect(timeout: float = 15.0) -> str:
     return urllib.parse.unquote(m.group(1))
 
 
-def _http_get_text(url: str, timeout: float = 15.0, accept: str = "*/*") -> str:
+def _http_get_text(
+    url: str,
+    timeout: float = 15.0,
+    accept: str = "*/*",
+    *,
+    require_allowed_host: bool = False,
+) -> str:
+    """GET 文本。require_allowed_host 时校验请求 URL 与重定向后的最终主机。"""
+    if require_allowed_host:
+        assert_allowed_update_url(url)
     req = urllib.request.Request(
         url,
         headers={
@@ -131,9 +142,14 @@ def _http_get_text(url: str, timeout: float = 15.0, accept: str = "*/*") -> str:
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if require_allowed_host:
+                final_url = str(resp.geturl() or url)
+                assert_allowed_update_url(final_url)
             raw = resp.read()
     except urllib.error.HTTPError as exc:
         raise RuntimeError(_format_http_error(exc)) from exc
+    except UpdateUrlNotAllowedError:
+        raise
     return raw.decode("utf-8", errors="replace")
 
 

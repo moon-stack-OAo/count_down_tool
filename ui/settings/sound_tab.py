@@ -8,6 +8,7 @@ import os
 import tkinter as tk
 from tkinter import filedialog
 
+from app.timers import safe_after, safe_after_cancel
 from ui.app_dialogs import ask_yes_no, show_error, temporary_withdraw
 from ui.design.themed import themed_frame, themed_label
 from ui.design.tokens import FONT_CAPTION, SETTINGS_WIDTH, SPACE_SM, SPACE_XS
@@ -188,12 +189,15 @@ def build_sound_section(app, parent, c, refreshers, win) -> None:
 
     def _schedule_preview_refresh():
         _refresh()
-        try:
-            win.after(400, _refresh)
-            win.after(1500, _refresh)
-            win.after(3500, _refresh)
-        except tk.TclError:
-            pass
+        prev = getattr(win, "_preview_refresh_after_ids", None) or []
+        for tid in prev:
+            safe_after_cancel(win, tid)
+        ids = []
+        for delay in (400, 1500, 3500):
+            tid = safe_after(win, delay, _refresh)
+            if tid is not None:
+                ids.append(tid)
+        win._preview_refresh_after_ids = ids  # type: ignore[attr-defined]
 
     # 静音开关
     mute_lbl = selectable_row(

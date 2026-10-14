@@ -109,9 +109,11 @@ _mci_thread: Optional[threading.Thread] = None
 _mci_thread_lock = threading.Lock()
 _mci_ready = threading.Event()
 
-# 系统铃 generation
+# 系统铃 generation 与已调度的 after id（退出/停止时 after_cancel）
 _bell_gen = 0
 _bell_lock = threading.Lock()
+_bell_after_id = None
+_bell_root = None
 
 # 供测试 monkeypatch：sound_mod.os / .platform / .subprocess / .threading
 _ = (os, platform, subprocess, threading)

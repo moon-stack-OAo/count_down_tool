@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import tempfile
+import urllib.parse
 from typing import Callable, Optional
 
 logger = logging.getLogger("count_down_tool.update")
@@ -40,6 +41,43 @@ _EXTRACT_ALLOWED_ROOT_FILES = frozenset(
 _EXTRACT_ALLOWED_TOP_DIRS = frozenset({"_internal", "docs"})
 
 ProgressCb = Optional[Callable[[int, int], None]]  # received, total(-1 if unknown)
+
+# 更新包与校验文件最终 URL（含重定向后）只允许这些主机，且必须 https。
+_ALLOWED_UPDATE_HOSTS = frozenset(
+    {
+        "github.com",
+        "objects.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+        "github-releases.githubusercontent.com",
+    }
+)
+
+
+class UpdateUrlNotAllowedError(ValueError):
+    """下载或校验 URL 的协议/主机不在白名单内。"""
+
+
+def assert_allowed_update_url(url: str) -> str:
+    """
+    校验更新相关 URL：必须 https，且主机在 GitHub 发布资产白名单内。
+    返回规范化后的 URL；拒绝则抛 UpdateUrlNotAllowedError。
+    """
+    raw = (url or "").strip()
+    if not raw:
+        raise UpdateUrlNotAllowedError("更新 URL 为空")
+    try:
+        parts = urllib.parse.urlsplit(raw)
+    except (TypeError, ValueError) as exc:
+        raise UpdateUrlNotAllowedError(f"更新 URL 无法解析: {raw!r}") from exc
+    scheme = (parts.scheme or "").lower()
+    host = (parts.hostname or "").lower()
+    if scheme != "https" or not host or host not in _ALLOWED_UPDATE_HOSTS:
+        raise UpdateUrlNotAllowedError(
+            f"拒绝非白名单更新 URL（仅允许 https 且主机为 GitHub 发布资产）: {raw}"
+        )
+    if parts.username or parts.password:
+        raise UpdateUrlNotAllowedError(f"拒绝带用户信息的更新 URL: {raw}")
+    return raw
 
 def is_frozen_app() -> bool:
     return bool(getattr(sys, "frozen", False))

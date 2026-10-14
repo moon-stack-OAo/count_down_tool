@@ -187,6 +187,65 @@ class TestConfigStoreLoad(unittest.TestCase):
                 config_store.load_config(app)
             self.assertEqual(app._startup_mode, "remember")
 
+    def test_corrupt_json_backed_up_and_save_refuses_overwrite(self):
+        """损坏 JSON 备份后，save 不得用默认值覆盖原文件。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            original = '{"theme_id": "emerald", "note": "keep-me"'
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(original)
+            app = _make_app(path)
+            config_store.clear_config_cache(path)
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.load_config(app)
+            self.assertFalse(os.path.exists(path))
+            bak = path + ".bak"
+            self.assertTrue(os.path.isfile(bak))
+            with open(bak, encoding="utf-8") as f:
+                self.assertEqual(f.read(), original)
+            self.assertIsNone(config_store._get_cached(path))
+            app._theme_id = "slate_cyan"
+            with self.assertRaises(OSError):
+                config_store.save_config(app)
+            self.assertFalse(os.path.exists(path))
+            with open(bak, encoding="utf-8") as f:
+                self.assertEqual(f.read(), original)
+
+    def test_missing_file_save_creates(self):
+        """首次运行（文件不存在）仍允许创建配置。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            app = _make_app(path)
+            config_store.clear_config_cache(path)
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.load_config(app)
+                config_store.save_config(app)
+            self.assertTrue(os.path.isfile(path))
+            with open(path, encoding="utf-8") as f:
+                saved = json.load(f)
+            self.assertIn("theme_id", saved)
+
+    def test_invalid_shift_order_falls_back_default(self):
+        """结束不晚于开始（含跨日）时回退 09:00:00 / 18:00:00。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {"shift_start": "22:00:00", "shift_end": "06:00:00"},
+                    f,
+                )
+            app = _make_app(path)
+            with mock.patch(
+                "app.config_store.is_autostart_enabled", return_value=False
+            ):
+                config_store.load_config(app)
+            self.assertEqual(app._shift_start, "09:00:00")
+            self.assertEqual(app._shift_end, "18:00:00")
+
     def test_save_clears_mini_position_when_none(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "config.json")

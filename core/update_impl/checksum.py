@@ -12,7 +12,16 @@ from typing import List, Optional
 
 from core.update_impl.fetch import _http_get_text
 from core.update_impl.models import ReleaseInfo
-from core.update_impl.util import GITHUB_OWNER, GITHUB_REPO, logger
+from core.update_impl.util import (
+    GITHUB_OWNER,
+    GITHUB_REPO,
+    UpdateUrlNotAllowedError,
+    assert_allowed_update_url,
+    logger,
+)
+
+# 与当前安装包精确对应的校验文件后缀（忽略大小写）
+_ASSET_CHECKSUM_SUFFIXES = (".sha256", ".sha256sum", ".sha256.txt")
 
 
 def file_sha256(path: str, chunk_size: int = 1024 * 1024) -> str:
@@ -38,7 +47,10 @@ def parse_sha256_text(text: str, asset_name: Optional[str] = None) -> Optional[s
     if not text:
         return None
     want_name = (asset_name or "").strip().lower()
+    # 单行纯哈希没有文件名：指定了 asset 时不能采用（可能是别的包）。
+    # 未指定 asset 时仅在全文只有这一条哈希时返回（兼容直接解析 .sha256 文本）。
     only_hash: Optional[str] = None
+    only_hash_count = 0
     for raw in (text or "").splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -57,6 +69,7 @@ def parse_sha256_text(text: str, asset_name: Optional[str] = None) -> Optional[s
         m_only = re.match(r"(?i)^([0-9a-f]{64})$", line)
         if m_only:
             only_hash = m_only.group(1).lower()
+            only_hash_count += 1
             continue
         # hash + 文件名
         m_pair = re.match(
@@ -69,10 +82,11 @@ def parse_sha256_text(text: str, asset_name: Optional[str] = None) -> Optional[s
             if not want_name or base.lower() == want_name:
                 return digest
             continue
-    # 单行纯 hash 且未按文件名筛选失败时可用
-    if only_hash and (not want_name or text.count("\n") <= 1):
+    if want_name:
+        return None
+    if only_hash and only_hash_count == 1:
         return only_hash
-    return only_hash if only_hash and not want_name else None
+    return None
 
 
 def verify_file_sha256(path: str, expected_sha256: str) -> str:
@@ -118,6 +132,37 @@ def require_expected_sha256(
     )
 
 
+def _checksum_sidecar_names(asset_name: str) -> frozenset:
+    """当前资产允许的旁路校验文件名（小写）。"""
+    base = (asset_name or "").strip().lower()
+    if not base:
+        return frozenset()
+    return frozenset(f"{base}{suffix}" for suffix in _ASSET_CHECKSUM_SUFFIXES)
+
+
+def _is_exact_asset_checksum_name(filename: str, asset_name: str) -> bool:
+    """文件名是否精确为 ``{asset}.sha256`` / ``.sha256sum`` / ``.sha256.txt``。"""
+    return (filename or "").strip().lower() in _checksum_sidecar_names(asset_name)
+
+
+def _url_filename(url: str) -> str:
+    """取 URL 路径最后一段文件名（已解码）。"""
+    try:
+        path = urllib.parse.urlsplit(url).path or ""
+    except (TypeError, ValueError, AttributeError):
+        return ""
+    name = path.rsplit("/", 1)[-1]
+    return urllib.parse.unquote(name)
+
+
+def _github_release_download_url(tag: str, filename: str) -> str:
+    """自行拼接 GitHub Release 下载地址，不使用资产 API 返回的 URL。"""
+    return (
+        f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
+        f"/releases/download/{tag}/{filename}"
+    )
+
+
 def resolve_expected_sha256(
     asset_name: str,
     asset_url: str,
@@ -132,85 +177,86 @@ def resolve_expected_sha256(
     name = (asset_name or "").strip()
     if not name:
         return None
-    candidates: List[str] = []
-    # 1) 与 zip 同名的 .sha256 / .sha256sum
-    for suffix in (".sha256", ".sha256sum", ".sha256.txt"):
-        candidates.append(_release_download_url_from_asset_url(asset_url, name + suffix)
-                          if asset_url else "")
-        if release:
-            ver = release.version
-            tag = release.tag_name or f"v{ver}"
-            candidates.append(
-                f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
-                f"/releases/download/{tag}/{name}{suffix}"
-            )
-    # 2) 通用汇总文件
-    for sums_name in (
+    tag = ""
+    if release:
+        tag = (release.tag_name or "").strip() or f"v{release.version}"
+    # 只信任自行拼接的 github.com/.../releases/download/{tag}/{filename}。
+    # release.assets 的 browser_download_url 不能无条件当校验源：
+    # 仅当文件名精确匹配当前包的校验旁路，且 URL 过主机白名单时才采用。
+    sidecar_names = _checksum_sidecar_names(name)
+    sums_names = (
         "SHA256SUMS",
         "SHA256SUMS.txt",
         "sha256sums",
         "sha256sums.txt",
         "checksums.sha256",
         "checksums.txt",
-    ):
-        if release:
-            tag = release.tag_name or f"v{release.version}"
+    )
+    # (url, 是否允许单行无文件名哈希)
+    candidates: List[tuple] = []
+    if tag:
+        for suffix in _ASSET_CHECKSUM_SUFFIXES:
             candidates.append(
-                f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
-                f"/releases/download/{tag}/{sums_name}"
+                (_github_release_download_url(tag, name + suffix), True)
             )
-        if asset_url:
+        for sums_name in sums_names:
             candidates.append(
-                _release_download_url_from_asset_url(asset_url, sums_name)
+                (_github_release_download_url(tag, sums_name), False)
             )
-    # 3) release.assets 中已有的校验文件
     if release:
-        by_name = {
-            str(a.get("name") or ""): str(a.get("browser_download_url") or "")
-            for a in release.assets
-            if isinstance(a, dict)
-        }
-        for key, url in by_name.items():
+        for asset in release.assets:
+            if not isinstance(asset, dict):
+                continue
+            key = str(asset.get("name") or "").strip()
+            url = str(asset.get("browser_download_url") or "").strip()
+            if not key or not url:
+                continue
             kl = key.lower()
-            if kl == f"{name.lower()}.sha256" or kl.endswith(".sha256"):
-                if url:
-                    candidates.insert(0, url)
-            if kl in (
-                "sha256sums",
-                "sha256sums.txt",
-                "checksums.sha256",
-                "checksums.txt",
-            ):
-                if url:
-                    candidates.insert(0, url)
+            if kl in sidecar_names:
+                bare_ok = True
+            elif kl in {s.lower() for s in sums_names}:
+                bare_ok = False
+            else:
+                # 其它 .sha256（例如别的包）一律丢弃
+                continue
+            try:
+                assert_allowed_update_url(url)
+            except UpdateUrlNotAllowedError as exc:
+                logger.debug("丢弃非白名单校验资产 URL %s: %s", url, exc)
+                continue
+            candidates.insert(0, (url, bare_ok))
 
     seen: set = set()
-    for url in candidates:
+    for url, allow_bare_hash in candidates:
         url = (url or "").strip()
         if not url or url in seen:
             continue
         seen.add(url)
         try:
-            text = _http_get_text(url, timeout=timeout, accept="text/plain,*/*")
+            assert_allowed_update_url(url)
+        except UpdateUrlNotAllowedError as exc:
+            logger.debug("丢弃非白名单校验 URL %s: %s", url, exc)
+            continue
+        try:
+            text = _http_get_text(
+                url,
+                timeout=timeout,
+                accept="text/plain,*/*",
+                require_allowed_host=True,
+            )
         except (OSError, urllib.error.URLError, RuntimeError, ValueError, TypeError) as exc:
             logger.debug("拉取 SHA256 资产失败 %s: %s", url, exc)
             continue
         digest = parse_sha256_text(text, asset_name=name)
+        if not digest and allow_bare_hash and _is_exact_asset_checksum_name(
+            _url_filename(url), name
+        ):
+            # 单行纯哈希只在 URL 文件名就是该资产的 .sha256 旁路时接受
+            digest = parse_sha256_text(text, asset_name=None)
         if digest:
             logger.info("已获取 SHA256 校验源: %s", url)
             return digest
     return None
 
 
-def _release_download_url_from_asset_url(asset_url: str, new_name: str) -> str:
-    """将 release 资产 URL 的文件名替换为 new_name。"""
-    try:
-        parts = urllib.parse.urlsplit(asset_url)
-        path = parts.path or ""
-        parent = path.rsplit("/", 1)[0] if "/" in path else ""
-        new_path = f"{parent}/{new_name}" if parent else f"/{new_name}"
-        return urllib.parse.urlunsplit(
-            (parts.scheme, parts.netloc, new_path, "", "")
-        )
-    except (TypeError, ValueError, AttributeError):
-        return ""
+

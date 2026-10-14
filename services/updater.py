@@ -390,6 +390,15 @@ def _prompt_update(app, result: core_update.UpdateCheckResult, notes: str) -> No
             _open_release_in_browser(result)
             return
         if action == "install":
+            if not core_update.is_frozen_app():
+                page = _release_page_url(result)
+                ui.show_error(
+                    app,
+                    "仅打包后的 count_down_tool.exe 可自动安装。\n\n"
+                    f"请从发布页手动下载：\n{page}",
+                )
+                _open_release_in_browser(result)
+                return
             _start_windows_install(app, result)
         elif action == "download_only":
             _start_mac_download(app, result)

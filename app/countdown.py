@@ -474,6 +474,9 @@ class CountdownController:
 
     def flash_visual(self):
         app = self.app
+        from app.timers import cancel_timer_attr
+
+        cancel_timer_attr(app, "_alarm_timer_id")
         if not app.countdown_label:
             return
         # 样式在 setup_styles 预注册；此处只切换，避免每次 ttk.Style + configure
